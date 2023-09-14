@@ -1,0 +1,5 @@
+database:
+  name: ranked_choice_voting
+  user: rcv_user
+  password: your_mysql_password
+  host: localhost
