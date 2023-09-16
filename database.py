@@ -1,9 +1,17 @@
+import yaml
 import datetime
 
 from peewee import *
 
+with open('config.yml', 'r') as config_file:
+    yaml_data = yaml.safe_load(config_file)
+
+username = yaml_data['database']['user']
+password = yaml_data['database']['password']
+
 db = MySQLDatabase(
-    'ranked_choice_voting'
+    'ranked_choice_voting', user=username,
+    password=password
 )
 
 
@@ -12,48 +20,45 @@ class BaseModel(Model):
         database = db
 
 
-class Polls(Model):
-    id = IntegerField(primary_key=True)
-    desc = CharField()
-    close_time = TimestampField()
-    open_time = TimestampField()
-    closed = BooleanField()
+class Polls(BaseModel):
+    id = PrimaryKeyField()
+    desc = TextField(default="")
+    close_time = TimestampField(default=None)
+    open_time = TimestampField(default=datetime.datetime.now)
+    closed = BooleanField(default=False)
+    creator = CharField(max_length=255, default=None)
 
 
-class Groups(Model):
-    id = IntegerField(primary_key=True)
-    poll_id = ForeignKeyField(Polls, backref='groups')
-    group_id = IntegerField()
-    broadcasted = BooleanField()
+class Chats(BaseModel):
+    id = PrimaryKeyField()
+    poll_id = ForeignKeyField(Polls, to_field='id')
+    tele_id = IntegerField()
+    broadcasted = BooleanField(default=False)
 
 
-class PollUsers(Model):
-    id = IntegerField(primary_key=True)
-    poll_id = ForeignKeyField(Polls, backref='poll_users')
+class PollVoters(BaseModel):
+    id = PrimaryKeyField()
+    poll_id = ForeignKeyField(Polls, to_field='id')
+    username = CharField(max_length=255)
 
 
-class Options(Model):
-    id = IntegerField(primary_key=True)
-    poll_id = ForeignKeyField(Polls, backref='options')
+class Options(BaseModel):
+    id = PrimaryKeyField()
+    poll_id = ForeignKeyField(Polls, to_field='id')
     option_name = CharField(max_length=255)
 
 
-class Votes(Model):
-    id = IntegerField(primary_key=True)
-    poll_id = ForeignKeyField(Polls, backref='votes')
-    poll_user_id = IntegerField()
-    option_id = IntegerField()
+class Votes(BaseModel):
+    id = PrimaryKeyField()
+    poll_id = ForeignKeyField(Polls, to_field='id')
+    poll_voter_id = ForeignKeyField(PollVoters, to_field='id')
+    option_id = ForeignKeyField(Options, to_field='id')
     ranking = IntegerField()
 
 
 # Create tables (if they don't exist)
 db.connect()
 db.create_tables([
-    Polls, Groups, PollUsers, Options, Votes
+    Polls, Chats, PollVoters, Options, Votes
 ], safe=True)
 
-# Define foreign keys
-Polls.add_foreign_key('poll_user_id', PollUsers)
-Polls.add_foreign_key('option_id', Options)
-Votes.add_foreign_key('poll_user_id', PollUsers)
-Votes.add_foreign_key('option_id', Options)

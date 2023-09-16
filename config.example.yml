@@ -3,3 +3,5 @@ database:
   user: rcv_user
   password: your_mysql_password
   host: localhost
+telegram:
+  bot_token: YOUR_BOT_TOKEN

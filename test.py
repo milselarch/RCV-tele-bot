@@ -1,10 +1,10 @@
+import copy
 import itertools
-import numpy as np
 
 from typing import List, Tuple
 
 
-def RCV(
+def ranked_choice_vote(
     ranked_votes: List[List[int]], num_voters: int = None
 ):
     """
@@ -16,6 +16,8 @@ def RCV(
     last choice is leftmost (lowest index) element in list
     :return:
     """
+    ranked_votes = copy.deepcopy(ranked_votes)
+
     if num_voters is None:
         num_voters = len(ranked_votes)
 
@@ -45,8 +47,18 @@ def RCV(
         ]
 
         lowest_votes = min(candidate_vote_counts)
-        weakest_candidates = []
+        highest_votes = max(candidate_vote_counts)
 
+        if len(candidate_vote_counts) == 2:
+            # if there are two 1st choice candidates have the exact
+            # same number of votes and there are no other 1st choice
+            # candidates, then we scan the number of candidate
+            # occurrences in the 2nd, 3rd choices to tiebreak
+            if lowest_votes == highest_votes:
+                # TODO: implement this
+                pass
+
+        weakest_candidates = []
         # see if any candidate has won the vote
         for candidate in candidate_votes_map:
             candidate_votes = candidate_votes_map[candidate]
@@ -69,7 +81,10 @@ def RCV(
                 # print('SKIP_VOTE')
                 continue
 
+            # get active top choice candidate
+            # for the current ranked choice vote
             top_choice = ranked_vote[-1]
+
             if top_choice in weakest_candidates:
                 # remove the top candidate from the current
                 # ranked choice vote if aforementioned candidate
@@ -88,10 +103,11 @@ def RCV(
             break
 
     print(f'winner = {winner}')
+    return winner
 
 
 if __name__ == '__main__':
-    print(RCV([
+    print(ranked_choice_vote([
         [4, 3, 2, 1],
         [3, 2, 4],
         [3, 1],
