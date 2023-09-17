@@ -160,9 +160,13 @@ class RankedChoiceBot(object):
                     message.reply_text(
                         'adding all users in a group is not suppoerted'
                     )
+                    return False
             else:
                 if poll_user.startswith('@'):
                     poll_user = poll_user[1:]
+                if len(poll_user) < 4:
+                    message.reply_text(f'username too short: {poll_user}')
+                    return False
 
                 poll_users.append(poll_user)
 
