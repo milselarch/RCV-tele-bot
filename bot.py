@@ -76,7 +76,8 @@ class RankedChoiceBot(object):
             view_poll=self.view_poll,
             vote=self.vote_for_poll,
             vote_admin=self.vote_for_poll_admin,
-            poll_results=self.fetch_poll_results
+            poll_results=self.fetch_poll_results,
+            has_voted=self.has_voted
         ))
 
         # log all errors
@@ -99,6 +100,40 @@ class RankedChoiceBot(object):
             user id: {user['id']}
             username: {user['username']}
         """))
+
+    @track_errors
+    def has_voted(self, update, *args, **kwargs):
+        """
+        usage:
+        /has_voted {poll_id}
+        """
+        message = update.message
+        user = update.message.from_user
+        chat_username = user['username']
+
+        poll_id = self.extract_poll_id(update)
+        if poll_id is None:
+            return False
+
+        is_voter = self.is_poll_voter(
+            poll_id=poll_id, chat_username=chat_username
+        )
+
+        if not is_voter:
+            message.reply_text(f"You're not a voter of poll {poll_id}")
+            return False
+
+        has_voted = bool(Votes.select().join(
+            PollVoters, on=(Votes.poll_voter_id == PollVoters.id)
+        ).where(
+            (Votes.poll_id == poll_id) &
+            (PollVoters.username == chat_username)
+        ).count())
+
+        if has_voted:
+            message.reply_text("you've voted already")
+        else:
+            message.reply_text("you haven't voted")
 
     @track_errors
     def create_poll(self, update, *args, **kwargs):
@@ -238,7 +273,6 @@ class RankedChoiceBot(object):
             (PollVoters.username == chat_username)
         )
 
-        print('VOTER_ID_LOOKUP', voter[0].id, poll_id, chat_username)
         return voter
 
     @classmethod
@@ -320,6 +354,20 @@ class RankedChoiceBot(object):
         # print('POLL_OPTIONS', poll_options, poll.id)
         message.reply_text(poll_message)
 
+    def vote_and_report(self, raw_text, chat_username, message):
+        winning_option_id = self._vote_for_poll(
+            raw_text=raw_text, chat_username=chat_username,
+            message=message
+        )
+
+        if winning_option_id is not None:
+            winning_options = Options.select().where(
+                Options.id == winning_option_id
+            )
+
+            option_name = winning_options[0].option_name
+            message.reply_text(f'poll winner is:\n{option_name}')
+
     @track_errors
     def vote_for_poll_admin(self, update, *args, **kwargs):
         """
@@ -362,10 +410,7 @@ class RankedChoiceBot(object):
         # raw_text = raw_text[raw_text.index(' ')+1:].strip()
         # print('RAW', [raw_text])
 
-        self._vote_for_poll(
-            raw_text=raw_text, chat_username=chat_username,
-            message=message
-        )
+        self.vote_and_report(raw_text, chat_username, message)
 
     @track_errors
     def vote_for_poll(self, update, *args, **kwargs):
@@ -380,18 +425,7 @@ class RankedChoiceBot(object):
         user = update.message.from_user
         chat_username = user['username']
 
-        winning_option_id = self._vote_for_poll(
-            raw_text=raw_text, chat_username=chat_username,
-            message=message
-        )
-
-        if winning_option_id is not None:
-            winning_options = Options.select().where(
-                Options.id == winning_option_id
-            )
-
-            option_name = winning_options[0].option_name
-            message.reply_text(f'poll winner is:\n{option_name}')
+        self.vote_and_report(raw_text, chat_username, message)
 
     def _vote_for_poll(self, raw_text, chat_username, message):
         """
