@@ -5,3 +5,4 @@ database:
   host: localhost
 telegram:
   bot_token: YOUR_BOT_TOKEN
+  sudo_id: YOUR_SUDO_ID

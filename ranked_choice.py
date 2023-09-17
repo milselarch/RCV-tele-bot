@@ -21,7 +21,7 @@ def ranked_choice_vote(
     if num_voters is None:
         num_voters = len(ranked_votes)
 
-    assert len(ranked_votes) >= num_voters
+    assert num_voters >= len(ranked_votes)
     unique_candidates = set(itertools.chain(*ranked_votes))
     candidate_votes_map = {
         candidate: 0 for candidate in unique_candidates
@@ -55,8 +55,8 @@ def ranked_choice_vote(
             # candidates, then we scan the number of candidate
             # occurrences in the 2nd, 3rd choices to tiebreak
             if lowest_votes == highest_votes:
-                # TODO: implement this
-                pass
+                # just say it's not conclusive for now
+                return None
 
         weakest_candidates = []
         # see if any candidate has won the vote

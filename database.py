@@ -46,6 +46,7 @@ class Options(BaseModel):
     id = PrimaryKeyField()
     poll_id = ForeignKeyField(Polls, to_field='id')
     option_name = CharField(max_length=255)
+    option_number = IntegerField()
 
 
 class Votes(BaseModel):
