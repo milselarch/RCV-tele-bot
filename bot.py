@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 to do:
 / create poll
 / view poll options / votes
-vote on a poll
-fetch poll results 
+/ vote on a poll
+/ fetch poll results 
 automatically calculate + broadcast poll results
 """
 
@@ -227,6 +227,7 @@ class RankedChoiceBot(object):
             ))
 
         group_id = update.message.chat_id
+        print('GROUND_ID', group_id)
         chat = Chats.create(
             poll_id=new_poll_id, tele_id=group_id,
             broadcasted=False
