@@ -467,7 +467,8 @@ class RankedChoiceBot(object):
         if vote_result is False:
             return
 
-        winning_option_id, poll_id = vote_result
+        poll_id = vote_result
+        winning_option_id = self.get_poll_winner(poll_id)
 
         # count number of eligible voters
         num_poll_voters = PollVoters.select().where(
@@ -483,17 +484,28 @@ class RankedChoiceBot(object):
 
         everyone_voted = num_poll_voters == num_poll_voted
 
-        if (winning_option_id is not None) and everyone_voted:
-            winning_options = Options.select().where(
-                Options.id == winning_option_id
-            )
+        if everyone_voted:
+            if winning_option_id is not None:
+                winning_options = Options.select().where(
+                    Options.id == winning_option_id
+                )
 
-            option_name = winning_options[0].option_name
-            message.reply_text(f'poll winner is:\n{option_name}')
+                option_name = winning_options[0].option_name
+                message.reply_text(textwrap.dedent(f"""
+                    all members voted
+                    poll winner is:
+                    {option_name}
+                """))
+            else:
+                message.reply_text(textwrap.dedent(f"""
+                    all members voted
+                    poll has no winner
+                """))
         else:
-            message.reply_text(
-                f'{num_poll_voted}/{num_poll_voters} votes registered'
-            )
+            message.reply_text(textwrap.dedent(f"""
+                vote has been registered
+                vote count: {num_poll_voted}/{num_poll_voters} 
+            """))
 
     @track_errors
     def close_poll(self, update, *args, **kwargs):
@@ -616,18 +628,17 @@ class RankedChoiceBot(object):
             return False
 
         poll_voter_id = poll_voter[0].id
-        print('POLL_VOTER_ID', poll_voter_id)
+        # print('POLL_VOTER_ID', poll_voter_id)
 
         vote_registered = self.register_vote(
             poll_id, poll_voter_id=poll_voter_id,
             rankings=rankings, message=message
         )
 
-        if vote_registered:
-            message.reply_text("vote recorded")
+        if not vote_registered:
+            return False
 
-        winning_option_id = self.get_poll_winner(poll_id)
-        return winning_option_id, poll_id
+        return poll_id
 
     @staticmethod
     def unpack_rankings_and_poll_id(raw_text, message):
