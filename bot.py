@@ -362,8 +362,8 @@ class RankedChoiceBot(object):
             if voter_id not in vote_sequence_map:
                 vote_sequence_map[voter_id] = {}
 
-            option_number = vote_row.option_id
-            vote_sequence_map[voter_id][vote_row.ranking] = option_number
+            option_id = vote_row.option_id
+            vote_sequence_map[voter_id][vote_row.ranking] = option_id
 
         ranking_message = ''
         for voter_id in vote_sequence_map:
@@ -375,7 +375,8 @@ class RankedChoiceBot(object):
 
             print('SORT-NOS', sorted_option_nos)
             ranking_message += ' > '.join([
-                str(option_number) for option_number in sorted_option_nos
+                str(option_index_map[option_id.id])
+                for option_id in sorted_option_nos
             ]).strip() + '\n'
 
         ranking_message = ranking_message.strip()
