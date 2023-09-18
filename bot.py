@@ -774,7 +774,7 @@ class RankedChoiceBot(object):
         poll option m
         - creates a new poll
         ——————————————————
-        /view_poll {poll_id}  shows poll details given poll_id
+        /view_poll {poll_id} - shows poll details given poll_id
         ——————————————————
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
         - vote for the poll with the specified poll_id
