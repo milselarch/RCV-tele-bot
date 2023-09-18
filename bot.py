@@ -352,7 +352,7 @@ class RankedChoiceBot(object):
 
         vote_rows = (Votes.select()
             .where(Votes.poll_id == poll_id)
-            .order_by(Votes.option_number, Votes.ranking, Votes.option_id)
+            .order_by(Votes.option_id, Votes.ranking)
         )
 
         vote_sequence_map = {}
