@@ -75,9 +75,14 @@ class RankedChoiceBot(object):
             create_poll=self.create_poll,
             view_poll=self.view_poll,
             vote=self.vote_for_poll,
-            vote_admin=self.vote_for_poll_admin,
             poll_results=self.fetch_poll_results,
-            has_voted=self.has_voted
+            has_voted=self.has_voted,
+            close_poll=self.close_poll,
+            view_votes=self.view_votes,
+
+            vote_admin=self.vote_for_poll_admin,
+            unclose_poll_admin=self.unclose_poll_admin,
+            close_poll_admin=self.close_poll_admin
         ))
 
         # log all errors
@@ -308,6 +313,102 @@ class RankedChoiceBot(object):
         return voter_in_poll or (poll.creator == chat_username)
 
     @track_errors
+    def view_votes(self, update, *args, **kwargs):
+        poll_id = self.extract_poll_id(update)
+        if poll_id is None:
+            return False
+
+        message = update.message
+        user = update.message.from_user
+        chat_username = user['username']
+        # check if voter is part of the poll
+
+        try:
+            poll = Polls.select().where(Polls.id == poll_id).get()
+        except Polls.DoesNotExist:
+            message.reply_text(f'poll {poll_id} does not exist')
+            return False
+
+        if not poll.closed:
+            message.reply_text('poll votes can only be viewed after closing')
+            return False
+
+        has_poll_access = self.has_poll_access(poll_id, chat_username)
+        if not has_poll_access:
+            message.reply_text(f'You have no access to poll {poll_id}')
+            return False
+
+        # get poll options in ascending order
+        poll_option_rows = Options.select().where(
+            Options.poll_id == poll_id
+        ).order_by(Options.option_number)
+
+        # map poll option ids to their option numbers
+        option_index_map = {}
+        for poll_option_row in poll_option_rows:
+            option_index_map[poll_option_row.id] = (
+                poll_option_row.option_number
+            )
+
+        vote_rows = (Votes.select()
+            .where(Votes.poll_id == poll_id)
+            .order_by(Votes.ranking)
+        )
+
+        vote_sequence_map = {}
+        for vote_row in vote_rows:
+            voter_id = vote_row.poll_voter_id
+
+            if voter_id not in vote_sequence_map:
+                vote_sequence_map[voter_id] = {}
+
+            option_number = vote_row.option_id
+            vote_sequence_map[voter_id][vote_row.ranking] = option_number
+
+        ranking_message = ''
+        for voter_id in vote_sequence_map:
+            ranking_map = vote_sequence_map[voter_id]
+            ranking_nos = sorted(ranking_map.keys())
+            sorted_option_nos = [
+                ranking_map[ranking] for ranking in ranking_nos
+            ]
+
+            print('SORT-NOS', sorted_option_nos)
+            ranking_message += ' > '.join([
+                str(option_number) for option_number in sorted_option_nos
+            ]).strip() + '\n'
+
+        ranking_message = ranking_message.strip()
+        message.reply_text(f'votes recorded:\n{ranking_message}')
+
+    @track_errors
+    def unclose_poll_admin(self, update, *args, **kwargs):
+        self._set_poll_status(update, False)
+
+    @track_errors
+    def close_poll_admin(self, update, *args, **kwargs):
+        self._set_poll_status(update, True)
+
+    def _set_poll_status(self, update, closed=True):
+        message = update.message
+        user = update.message.from_user
+        user_id = user['id']
+
+        if user_id != self.yaml_config['telegram']['sudo_id']:
+            message.reply_text('ACCESS DENIED')
+            return False
+
+        poll_id = self.extract_poll_id(update)
+        if poll_id is None:
+            return False
+
+        Polls.update({Polls.closed: closed}).where(
+            Polls.id == poll_id
+        ).execute()
+
+        message.reply_text(f'poll {poll_id} has been unclosed')
+
+    @track_errors
     def view_poll(self, update, *args, **kwargs):
         """
         example:
@@ -367,6 +468,32 @@ class RankedChoiceBot(object):
 
             option_name = winning_options[0].option_name
             message.reply_text(f'poll winner is:\n{option_name}')
+
+    @track_errors
+    def close_poll(self, update, *args, **kwargs):
+        poll_id = self.extract_poll_id(update)
+        if poll_id is None:
+            return False
+
+        message = update.message
+        user = update.message.from_user
+        chat_username = user['username']
+
+        try:
+            poll = Polls.select().where(Polls.id == poll_id).get()
+        except Polls.DoesNotExist:
+            message.reply_text(f'poll {poll_id} does not exist')
+            return False
+
+        if poll.creator != chat_username:
+            message.reply_text('only poll creator is allowed to close poll')
+            return False
+
+        Polls.update({Polls.closed: True}).where(
+            Polls.id == poll.id
+        ).execute()
+
+        message.reply_text('poll closed')
 
     @track_errors
     def vote_for_poll_admin(self, update, *args, **kwargs):
@@ -450,6 +577,16 @@ class RankedChoiceBot(object):
 
         if poll_voter.count() == 0:
             message.reply_text(f"You're not a voter of poll {poll_id}")
+            return False
+
+        try:
+            poll = Polls.select().where(Polls.id == poll_id).get()
+        except Polls.DoesNotExist:
+            message.reply_text(f'poll {poll_id} does not exist')
+            return False
+
+        if poll.closed:
+            message.reply_text('poll has already been closed')
             return False
 
         poll_voter_id = poll_voter[0].id
@@ -627,7 +764,7 @@ class RankedChoiceBot(object):
 
     @staticmethod
     def register_commands(
-            dispatcher, commands_mapping, wrap_func=lambda func: func
+        dispatcher, commands_mapping, wrap_func=lambda func: func
     ):
         for command_name in commands_mapping:
             handler = commands_mapping[command_name]
