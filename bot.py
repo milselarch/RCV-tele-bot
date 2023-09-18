@@ -80,6 +80,7 @@ class RankedChoiceBot(object):
             close_poll=self.close_poll,
             view_votes=self.view_votes,
             view_voters=self.view_poll_voters,
+            help=self.show_help,
 
             vote_admin=self.vote_for_poll_admin,
             unclose_poll_admin=self.unclose_poll_admin,
@@ -458,18 +459,41 @@ class RankedChoiceBot(object):
         message.reply_text(poll_message)
 
     def vote_and_report(self, raw_text, chat_username, message):
-        winning_option_id = self._vote_for_poll(
+        vote_result = self._vote_for_poll(
             raw_text=raw_text, chat_username=chat_username,
             message=message
         )
 
-        if winning_option_id is not None:
+        if vote_result is False:
+            return
+
+        winning_option_id, poll_id = vote_result
+
+        # count number of eligible voters
+        num_poll_voters = PollVoters.select().where(
+            PollVoters.poll_id == poll_id
+        ).count()
+        # count number of people who voted
+        num_poll_voted = PollVoters.select().join(
+            Votes, on=(Votes.poll_voter_id == PollVoters.id)
+        ).where(
+            (PollVoters.poll_id == poll_id) &
+            (Votes.ranking == 0)
+        ).count()
+
+        everyone_voted = num_poll_voters == num_poll_voted
+
+        if (winning_option_id is not None) and everyone_voted:
             winning_options = Options.select().where(
                 Options.id == winning_option_id
             )
 
             option_name = winning_options[0].option_name
             message.reply_text(f'poll winner is:\n{option_name}')
+        else:
+            message.reply_text(
+                f'{num_poll_voted}/{num_poll_voters} votes registered'
+            )
 
     @track_errors
     def close_poll(self, update, *args, **kwargs):
@@ -603,7 +627,7 @@ class RankedChoiceBot(object):
             message.reply_text("vote recorded")
 
         winning_option_id = self.get_poll_winner(poll_id)
-        return winning_option_id
+        return winning_option_id, poll_id
 
     @staticmethod
     def unpack_rankings_and_poll_id(raw_text, message):
@@ -724,6 +748,51 @@ class RankedChoiceBot(object):
         )
         return winning_option_id
 
+    @track_errors
+    def show_help(self, update, *args, **kwargs):
+        message = update.message
+        message.reply_text(textwrap.dedent("""
+        /start - start bot
+        /user_details - shows your username and user id
+        ——————————————————
+        /create_poll @user_1 @user_2 ... @user_n:
+        poll title
+        poll option 1
+        poll option 2
+        ...
+        poll option m
+        - creates a new poll
+        ——————————————————
+        /view_poll {poll_id}  shows poll details given poll_id
+        ——————————————————
+        /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
+        - vote for the poll with the specified poll_id
+        requires that the user is one of the registered 
+        voters of the poll
+        ——————————————————
+        /poll_results {poll_id}
+        - returns poll results if the poll has been closed
+        ——————————————————
+        /has_voted {poll_id} 
+        - tells you if you've voted for the poll with the 
+        specified poll_id
+        ——————————————————
+        /close_poll {poll_id}
+        - close the poll with the specified poll_id
+        note that only the poll's creator is allowed 
+        to issue this command to close the poll
+        ——————————————————
+        /view_votes {poll_id}
+        - view all the votes entered for the poll 
+        with the specified poll_id. This can only be done
+        after the poll has been closed first
+        ——————————————————
+        /view_voters {poll_id}
+        - show which voters have voted and which have not
+        ——————————————————
+        /help - view commands available to the bot
+        """))
+
     def view_poll_voters(self, update, *args, **kwargs):
         """
         /view_voters {poll_id}
@@ -748,17 +817,20 @@ class RankedChoiceBot(object):
 
         poll_voters_voted = PollVoters.select().join(
             Votes, on=(Votes.poll_voter_id == PollVoters.id)
-        ).where(PollVoters.poll_id == poll_id)
+        ).where(
+            (PollVoters.poll_id == poll_id) &
+            (Votes.ranking == 0)
+        )
         poll_voters = PollVoters.select().where(
             PollVoters.poll_id == poll_id
         )
 
-        voter_usernames = list(set([
+        voter_usernames = [
             voter.username for voter in poll_voters
-        ]))
-        voted_usernames = list(set([
+        ]
+        voted_usernames = [
             voter.username for voter in poll_voters_voted
-        ]))
+        ]
         not_voted_usernames = list(
             set(voter_usernames) - set(voted_usernames)
         )
