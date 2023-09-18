@@ -79,6 +79,7 @@ class RankedChoiceBot(object):
             has_voted=self.has_voted,
             close_poll=self.close_poll,
             view_votes=self.view_votes,
+            view_voters=self.view_poll_voters,
 
             vote_admin=self.vote_for_poll_admin,
             unclose_poll_admin=self.unclose_poll_admin,
@@ -722,6 +723,52 @@ class RankedChoiceBot(object):
             vote_flat_map, num_voters=num_poll_voters
         )
         return winning_option_id
+
+    def view_poll_voters(self, update, *args, **kwargs):
+        """
+        /view_voters {poll_id}
+        :param update: 
+        :param args: 
+        :param kwargs: 
+        :return: 
+        """
+        poll_id = self.extract_poll_id(update)
+        if poll_id is None:
+            return False
+
+        message = update.message
+        user = update.message.from_user
+        chat_username = user['username']
+        # check if voter is part of the poll
+
+        has_poll_access = self.has_poll_access(poll_id, chat_username)
+        if not has_poll_access:
+            message.reply_text(f'You have no access to poll {poll_id}')
+            return False
+
+        poll_voters_voted = PollVoters.select().join(
+            Votes, on=(Votes.poll_voter_id == PollVoters.id)
+        ).where(PollVoters.poll_id == poll_id)
+        poll_voters = PollVoters.select().where(
+            PollVoters.poll_id == poll_id
+        )
+
+        voter_usernames = list(set([
+            voter.username for voter in poll_voters
+        ]))
+        voted_usernames = list(set([
+            voter.username for voter in poll_voters_voted
+        ]))
+        not_voted_usernames = list(
+            set(voter_usernames) - set(voted_usernames)
+        )
+
+        message.reply_text(textwrap.dedent(f"""
+            voted:
+            {' '.join(voted_usernames)}
+            not voted:
+            {' '.join(not_voted_usernames)}
+        """))
 
     @track_errors
     def fetch_poll_results(self, update, *args, **kwargs):
