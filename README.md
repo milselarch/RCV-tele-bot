@@ -1,5 +1,6 @@
 # RCV-tele-bot
 Ranked choice voting telegram bot - try it at [@ranked_choice_voting_bot](https://t.me/ranked_choice_voting_bot)
+Created using Python3.10, the python-telegram-bot bot library, and the peewee SQL ORM
 
 ### Commands
 ```
@@ -82,3 +83,7 @@ Project was built using Python3.10
    ```
    (venv) $ python bot.py
    ```
+
+### Database Schema
+Database ORM definition can be found in `database.py`
+![Schema Image](https://github.com/milselarch/RCV-tele-bot/blob/master/schema.png)
