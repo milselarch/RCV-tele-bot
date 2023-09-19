@@ -42,8 +42,10 @@ after the poll has been closed first
 - Show which voters have voted and which have not
 ——————————————————
 /help - view commands available to the bot
+```
 
-Commands for testing and debugging purposes
+Commands for testing and debugging purposes:   
+```
 /vote_admin @{username} {poll_id}: {option_1} > {option_2} > ... > {option_n} 
 - Casts a vote on behalf of the specified user
 ——————————————————
