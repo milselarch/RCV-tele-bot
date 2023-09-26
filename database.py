@@ -2,6 +2,7 @@ import yaml
 import datetime
 
 from peewee import *
+from playhouse.shortcuts import ReconnectMixin
 
 with open('config.yml', 'r') as config_file:
     yaml_data = yaml.safe_load(config_file)
@@ -9,8 +10,13 @@ with open('config.yml', 'r') as config_file:
 username = yaml_data['database']['user']
 password = yaml_data['database']['password']
 
-db = MySQLDatabase(
-    'ranked_choice_voting', user=username,
+
+class DB(ReconnectMixin, MySQLDatabase):
+    pass
+
+
+db = DB(
+    database='ranked_choice_voting', user=username,
     password=password
 )
 
