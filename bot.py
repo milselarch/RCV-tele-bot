@@ -1,16 +1,25 @@
 import asyncio
 import logging
+import types
+
 import database
 import telegram
 import traceback
 import textwrap
 import yaml
+import json
 import re
 
 import ranked_choice
 
 from database import *
-from telegram.ext import Updater, CommandHandler
+from telegram import (
+    InlineKeyboardButton, InlineKeyboardMarkup, Update
+)
+from telegram.ext import (
+    Updater, CommandHandler, MessageHandler, filters,
+    ContextTypes
+)
 
 # Enable logging
 logging.basicConfig(
@@ -90,6 +99,20 @@ class RankedChoiceBot(object):
         # log all errors
         dp.add_error_handler(error_logger)
         self.updater.start_polling()
+
+    @staticmethod
+    @track_errors
+    # Handle incoming WebAppData
+    async def web_app_data(
+        update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Print the received data and remove the button.
+        """
+        # Here we use `json.loads`, since the WebApp sends the data JSON serialized string
+        # (see webappbot.html)
+        data = json.loads(update.effective_message.web_app_data.data)
+        await update.message.reply_text()
 
     @track_errors
     def start_handler(self, update, *args):
@@ -250,7 +273,13 @@ class RankedChoiceBot(object):
             num_voters=len(poll_users)
         )
 
-        message.reply_text(poll_message)
+        # create vote button for reply message
+        markup_layout = [[InlineKeyboardButton(
+            text='Vote', callback_data='vote'
+        )]]
+
+        reply_markup = InlineKeyboardMarkup(markup_layout)
+        message.reply_text(poll_message,  reply_markup=reply_markup)
 
     @staticmethod
     def generate_poll_info(
