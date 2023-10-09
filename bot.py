@@ -680,9 +680,24 @@ class RankedChoiceBot(object):
         [0-9]+\s+ -> poll_id and space 
         (\s*[0-9]+\s*>)* -> ranking number then arrow
         \s*[0-9]+ -> final ranking number
-        $ -> end of string        """
+        $ -> end of string        
+        """
         pattern_match2 = re.match(
             '^[0-9]+\s+(\s*[0-9]+\s*>)*\s*[0-9]+$', raw_arguments
+        )
+        """
+        catches input of format:
+        {poll_id} {choice_1} {choice_2} ... {choice_n}
+
+        regex breakdown:
+        ^ -> start of string
+        ([0-9]+):*\s* -> poll_id, optional colon
+        ([0-9]+\s+)* -> ranking number then space
+        ([0-9]+) -> final ranking number
+        $ -> end of string        
+        """
+        pattern_match3 = re.match(
+            '^([0-9]+):*\s*([0-9]+\s+)*([0-9]+)$', raw_arguments
         )
 
         if pattern_match1:
@@ -690,17 +705,24 @@ class RankedChoiceBot(object):
             raw_poll_id, raw_votes = raw_arguments.split(':')
             raw_poll_id = raw_poll_id.strip()
             raw_votes = raw_votes.strip()
+            rankings = [int(ranking) for ranking in raw_votes.split('>')]
         elif pattern_match2:
             seperator_index = raw_arguments.index(' ')
             raw_poll_id = int(raw_arguments[:seperator_index])
             raw_votes = raw_arguments[seperator_index:].strip()
+            rankings = [int(ranking) for ranking in raw_votes.split('>')]
+        elif pattern_match3:
+            raw_arguments = raw_arguments.replace(':', '')
+            raw_arguments = re.sub('\s+', ' ', raw_arguments)
+            raw_arguments_arr = raw_arguments.split(' ')
+            raw_poll_id = int(raw_arguments_arr[0])
+            raw_votes = raw_arguments_arr[1:]
+            rankings = [int(ranking) for ranking in raw_votes]
         else:
             message.reply_text('input format is invalid')
             return False
 
-        rankings = [int(ranking) for ranking in raw_votes.split('>')]
-        # print('rankings =', rankings)
-
+        print('rankings =', rankings)
         if len(rankings) != len(set(rankings)):
             message.reply_text('vote rankings must be unique')
             return False
@@ -810,6 +832,8 @@ class RankedChoiceBot(object):
         ——————————————————
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
         /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
+        /vote {poll_id} {option_1} {option_2} ... {option_n} 
+
         - vote for the poll with the specified poll_id
         requires that the user is one of the registered 
         voters of the poll
