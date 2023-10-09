@@ -537,10 +537,12 @@ class RankedChoiceBot(object):
     @track_errors
     def vote_for_poll_admin(self, update, *args, **kwargs):
         """
-        telegram command format
+        telegram command formats:
         /vote_admin {username} {poll_id}: {option_1} > ... > {option_n}
-        example:
+        /vote_admin {username} {poll_id} {option_1} > ... > {option_n}
+        examples:
         /vote 3: 1 > 2 > 3
+        /vote 3 1 > 2 > 3
         """
         # vote for someone else
         message = update.message
@@ -581,10 +583,12 @@ class RankedChoiceBot(object):
     @track_errors
     def vote_for_poll(self, update, *args, **kwargs):
         """
-        telegram command format
+        telegram command formats
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n}
+        /vote {poll_id} {option_1} > {option_2} > ... > {option_n}
         example:
         /vote 3: 1 > 2 > 3
+        /vote 3 1 > 2 > 3
         """
         message = update.message
         raw_text = message.text.strip()
@@ -597,8 +601,10 @@ class RankedChoiceBot(object):
         """
         telegram command format
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n}
+        /vote {poll_id} {option_1} > {option_2} > ... > {option_n}
         example:
         /vote 3: 1 > 2 > 3
+        /vote 3 1 > 2 > 3
         """
         print('RAW_VOTE_TEXT', [raw_text, chat_username])
         if ' ' not in raw_text:
@@ -803,6 +809,7 @@ class RankedChoiceBot(object):
         /view_poll {poll_id} - shows poll details given poll_id
         ——————————————————
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
+        /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
         - vote for the poll with the specified poll_id
         requires that the user is one of the registered 
         voters of the poll
