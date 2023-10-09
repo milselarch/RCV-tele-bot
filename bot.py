@@ -659,31 +659,18 @@ class RankedChoiceBot(object):
         """
         catches input of format:
         {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
-        
-        regex breakdown:
-        ^ -> start of string
-        [0-9]+:\s* -> poll_id and colon (and optional space)
-        (\s*[0-9]+\s*>)* -> ranking number then arrow
-        \s*[0-9]+ -> final ranking number
-        $ -> end of string
-        """
-        print('RAW', raw_arguments)
-        pattern_match1 = re.match(
-            '^[0-9]+:\s*(\s*[0-9]+\s*>)*\s*[0-9]+$', raw_arguments
-        )
-        """
-        catches input of format:
         {poll_id} {choice_1} > {choice_2} > ... > {choice_n}
-        
+
         regex breakdown:
         ^ -> start of string
-        [0-9]+\s+ -> poll_id and space 
+        ^[0-9]+:*\s+ -> poll_id, optional colon, and space 
         (\s*[0-9]+\s*>)* -> ranking number then arrow
         \s*[0-9]+ -> final ranking number
         $ -> end of string        
         """
-        pattern_match2 = re.match(
-            '^[0-9]+\s+(\s*[0-9]+\s*>)*\s*[0-9]+$', raw_arguments
+        print('RAW', raw_arguments)
+        pattern_match1 = re.match(
+            '^[0-9]+:?\s+(\s*[0-9]+\s*>)*\s*[0-9]+$', raw_arguments
         )
         """
         catches input of format:
@@ -696,22 +683,17 @@ class RankedChoiceBot(object):
         ([0-9]+) -> final ranking number
         $ -> end of string        
         """
-        pattern_match3 = re.match(
-            '^([0-9]+):*\s*([0-9]+\s+)*([0-9]+)$', raw_arguments
+        pattern_match2 = re.match(
+            '^([0-9]+):?\s*([0-9]+\s+)*([0-9]+)$', raw_arguments
         )
 
         if pattern_match1:
-            raw_arguments = raw_arguments.replace(' ', '')
-            raw_poll_id, raw_votes = raw_arguments.split(':')
-            raw_poll_id = raw_poll_id.strip()
-            raw_votes = raw_votes.strip()
-            rankings = [int(ranking) for ranking in raw_votes.split('>')]
-        elif pattern_match2:
+            raw_arguments = raw_arguments.replace(':', '')
             seperator_index = raw_arguments.index(' ')
             raw_poll_id = int(raw_arguments[:seperator_index])
             raw_votes = raw_arguments[seperator_index:].strip()
             rankings = [int(ranking) for ranking in raw_votes.split('>')]
-        elif pattern_match3:
+        elif pattern_match2:
             raw_arguments = raw_arguments.replace(':', '')
             raw_arguments = re.sub('\s+', ' ', raw_arguments)
             raw_arguments_arr = raw_arguments.split(' ')
