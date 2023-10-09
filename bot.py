@@ -645,44 +645,69 @@ class RankedChoiceBot(object):
     def unpack_rankings_and_poll_id(raw_text, message):
         """
         raw_text format:
-        {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
+        {command} {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
         """
-        arguments = raw_text[raw_text.index(' '):].strip()
+        # remove starting command from raw_text
+        raw_arguments = raw_text[raw_text.index(' '):].strip()
 
         """
-        regex breakdown
+        catches input of format:
+        {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
+        
+        regex breakdown:
         ^ -> start of string
-        [0-9]+: -> poll_id and colon
-        \s*(\s*[0-9]+\s*>)* -> ranking number then arrow
+        [0-9]+:\s* -> poll_id and colon (and optional space)
+        (\s*[0-9]+\s*>)* -> ranking number then arrow
         \s*[0-9]+ -> final ranking number
         $ -> end of string
         """
-        print('RAW', arguments)
-        pattern_match = re.match(
-            '^[0-9]+:\s*(\s*[0-9]+\s*>)*\s*[0-9]+$', arguments
+        print('RAW', raw_arguments)
+        pattern_match1 = re.match(
+            '^[0-9]+:\s*(\s*[0-9]+\s*>)*\s*[0-9]+$', raw_arguments
+        )
+        """
+        catches input of format:
+        {poll_id} {choice_1} > {choice_2} > ... > {choice_n}
+        
+        regex breakdown:
+        ^ -> start of string
+        [0-9]+\s+ -> poll_id and space 
+        (\s*[0-9]+\s*>)* -> ranking number then arrow
+        \s*[0-9]+ -> final ranking number
+        $ -> end of string        """
+        pattern_match2 = re.match(
+            '^[0-9]+\s+(\s*[0-9]+\s*>)*\s*[0-9]+$', raw_arguments
         )
 
-        if not pattern_match:
+        if pattern_match1:
+            raw_arguments = raw_arguments.replace(' ', '')
+            raw_poll_id, raw_votes = raw_arguments.split(':')
+            raw_poll_id = raw_poll_id.strip()
+            raw_votes = raw_votes.strip()
+        elif pattern_match2:
+            seperator_index = raw_arguments.index(' ')
+            raw_poll_id = int(raw_arguments[:seperator_index])
+            raw_votes = raw_arguments[seperator_index:].strip()
+        else:
             message.reply_text('input format is invalid')
             return False
 
-        arguments = arguments.replace(' ', '')
-        raw_poll_id, raw_votes = arguments.split(':')
-        raw_poll_id = raw_poll_id.strip()
-        raw_votes = raw_votes.strip()
         rankings = [int(ranking) for ranking in raw_votes.split('>')]
+        # print('rankings =', rankings)
 
         if len(rankings) != len(set(rankings)):
             message.reply_text('vote rankings must be unique')
             return False
         if min(rankings) < 1:
-            message.reply_text('vote rankings must be positive non-zero numbers')
+            message.reply_text(
+                'vote rankings must be positive non-zero numbers'
+            )
             return False
 
         try:
             poll_id = int(raw_poll_id)
         except ValueError:
-            message.reply_text(f'invalid poll id: {arguments}')
+            message.reply_text(f'invalid poll id: {raw_arguments}')
             return False
 
         return poll_id, rankings
