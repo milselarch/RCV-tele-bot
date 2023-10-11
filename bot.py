@@ -57,6 +57,9 @@ class RankedChoiceBot(object):
         self.updater = None
         self.yaml_config = None
 
+        self.poll_max_options = 20
+        self.poll_option_max_length = 100
+
     def start_bot(self):
         with open(self.config_path, 'r') as config_file_obj:
             yaml_config = yaml.safe_load(config_file_obj)
@@ -181,8 +184,22 @@ class RankedChoiceBot(object):
             for poll_option in poll_options
         ]
 
-        # print('COMMAND_P2', lines)
+        if len(poll_options) > self.poll_max_options:
+            message.reply_text(textwrap.dedent(f"""
+                Poll can have at most {self.poll_max_options} options
+                {len(poll_options)} poll options passed
+            """))
+            return False
 
+        max_option_length = max([len(option) for option in poll_options])
+        if max_option_length > self.poll_option_max_length:
+            message.reply_text(textwrap.dedent(f"""
+                Poll option character limit is {self.poll_option_max_length}
+                Longest option is {max_option_length} characters long
+            """))
+            return False
+
+        # print('COMMAND_P2', lines)
         if ' ' in command_p1:
             command_p1 = command_p1[command_p1.index(' '):].strip()
         else:
