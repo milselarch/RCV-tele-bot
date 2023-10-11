@@ -3,8 +3,8 @@ import itertools
 
 from typing import List, Tuple
 
-ZERO_VOTE = 0
-NULL_VOTE = None
+ZERO_VOTE = -1
+NULL_VOTE = -2
 
 
 def ranked_choice_vote(
@@ -123,15 +123,14 @@ def ranked_choice_vote(
 
                 if next_choice == ZERO_VOTE:
                     candidate_votes_map[top_choice] -= 1
-                    vote_transfers += 1
                 elif next_choice == NULL_VOTE:
                     candidate_votes_map[top_choice] -= 1
                     effective_num_voters -= 1
-                    vote_transfers += 1
                 else:
                     candidate_votes_map[top_choice] -= 1
                     candidate_votes_map[next_choice] += 1
-                    vote_transfers += 1
+
+                vote_transfers += 1
 
         if vote_transfers == 0:
             # no voter had their candidate preference shifted
