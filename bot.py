@@ -195,7 +195,7 @@ class RankedChoiceBot(object):
         if max_option_length > self.poll_option_max_length:
             message.reply_text(textwrap.dedent(f"""
                 Poll option character limit is {self.poll_option_max_length}
-                Longest option is {max_option_length} characters long
+                Longest option passed is {max_option_length} characters long
             """))
             return False
 
