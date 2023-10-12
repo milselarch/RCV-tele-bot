@@ -18,6 +18,9 @@ poll option m
 /view_poll {poll_id} - Shows poll details given poll_id
 ——————————————————
 /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
+/vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
+/vote {poll_id} {option_1} {option_2} ... {option_n} 
+
 - Vote for the poll with the specified poll_id
 requires that the user is one of the registered 
 voters of the poll

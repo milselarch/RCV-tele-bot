@@ -66,6 +66,9 @@ class RankedChoiceBot(object):
         self.updater = None
         self.yaml_config = None
 
+        self.poll_max_options = 20
+        self.poll_option_max_length = 100
+
     def start_bot(self):
         with open(self.config_path, 'r') as config_file_obj:
             yaml_config = yaml.safe_load(config_file_obj)
@@ -204,8 +207,22 @@ class RankedChoiceBot(object):
             for poll_option in poll_options
         ]
 
-        # print('COMMAND_P2', lines)
+        if len(poll_options) > self.poll_max_options:
+            message.reply_text(textwrap.dedent(f"""
+                Poll can have at most {self.poll_max_options} options
+                {len(poll_options)} poll options passed
+            """))
+            return False
 
+        max_option_length = max([len(option) for option in poll_options])
+        if max_option_length > self.poll_option_max_length:
+            message.reply_text(textwrap.dedent(f"""
+                Poll option character limit is {self.poll_option_max_length}
+                Longest option passed is {max_option_length} characters long
+            """))
+            return False
+
+        # print('COMMAND_P2', lines)
         if ' ' in command_p1:
             command_p1 = command_p1[command_p1.index(' '):].strip()
         else:
@@ -566,10 +583,12 @@ class RankedChoiceBot(object):
     @track_errors
     def vote_for_poll_admin(self, update, *args, **kwargs):
         """
-        telegram command format
+        telegram command formats:
         /vote_admin {username} {poll_id}: {option_1} > ... > {option_n}
-        example:
+        /vote_admin {username} {poll_id} {option_1} > ... > {option_n}
+        examples:
         /vote 3: 1 > 2 > 3
+        /vote 3 1 > 2 > 3
         """
         # vote for someone else
         message = update.message
@@ -610,10 +629,12 @@ class RankedChoiceBot(object):
     @track_errors
     def vote_for_poll(self, update, *args, **kwargs):
         """
-        telegram command format
+        telegram command formats
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n}
+        /vote {poll_id} {option_1} > {option_2} > ... > {option_n}
         example:
         /vote 3: 1 > 2 > 3
+        /vote 3 1 > 2 > 3
         """
         message = update.message
         raw_text = message.text.strip()
@@ -626,8 +647,10 @@ class RankedChoiceBot(object):
         """
         telegram command format
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n}
+        /vote {poll_id} {option_1} > {option_2} > ... > {option_n}
         example:
         /vote 3: 1 > 2 > 3
+        /vote 3 1 > 2 > 3
         """
         print('RAW_VOTE_TEXT', [raw_text, chat_username])
         if ' ' not in raw_text:
@@ -674,44 +697,73 @@ class RankedChoiceBot(object):
     def unpack_rankings_and_poll_id(raw_text, message):
         """
         raw_text format:
-        {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
+        {command} {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
         """
-        arguments = raw_text[raw_text.index(' '):].strip()
+        # remove starting command from raw_text
+        raw_arguments = raw_text[raw_text.index(' '):].strip()
 
         """
-        regex breakdown
+        catches input of format:
+        {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
+        {poll_id} {choice_1} > {choice_2} > ... > {choice_n}
+
+        regex breakdown:
         ^ -> start of string
-        [0-9]+: -> poll_id and colon
-        \s*(\s*[0-9]+\s*>)* -> ranking number then arrow
+        ^[0-9]+:*\s+ -> poll_id, optional colon, and space 
+        (\s*[0-9]+\s*>)* -> ranking number then arrow
         \s*[0-9]+ -> final ranking number
-        $ -> end of string
+        $ -> end of string        
         """
-        print('RAW', arguments)
-        pattern_match = re.match(
-            '^[0-9]+:\s*(\s*[0-9]+\s*>)*\s*[0-9]+$', arguments
+        print('RAW', raw_arguments)
+        pattern_match1 = re.match(
+            '^[0-9]+:?\s+(\s*[0-9]+\s*>)*\s*[0-9]+$', raw_arguments
+        )
+        """
+        catches input of format:
+        {poll_id} {choice_1} {choice_2} ... {choice_n}
+
+        regex breakdown:
+        ^ -> start of string
+        ([0-9]+):*\s* -> poll_id, optional colon
+        ([0-9]+\s+)* -> ranking number then space
+        ([0-9]+) -> final ranking number
+        $ -> end of string        
+        """
+        pattern_match2 = re.match(
+            '^([0-9]+):?\s*([0-9]+\s+)*([0-9]+)$', raw_arguments
         )
 
-        if not pattern_match:
+        if pattern_match1:
+            raw_arguments = raw_arguments.replace(':', '')
+            seperator_index = raw_arguments.index(' ')
+            raw_poll_id = int(raw_arguments[:seperator_index])
+            raw_votes = raw_arguments[seperator_index:].strip()
+            rankings = [int(ranking) for ranking in raw_votes.split('>')]
+        elif pattern_match2:
+            raw_arguments = raw_arguments.replace(':', '')
+            raw_arguments = re.sub('\s+', ' ', raw_arguments)
+            raw_arguments_arr = raw_arguments.split(' ')
+            raw_poll_id = int(raw_arguments_arr[0])
+            raw_votes = raw_arguments_arr[1:]
+            rankings = [int(ranking) for ranking in raw_votes]
+        else:
             message.reply_text('input format is invalid')
             return False
 
-        arguments = arguments.replace(' ', '')
-        raw_poll_id, raw_votes = arguments.split(':')
-        raw_poll_id = raw_poll_id.strip()
-        raw_votes = raw_votes.strip()
-        rankings = [int(ranking) for ranking in raw_votes.split('>')]
-
+        print('rankings =', rankings)
         if len(rankings) != len(set(rankings)):
             message.reply_text('vote rankings must be unique')
             return False
         if min(rankings) < 1:
-            message.reply_text('vote rankings must be positive non-zero numbers')
+            message.reply_text(
+                'vote rankings must be positive non-zero numbers'
+            )
             return False
 
         try:
             poll_id = int(raw_poll_id)
         except ValueError:
-            message.reply_text(f'invalid poll id: {arguments}')
+            message.reply_text(f'invalid poll id: {raw_arguments}')
             return False
 
         return poll_id, rankings
@@ -807,6 +859,9 @@ class RankedChoiceBot(object):
         /view_poll {poll_id} - shows poll details given poll_id
         ——————————————————
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
+        /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
+        /vote {poll_id} {option_1} {option_2} ... {option_n} 
+
         - vote for the poll with the specified poll_id
         requires that the user is one of the registered 
         voters of the poll
