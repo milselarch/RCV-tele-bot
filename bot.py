@@ -18,7 +18,7 @@ from telegram import (
 )
 from telegram.ext import (
     Updater, CommandHandler, MessageHandler, filters,
-    ContextTypes
+    ContextTypes, CallbackContext, ApplicationBuilder
 )
 
 # Enable logging
@@ -63,25 +63,27 @@ class RankedChoiceBot(object):
         self.config_path = config_path
 
         self.bot = None
-        self.updater = None
+        self.app = None
         self.yaml_config = None
 
         self.poll_max_options = 20
         self.poll_option_max_length = 100
+        self.webhook_url = None
 
     def start_bot(self):
         with open(self.config_path, 'r') as config_file_obj:
             yaml_config = yaml.safe_load(config_file_obj)
             self.yaml_config = yaml_config
-            api_key = yaml_config['telegram']['bot_token']
+            tele_config = self.yaml_config['telegram']
+
+            api_key = tele_config['bot_token']
             self.bot = telegram.Bot(token=api_key)
+            self.webhook_url = tele_config['webhook_url']
 
-        self.updater = Updater(api_key, use_context=True)
+        self.app = ApplicationBuilder().token(api_key).build()
 
-        # Get the dispatcher to register handlers
-        dp = self.updater.dispatcher
         # on different commands - answer in Telegram
-        self.register_commands(dp, commands_mapping=self.kwargify(
+        self.register_commands(commands_mapping=self.kwargify(
             start=self.start_handler,
             user_details=self.name_id_handler,
             create_poll=self.create_poll,
@@ -101,21 +103,21 @@ class RankedChoiceBot(object):
 
         # log all errors
         dp.add_error_handler(error_logger)
-        self.updater.start_polling()
+        self.app.run_polling()
 
+    """
     @staticmethod
     @track_errors
     # Handle incoming WebAppData
     async def web_app_data(
-        update: Update, context: ContextTypes.DEFAULT_TYPE
+        update: Update, context: CallbackContext.DEFAULT_TYPE
     ) -> None:
-        """
-        Print the received data and remove the button.
-        """
+        # Print the received data and remove the button.
         # Here we use `json.loads`, since the WebApp sends the data JSON serialized string
         # (see webappbot.html)
         data = json.loads(update.effective_message.web_app_data.data)
         await update.message.reply_text()
+    """
 
     @track_errors
     def start_handler(self, update, *args):
@@ -292,7 +294,8 @@ class RankedChoiceBot(object):
 
         # create vote button for reply message
         markup_layout = [[InlineKeyboardButton(
-            text='Vote', callback_data='vote'
+            text='Vote', callback_data='vote',
+            web_app=self.webhook_url
         )]]
 
         reply_markup = InlineKeyboardMarkup(markup_layout)
