@@ -4,3 +4,4 @@ peewee==3.16.3
 PyYAML==6.0.1
 pymysql==1.1.0
 cryptography==41.0.3
+result~=0.13.1
