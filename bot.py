@@ -15,6 +15,7 @@ import ranked_choice
 from database import *
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
+from ranked_choice import SpecialVoteValues
 from typing import List, Tuple
 
 from telegram import (
@@ -751,8 +752,21 @@ class RankedChoiceBot(object):
             return vote_register_result
 
     @staticmethod
+    def parse_ranking(raw_ranking) -> int:
+        raw_ranking = raw_ranking.strip()
+
+        try:
+            special_ranking = SpecialVoteValues(raw_ranking)
+            assert special_ranking.value < 0
+            return special_ranking.value
+        except ValueError:
+            ranking = int(raw_ranking)
+            assert ranking > 0
+            return ranking
+
+    @classmethod
     def unpack_rankings_and_poll_id(
-        raw_text
+        cls, raw_text
     ) -> Result[Tuple[int, List[int]], MessageBuilder]:
         """
         raw_text format:
@@ -770,13 +784,14 @@ class RankedChoiceBot(object):
         regex breakdown:
         ^ -> start of string
         ^[0-9]+:*\s+ -> poll_id, optional colon, and space 
-        (\s*[0-9]+\s*>)* -> ranking number then arrow
+        (\s*[1-9]+0*\s*>)* -> ranking number (>0) then arrow
         \s*[0-9]+ -> final ranking number
         $ -> end of string        
         """
         print('RAW', raw_arguments)
         pattern_match1 = re.match(
-            '^[0-9]+:?\s+(\s*[0-9]+\s*>)*\s*[0-9]+$', raw_arguments
+            '^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|nil)$',
+            raw_arguments
         )
         """
         catches input of format:
@@ -785,12 +800,13 @@ class RankedChoiceBot(object):
         regex breakdown:
         ^ -> start of string
         ([0-9]+):*\s* -> poll_id, optional colon
-        ([0-9]+\s+)* -> ranking number then space
+        ([1-9]+0*\s+)* -> ranking number (>0) then space
         ([0-9]+) -> final ranking number
         $ -> end of string        
         """
         pattern_match2 = re.match(
-            '^([0-9]+):?\s*([0-9]+\s+)*([0-9]+)$', raw_arguments
+            '^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|nil)$',
+            raw_arguments
         )
 
         if pattern_match1:
@@ -798,14 +814,20 @@ class RankedChoiceBot(object):
             seperator_index = raw_arguments.index(' ')
             raw_poll_id = int(raw_arguments[:seperator_index])
             raw_votes = raw_arguments[seperator_index:].strip()
-            rankings = [int(ranking) for ranking in raw_votes.split('>')]
+            rankings = [
+                cls.parse_ranking(ranking)
+                for ranking in raw_votes.split('>')
+            ]
         elif pattern_match2:
             raw_arguments = raw_arguments.replace(':', '')
             raw_arguments = re.sub('\s+', ' ', raw_arguments)
             raw_arguments_arr = raw_arguments.split(' ')
             raw_poll_id = int(raw_arguments_arr[0])
             raw_votes = raw_arguments_arr[1:]
-            rankings = [int(ranking) for ranking in raw_votes]
+            rankings = [
+                cls.parse_ranking(ranking)
+                for ranking in raw_votes
+            ]
         else:
             error_message.add('input format is invalid')
             return Err(error_message)
