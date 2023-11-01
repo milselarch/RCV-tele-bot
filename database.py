@@ -27,7 +27,7 @@ class BaseModel(Model):
 
 
 class Polls(BaseModel):
-    id = PrimaryKeyField(constraints=[SQL("UNSIGNED")])
+    id = AutoField(primary_key=True)
     desc = TextField(default="")
     close_time = TimestampField(default=None)
     open_time = TimestampField(default=datetime.datetime.now)
@@ -36,30 +36,36 @@ class Polls(BaseModel):
 
 
 class Chats(BaseModel):
-    id = PrimaryKeyField(constraints=[SQL("UNSIGNED")])
+    id = AutoField(primary_key=True)
     poll_id = ForeignKeyField(Polls, to_field='id')
     tele_id = IntegerField()
     broadcasted = BooleanField(default=False)
 
 
 class PollVoters(BaseModel):
-    id = PrimaryKeyField(constraints=[SQL("UNSIGNED")])
+    id = AutoField(primary_key=True)
     poll_id = ForeignKeyField(Polls, to_field='id')
     username = CharField(max_length=255)
 
 
 class Options(BaseModel):
-    id = PrimaryKeyField(constraints=[SQL("UNSIGNED")])
+    id = AutoField(primary_key=True)
     poll_id = ForeignKeyField(Polls, to_field='id')
     option_name = CharField(max_length=255)
     option_number = IntegerField()
 
 
 class Votes(BaseModel):
-    id = PrimaryKeyField(constraints=[SQL("UNSIGNED")])
+    id = AutoField(primary_key=True)
     poll_id = ForeignKeyField(Polls, to_field='id')
     poll_voter_id = ForeignKeyField(PollVoters, to_field='id')
-    option_id = ForeignKeyField(Options, to_field='id')
+    # ID of the corresponding poll option for the vote
+    option_id = ForeignKeyField(Options, to_field='id', null=True)
+    # special vote value that doesn't map to any of the poll options
+    # currently the special votes are 0 and nil votes
+    special_value = IntegerField(
+        constraints=[SQL("CHECK (special_value < 0)")], null=True
+    )
     ranking = IntegerField()
 
 

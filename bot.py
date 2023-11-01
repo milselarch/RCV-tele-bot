@@ -416,6 +416,7 @@ class RankedChoiceBot(object):
         ).order_by(Options.option_number)
 
         # map poll option ids to their option numbers
+        # (option number is the position of the option in the poll)
         option_index_map = {}
         for poll_option_row in poll_option_rows:
             option_index_map[poll_option_row.id] = (
@@ -429,27 +430,52 @@ class RankedChoiceBot(object):
 
         vote_sequence_map = {}
         for vote_row in vote_rows:
+            """
+            Maps voters to their ranked vote
+            Each ranked vote is stored as a dictionary
+            mapping their vote ranking to a vote_value
+            Each vote_value is either a poll option_id 
+            (which is always a positive number), 
+            or either of the 0 or nil special votes
+            (
+            """
             voter_id = vote_row.poll_voter_id
 
             if voter_id not in vote_sequence_map:
                 vote_sequence_map[voter_id] = {}
 
-            option_id = vote_row.option_id
-            vote_sequence_map[voter_id][vote_row.ranking] = option_id
+            vote_value = vote_row.option_id
+            if vote_value is None:
+                vote_value = vote_row.special_value
+                assert vote_value < 0
+            else:
+                assert vote_value > 0
+
+            ranking_map = vote_sequence_map[voter_id]
+            ranking_map[vote_row.ranking] = vote_value
 
         ranking_message = ''
         for voter_id in vote_sequence_map:
+            # format vote sequence map into string rankings
             ranking_map = vote_sequence_map[voter_id]
             ranking_nos = sorted(ranking_map.keys())
             sorted_option_nos = [
                 ranking_map[ranking] for ranking in ranking_nos
             ]
 
-            print('SORT-NOS', sorted_option_nos)
-            ranking_message += ' > '.join([
-                str(option_index_map[option_id.id])
-                for option_id in sorted_option_nos
-            ]).strip() + '\n'
+            # print('SORT-NOS', sorted_option_nos)
+            str_rankings = []
+
+            for vote_value in sorted_option_nos:
+                if vote_value > 0:
+                    str_rankings.append(str(vote_value))
+                else:
+                    str_rankings.append(
+                        SpecialVoteValues(vote_value).to_string()
+                    )
+
+            rankings_str = ' > '.join(str_rankings).strip()
+            ranking_message += rankings_str + '\n'
 
         ranking_message = ranking_message.strip()
         await message.reply_text(f'votes recorded:\n{ranking_message}')
@@ -737,7 +763,7 @@ class RankedChoiceBot(object):
 
         vote_register_result = self.register_vote(
             poll_id, poll_voter_id=poll_voter_id,
-            rankings=rankings, message=message
+            rankings=rankings
         )
 
         if vote_register_result.is_ok():
@@ -756,7 +782,7 @@ class RankedChoiceBot(object):
         raw_ranking = raw_ranking.strip()
 
         try:
-            special_ranking = SpecialVoteValues(raw_ranking)
+            special_ranking = SpecialVoteValues.from_string(raw_ranking)
             assert special_ranking.value < 0
             return special_ranking.value
         except ValueError:
@@ -836,7 +862,9 @@ class RankedChoiceBot(object):
         if len(rankings) != len(set(rankings)):
             error_message.add('vote rankings must be unique')
             return Err(error_message)
-        if min(rankings) < 1:
+
+        non_last_rankings = rankings[:-1]
+        if (len(non_last_rankings) > 0) and (min(non_last_rankings) < 1):
             error_message.add(
                 'vote rankings must be positive non-zero numbers'
             )
@@ -851,7 +879,7 @@ class RankedChoiceBot(object):
         return Ok((poll_id, rankings))
 
     def register_vote(
-        self, poll_id, poll_voter_id, rankings, message=None
+        self, poll_id, poll_voter_id, rankings
     ) -> Result[bool, MessageBuilder]:
         """
         :param poll_id:
@@ -867,20 +895,32 @@ class RankedChoiceBot(object):
 
         poll_votes = []
         for ranking, choice in enumerate(rankings):
-            try:
-                # specified vote choice is not in the list
-                # of available choices
-                poll_option_row = poll_option_rows[choice - 1]
-            except IndexError:
-                if message is not None:
+            poll_option_id, special_vote_val = None, None
+
+            if choice > 0:
+                try:
+                    # specified vote choice is not in the list
+                    # of available choices
+                    poll_option_row = poll_option_rows[choice - 1]
+                except IndexError:
                     error_message.add(f'invalid vote number: {choice}')
                     return Err(error_message)
 
-                return Ok(False)
+                poll_option_id = poll_option_row.id
+            else:
+                # vote is a special value (0 or nil vote)
+                # which gets translated to a negative integer here
+                try:
+                    SpecialVoteValues(choice)
+                except ValueError:
+                    error_message.add(f'invalid special vote: {choice}')
+                    return Err(error_message)
+
+                special_vote_val = choice
 
             poll_vote = self.kwargify(
                 poll_id=poll_id, poll_voter_id=poll_voter_id,
-                option_id=poll_option_row.id,
+                option_id=poll_option_id, special_value=special_vote_val,
                 ranking=ranking
             )
 
@@ -915,7 +955,11 @@ class RankedChoiceBot(object):
             if voter not in vote_map:
                 vote_map[voter] = []
 
-            vote_map[voter].append(vote.option_id)
+            vote_value = vote.option_id
+            if vote_value is None:
+                vote_value = vote.special_value
+
+            vote_map[voter].append(vote_value)
 
         vote_flat_map = list(vote_map.values())
         print('FLAT_MAP', vote_flat_map)

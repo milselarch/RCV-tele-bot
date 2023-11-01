@@ -34,7 +34,11 @@ class SpecialVoteValues(IntEnum):
     @classmethod
     def from_string(cls, str_value: str):
         inv_map = cls.get_inv_map()
-        return cls(inv_map[str_value])
+
+        if str_value in inv_map:
+            return cls(inv_map[str_value])
+        else:
+            raise ValueError(f'BAD ENUM VALUE: {str_value}')
 
     def to_string(self) -> str:
         string_map = self.get_string_map()
