@@ -309,7 +309,7 @@ class RankedChoiceBot(object):
         )]]
 
         reply_markup = InlineKeyboardMarkup(markup_layout)
-        await message.reply_text(poll_message,  reply_markup=reply_markup)
+        await message.reply_text(poll_message)
 
     @staticmethod
     def generate_poll_info(
@@ -989,6 +989,10 @@ class RankedChoiceBot(object):
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
         /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
         /vote {poll_id} {option_1} {option_2} ... {option_n} 
+
+        Last option can also accept 2 special values, 0 and nil:
+            > Vote 0 if you want to vote for none of the options in the poll
+            > Vote nil if you want to remove yourself from the poll 
 
         - vote for the poll with the specified poll_id
         requires that the user is one of the registered 
