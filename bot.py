@@ -437,18 +437,19 @@ class RankedChoiceBot(object):
             Each vote_value is either a poll option_id 
             (which is always a positive number), 
             or either of the 0 or nil special votes
-            (
+            (which are represented as negative numbers -1 and -2)
             """
             voter_id = vote_row.poll_voter_id
 
             if voter_id not in vote_sequence_map:
                 vote_sequence_map[voter_id] = {}
 
-            vote_value = vote_row.option_id
-            if vote_value is None:
+            option_row = vote_row.option_id
+            if option_row is None:
                 vote_value = vote_row.special_value
                 assert vote_value < 0
             else:
+                vote_value = option_row.id
                 assert vote_value > 0
 
             ranking_map = vote_sequence_map[voter_id]
