@@ -6,7 +6,7 @@ __pycache__/
 # C extensions
 *.so
 
-.idea/**
+../.idea/vcs.xml
 .idea/*
 .idea
 
@@ -124,7 +124,7 @@ celerybeat.pid
 *.sage.py
 # config files
 *.yml
-!*.example.yml
+!config.example.yml
 
 # Environments
 .env

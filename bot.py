@@ -1,21 +1,17 @@
-import asyncio
 import logging
-import types
 
-import database
 import telegram
 import traceback
 import textwrap
-import yaml
-import json
 import re
 
-import ranked_choice
+import RankedChoice
 
 from database import *
 from result import Ok, Err, Result
+from RankedVote import RankedVote
 from MessageBuilder import MessageBuilder
-from ranked_choice import SpecialVoteValues
+from RankedChoice import SpecialVotes
 from typing import List, Tuple
 
 from telegram import (
@@ -472,7 +468,7 @@ class RankedChoiceBot(object):
                     str_rankings.append(str(vote_value))
                 else:
                     str_rankings.append(
-                        SpecialVoteValues(vote_value).to_string()
+                        SpecialVotes(vote_value).to_string()
                     )
 
             rankings_str = ' > '.join(str_rankings).strip()
@@ -783,7 +779,7 @@ class RankedChoiceBot(object):
         raw_ranking = raw_ranking.strip()
 
         try:
-            special_ranking = SpecialVoteValues.from_string(raw_ranking)
+            special_ranking = SpecialVotes.from_string(raw_ranking)
             assert special_ranking.value < 0
             return special_ranking.value
         except ValueError:
@@ -912,7 +908,7 @@ class RankedChoiceBot(object):
                 # vote is a special value (0 or nil vote)
                 # which gets translated to a negative integer here
                 try:
-                    SpecialVoteValues(choice)
+                    SpecialVotes(choice)
                 except ValueError:
                     error_message.add(f'invalid special vote: {choice}')
                     return Err(error_message)
@@ -945,27 +941,32 @@ class RankedChoiceBot(object):
             PollVoters.poll_id == poll_id
         ).count()
 
+        # get votes for the poll sorted from
+        # the low ranking option (most favored)
+        # to the highest ranking option (least favored)
         votes = Votes.select().where(
             Votes.poll_id == poll_id
-        ).order_by(Votes.ranking.desc())
+        ).order_by(Votes.ranking.asc())
 
         vote_map = {}
         for vote in votes:
             voter = vote.poll_voter_id
-
             if voter not in vote_map:
-                vote_map[voter] = []
+                vote_map[voter] = RankedVote()
 
-            vote_value = vote.option_id
-            if vote_value is None:
+            option_row = vote.option_id
+            if option_row is None:
                 vote_value = vote.special_value
+            else:
+                vote_value = option_row.id
 
-            vote_map[voter].append(vote_value)
+            # print('VOTE_VAL', vote_value, int(vote_value))
+            vote_map[voter].add_next_choice(vote_value)
 
         vote_flat_map = list(vote_map.values())
         print('FLAT_MAP', vote_flat_map)
 
-        winning_option_id = ranked_choice.ranked_choice_vote(
+        winning_option_id = RankedChoice.ranked_choice_vote(
             vote_flat_map, num_voters=num_poll_voters
         )
         return winning_option_id

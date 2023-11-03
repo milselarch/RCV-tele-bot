@@ -1,55 +1,20 @@
 import copy
 import itertools
 
-from typing import List, Tuple, Dict
-from enum import Enum, IntEnum, unique
-
-
-class SpecialVoteValues(IntEnum):
-    ZERO_VOTE = -1
-    NULL_VOTE = -2
-
-    __string_map__ = {ZERO_VOTE: '0', NULL_VOTE: 'nil'}
-    __inv_string_map__ = None
-
-    @classmethod
-    def get_string_map(cls) -> Dict:
-        return getattr(cls, '__string_map__')
-
-    @classmethod
-    def get_inv_map(cls):
-        if cls.__inv_string_map__ is not None:
-            return cls.__inv_string_map__
-
-        inv_map = {}
-        string_map = cls.get_string_map()
-
-        for enum_val in string_map:
-            string_val = string_map[enum_val]
-            inv_map[string_val] = cls(enum_val)
-
-        cls.__inv_string_map__ = inv_map
-        return inv_map
-
-    @classmethod
-    def from_string(cls, str_value: str):
-        inv_map = cls.get_inv_map()
-
-        if str_value in inv_map:
-            return cls(inv_map[str_value])
-        else:
-            raise ValueError(f'BAD ENUM VALUE: {str_value}')
-
-    def to_string(self) -> str:
-        string_map = self.get_string_map()
-        return string_map[self]
+from SpecialVotes import SpecialVotes
+from RankedVote import RankedVote
+from typing import List, Dict
 
 
 def ranked_choice_vote(
-    ranked_votes: List[List[int]], num_voters: int = None
+    ranked_votes: List[RankedVote], num_voters: int = None,
+    verbose: bool = False
 ):
     """
     :param num_voters:
+    total number of voters in the poll
+    :param verbose:
+    prints intermediate results, diagnostic information if True
     :param ranked_votes:
     a list of ranked votes
     each ranked vote is a list of candidate preferences
@@ -61,6 +26,7 @@ def ranked_choice_vote(
     NULL_VOTE (None) - remove the voter from the poll
     :return:
     """
+    log = print if verbose else lambda *args, **kwargs: None
     ranked_votes = copy.deepcopy(ranked_votes)
 
     if num_voters is None:
@@ -69,13 +35,18 @@ def ranked_choice_vote(
     # number of voters who have not voided their votes
     effective_num_voters = num_voters
     assert num_voters >= len(ranked_votes)
-    unique_candidates = set(itertools.chain(*ranked_votes))
+
+    unique_candidates = set()
+    for ranked_vote in ranked_votes:
+        ranked_vote_choices = ranked_vote.raw_choices()
+        for candidate in ranked_vote_choices:
+            unique_candidates.add(candidate)
 
     # remove 0 and None votes from unique candidates
-    if SpecialVoteValues.ZERO_VOTE in unique_candidates:
-        unique_candidates.remove(SpecialVoteValues.ZERO_VOTE)
-    if SpecialVoteValues.NULL_VOTE in unique_candidates:
-        unique_candidates.remove(SpecialVoteValues.NULL_VOTE)
+    if SpecialVotes.ZERO_VOTE in unique_candidates:
+        unique_candidates.remove(SpecialVotes.ZERO_VOTE)
+    if SpecialVotes.NULL_VOTE in unique_candidates:
+        unique_candidates.remove(SpecialVotes.NULL_VOTE)
 
     candidate_votes_map = {
         candidate: 0 for candidate in unique_candidates
@@ -85,12 +56,12 @@ def ranked_choice_vote(
     # count how many votes each candidate got
     # using the first-choice votes of each voter
     for ranked_vote in ranked_votes:
-        top_choice = ranked_vote[-1]
+        top_choice = ranked_vote.top_choice
 
-        if top_choice == SpecialVoteValues.ZERO_VOTE:
+        if top_choice == SpecialVotes.ZERO_VOTE:
             # 0 means voter has chosen to vote for no one
             pass
-        elif top_choice == SpecialVoteValues.NULL_VOTE:
+        elif top_choice == SpecialVotes.NULL_VOTE:
             # None means the voter has chosen to remove
             # himself from the poll
             effective_num_voters -= 1
@@ -102,9 +73,9 @@ def ranked_choice_vote(
         winner = None
         rounds += 1
 
-        print(f'ROUND {rounds}')
-        print('ranked-votes', ranked_votes)
-        print('vote-map', candidate_votes_map)
+        log(f'ROUND {rounds}')
+        log('ranked-votes', ranked_votes)
+        log('vote-map', candidate_votes_map)
 
         candidate_vote_counts = list(candidate_votes_map.values())
         candidate_vote_counts = [
@@ -132,7 +103,7 @@ def ranked_choice_vote(
                 winner = candidate
                 break
 
-        print('dropping candidates', weakest_candidates)
+        log('dropping candidates', weakest_candidates)
         if winner is not None:
             break
 
@@ -140,28 +111,28 @@ def ranked_choice_vote(
         # vote transfer to next choice for worst performing candidate(s)
         for ranked_vote in ranked_votes:
             # print('RANKED-VOTE', ranked_vote, vote_transfers)
-            if len(ranked_vote) == 1:
-                # voter has no 2nd choice preference
+            if not ranked_vote.has_next_choice():
+                # voter has no next choice preference
                 # so cannot do vote transfer
                 # print('SKIP_VOTE')
                 continue
 
             # get active top choice candidate
             # for the current ranked choice vote
-            top_choice = ranked_vote[-1]
+            top_choice = ranked_vote.top_choice
             assert top_choice in candidate_votes_map
 
             if top_choice in weakest_candidates:
                 # remove the top candidate from the current
                 # ranked choice vote if aforementioned candidate
                 # is the weakest candidate
-                ranked_vote.pop()
+                ranked_vote.transfer_to_next_choice()
                 # get next choice that the voter wants
-                next_choice = ranked_vote[-1]
+                next_choice = ranked_vote.top_choice
 
-                if next_choice == SpecialVoteValues.ZERO_VOTE:
+                if next_choice == SpecialVotes.ZERO_VOTE:
                     candidate_votes_map[top_choice] -= 1
-                elif next_choice == SpecialVoteValues.NULL_VOTE:
+                elif next_choice == SpecialVotes.NULL_VOTE:
                     candidate_votes_map[top_choice] -= 1
                     effective_num_voters -= 1
                 else:
@@ -176,14 +147,20 @@ def ranked_choice_vote(
             # print('0 VOTE TRANSFERS')
             break
 
-    print(f'winner = {winner}')
+    log(f'winner = {winner}')
     return winner
 
 
 if __name__ == '__main__':
-    print(ranked_choice_vote([
-        [4, 3, 2, 1],
-        [3, 2, 4],
-        [3, 1],
-        [4, 2, 3]
-    ]))
+    poll_result = ranked_choice_vote([
+        RankedVote([1, 2, 3, 4]),
+        RankedVote([1, 2, 3]),
+        RankedVote([3]),
+        RankedVote([3, 2, 4]),
+        RankedVote([4, 1])
+    ])
+
+    if poll_result == 1:
+        print(f"Test passed: Winner is {poll_result}")
+    else:
+        print(f"Test failed: Expected 1, but got {poll_result}")

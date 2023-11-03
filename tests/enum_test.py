@@ -1,0 +1,44 @@
+import unittest
+import ParentImport
+
+from SpecialVotes import SpecialVotes as SpecV
+
+
+class TestSpecialVotes(unittest.TestCase):
+    """
+    Unittests for SpecialVotes IntEnum implementation
+    """
+    def test_enum_values(self):
+        # Test the enum values are correct
+        self.assertEqual(SpecV.ZERO_VOTE, -1)
+        self.assertEqual(SpecV.NULL_VOTE, -2)
+
+    def test_to_string(self):
+        # Test the to_string method
+        self.assertEqual(SpecV.ZERO_VOTE.to_string(), '0')
+        self.assertEqual(SpecV.NULL_VOTE.to_string(), 'nil')
+
+    def test_from_string(self):
+        # Test the from_string method
+        self.assertEqual(SpecV.from_string('0'), SpecV.ZERO_VOTE)
+        self.assertEqual(SpecV.from_string('nil'), SpecV.NULL_VOTE)
+        with self.assertRaises(ValueError):
+            SpecV.from_string('invalid')
+
+    def test_is_valid(self):
+        # Test the is_valid static method
+        self.assertTrue(SpecV.is_valid(-1))
+        self.assertTrue(SpecV.is_valid(-2))
+        self.assertFalse(SpecV.is_valid(999))  # Some invalid value
+
+    def test_string_maps(self):
+        # Test if string maps are correctly set
+        self.assertEqual(
+            SpecV.get_string_map(),
+            {SpecV.ZERO_VOTE: '0', SpecV.NULL_VOTE: 'nil'}
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()
+
