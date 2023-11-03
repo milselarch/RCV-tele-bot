@@ -4,7 +4,7 @@ Created using Python3.10, the python-telegram-bot bot library, and the peewee SQ
 
 ### Commands
 1) `/start` - start bot
-2) `/user_details` - Shows your username and user id   
+2) `/user_details` - Shows your username and user id
 3) `/create_poll ...` - Creates a new poll
    ```
    /create_poll @user_1 @user_2 ... @user_n:  
@@ -14,7 +14,6 @@ Created using Python3.10, the python-telegram-bot bot library, and the peewee SQ
    ...
    poll option m
    ```
-
 4) `/view_poll {poll_id}` - Shows poll details given `poll_id`
 5) `/vote ...` - Vote for the poll with the specified `poll_id`
    ```
@@ -22,14 +21,13 @@ Created using Python3.10, the python-telegram-bot bot library, and the peewee SQ
    /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
    /vote {poll_id} {option_1} {option_2} ... {option_n} 
    ```
-
    requires that the user is one of the registered 
-   voters of the poll  
+   voters of the poll
 6) `/poll_results {poll_id}` - Returns poll results if the poll has been closed
 7) `/has_voted {poll_id}` - Tells you if you've voted for the poll with the 
 specified poll_id
 8) `/close_poll {poll_id}` - Close the poll with the specified poll_id.   
-note that only the poll's creator is allowed 
+note that only the poll's creator is allowed
 to issue this command to close the poll
 9) `/view_votes {poll_id}` - View all the votes entered for the poll 
 with the specified poll_id. This can only be done after the poll 
@@ -38,7 +36,7 @@ has been closed first
 11) `/help` - view commands available to the bot
 
 Commands for testing and debugging purposes: 
-1) `/vote_admin ...` - Casts a vote on behalf of the specified user 
+1) `/vote_admin ...` - Casts a vote on behalf of the specified user  
    ```
    /vote_admin @{username} {poll_id}: {option_1} > {option_2} > ... > {option_n}
    ```
