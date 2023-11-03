@@ -50,6 +50,7 @@ class RankedVote(object):
     def transfer_to_next_choice(self):
         assert self.has_next_choice()
         self.index += 1
+        return self.top_choice
 
     def has_next_choice(self):
         return self.index < len(self.choices) - 1
