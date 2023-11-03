@@ -19,10 +19,19 @@ Created using Python3.10, the python-telegram-bot bot library, and the peewee SQ
    ```
    /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
    /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
-   /vote {poll_id} {option_1} {option_2} ... {option_n} 
+   /vote {poll_id} {option_1} {option_2} ... {option_n}
    ```
    requires that the user is one of the registered 
-   voters of the poll
+   voters of the poll  
+   The last option of the ranked vote can also accept 2 special values, 0 and nil:
+   - Vote `0` to abstain from voting for any option in the poll   
+     (In this scenario, no vote will be given to any of the candidates,
+     but the voter will still be counted towards the total number of 
+     voters needed to achieve a majority in the polling result calculation)
+   - Vote `nil` to effectively exclude yourself from the poll  
+     (In this scenario, no vote will be given to any of the candidates, 
+     and the voter will no longer be counted towards the total number of 
+     voters needed to achieve a majority in the polling result calculation)
 6) `/poll_results {poll_id}` - Returns poll results if the poll has been closed
 7) `/has_voted {poll_id}` - Tells you if you've voted for the poll with the 
 specified poll_id
