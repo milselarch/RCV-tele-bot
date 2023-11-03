@@ -31,7 +31,7 @@ class RankedVote(object):
         if isinstance(choice, SpecialVotes):
             choice = choice.value
 
-        if type(choice) != int:
+        if type(choice) is not int:
             raise ValueError(f'INVALID VOTE TYPE: {choice}')
 
         assert (
