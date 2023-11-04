@@ -82,8 +82,11 @@ def ranked_choice_vote(
             votes for votes in candidate_vote_counts if votes > 0
         ]
 
-        lowest_votes = min(candidate_vote_counts)
-        highest_votes = max(candidate_vote_counts)
+        if len(candidate_vote_counts) == 0:
+            lowest_votes, highest_votes = 0, 0
+        else:
+            lowest_votes = min(candidate_vote_counts)
+            highest_votes = max(candidate_vote_counts)
 
         if len(candidate_vote_counts) == 2:
             # if there are two 1st choice candidates have the exact
@@ -144,7 +147,7 @@ def ranked_choice_vote(
         if vote_transfers == 0:
             # no voter had their candidate preference shifted
             # so there isn't a winner overall
-            # print('0 VOTE TRANSFERS')
+            log('0 VOTE TRANSFERS')
             break
 
     log(f'winner = {winner}')

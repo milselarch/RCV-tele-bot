@@ -63,6 +63,21 @@ class TestRankedChoiceVote(unittest.TestCase):
             "Candidate 1's vote should not count, no one should win"
         )
 
+    def test_zero_nil_votes_only(self):
+        # Test that having only zero and nil votes ends with no one winning,
+        # and also that there are no errors in computing the poll result
+        votes = [
+            RankedVote([SpecialVotes.ZERO_VOTE]),
+            RankedVote([SpecialVotes.ZERO_VOTE]),
+            RankedVote([SpecialVotes.ZERO_VOTE]),
+            RankedVote([SpecialVotes.NULL_VOTE])
+        ]
+        result = ranked_choice_vote(votes, verbose=False)
+        self.assertEqual(
+            result, None,
+            "No one should win if all votes were 0 or nil"
+        )
+
     def test_null_vote_end(self):
         # Test that a null vote ends with someone winning
         votes = [
