@@ -15,7 +15,8 @@ from RankedChoice import SpecialVotes
 from typing import List, Tuple
 
 from telegram import (
-    InlineKeyboardButton, InlineKeyboardMarkup, Update
+    InlineKeyboardButton, InlineKeyboardMarkup, Update,
+    WebAppInfo
 )
 from telegram.ext import (
     CommandHandler, ApplicationBuilder
@@ -301,11 +302,11 @@ class RankedChoiceBot(object):
         # create vote button for reply message
         markup_layout = [[InlineKeyboardButton(
             text='Vote', callback_data='vote',
-            web_app=self.webhook_url
+            web_app=WebAppInfo(url=self.webhook_url)
         )]]
 
         reply_markup = InlineKeyboardMarkup(markup_layout)
-        await message.reply_text(poll_message)
+        await message.reply_text(poll_message, reply_markup=reply_markup)
 
     @staticmethod
     def generate_poll_info(

@@ -15,6 +15,13 @@ const Content = () => {
 };
 
 function App() {
+  const showPopup = useShowPopup();
+
+  const handleClick = () =>
+    showPopup({
+      message: 'Hello, I am popup',
+    });
+
   return (
     <div className="App">
       <header className="App-header">
@@ -31,6 +38,8 @@ function App() {
         >
           Learn React
         </a>
+
+        <MainButton text="SHOW POPUP" onClick={handleClick} />;
       </header>
     </div>
   );
