@@ -19,7 +19,7 @@ from telegram import (
     WebAppInfo
 )
 from telegram.ext import (
-    CommandHandler, ApplicationBuilder
+    CommandHandler, ApplicationBuilder, ContextTypes
 )
 
 # Enable logging
@@ -95,6 +95,7 @@ class RankedChoiceBot(object):
             close_poll=self.close_poll,
             view_votes=self.view_votes,
             view_voters=self.view_poll_voters,
+            vote_webapp=self.vote_webapp,
             help=self.show_help,
 
             vote_admin=self.vote_for_poll_admin,
@@ -121,9 +122,18 @@ class RankedChoiceBot(object):
     """
 
     @track_errors
-    async def start_handler(self, update, *args):
+    async def start_handler(self, update):
         # Send a message when the command /start is issued.
         await update.message.reply_text('Bot started')
+
+    @track_errors
+    async def vote_webapp(self, update, context: ContextTypes.DEFAULT_TYPE):
+        # triggers voting webapp using /vote_webapp
+        poll_id_parameter = context.args[0] if context.args else None
+        if not poll_id_parameter:
+            await update.message.reply_text("no poll id sent")
+        else:
+            await update.message.reply_text(f"POLL_ID = {poll_id_parameter}")
 
     @track_errors
     async def name_id_handler(self, update, *args):
@@ -174,7 +184,7 @@ class RankedChoiceBot(object):
             await message.reply_text("you haven't voted")
 
     @track_errors
-    async def create_poll(self, update, *args, **kwargs):
+    async def create_poll(self, update, context: ContextTypes.DEFAULT_TYPE):
         """
         example:
         ---------------------------
@@ -294,38 +304,39 @@ class RankedChoiceBot(object):
             PollVoters.insert_many(poll_user_rows).execute()
             chat.save()
 
+        bot_username = context.bot.username
         poll_message = self.generate_poll_info(
             new_poll_id, poll_question, poll_options,
+            bot_username=bot_username,
             num_voters=len(poll_users)
         )
 
-        # create vote button for reply message
-        markup_layout = [[InlineKeyboardButton(
-            text='Vote', callback_data='vote',
-            web_app=WebAppInfo(url=self.webhook_url)
-        )]]
-
-        reply_markup = InlineKeyboardMarkup(markup_layout)
-        await message.reply_text(poll_message, reply_markup=reply_markup)
+        await message.reply_text(poll_message)
 
     @staticmethod
     def generate_poll_info(
-        poll_id, poll_question, poll_options,
+        poll_id, poll_question, poll_options, bot_username,
         num_votes=0, num_voters=0
     ):
         numbered_poll_options = [
-            f'{k + 1}. {poll_option}' for k, poll_option
+            f'{k + 1}. {poll_option}' for k, poll_option,
             in enumerate(poll_options)
         ]
 
-        return textwrap.dedent(f"""
-            POLL ID: {poll_id}
-            POLL QUESTION: 
-            {poll_question}
-            ——————————————————
-            {num_votes} / {num_voters} voted
-            ——————————————————
-        """) + f'\n'.join(numbered_poll_options)
+        deep_link_url = f'https://t.me/{bot_username}?vote_webapp={poll_id}'
+
+        return (
+            textwrap.dedent(f"""
+                POLL ID: {poll_id}
+                POLL QUESTION: 
+                {poll_question}
+                ——————————————————
+                {num_votes} / {num_voters} voted
+                ——————————————————
+            """) + f'\n'.join(numbered_poll_options) +
+            f'\n——————————————————'
+            f'\nvote on the webapp at {deep_link_url}'
+        )
 
     @staticmethod
     def get_poll_voter(poll_id, chat_username):
