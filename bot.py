@@ -16,7 +16,7 @@ from typing import List, Tuple
 
 from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup, Update,
-    WebAppInfo
+    WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 )
 from telegram.ext import (
     CommandHandler, ApplicationBuilder
@@ -301,8 +301,7 @@ class RankedChoiceBot(object):
 
         # create vote button for reply message
         markup_layout = [[InlineKeyboardButton(
-            text='Vote', callback_data='vote',
-            web_app=WebAppInfo(url=self.webhook_url)
+            text='Vote', web_app=WebAppInfo(url="https://google.com")
         )]]
 
         reply_markup = InlineKeyboardMarkup(markup_layout)
