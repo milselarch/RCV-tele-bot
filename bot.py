@@ -95,7 +95,6 @@ class RankedChoiceBot(object):
             close_poll=self.close_poll,
             view_votes=self.view_votes,
             view_voters=self.view_poll_voters,
-            vote_webapp=self.vote_webapp,
             help=self.show_help,
 
             vote_admin=self.vote_for_poll_admin,
@@ -115,25 +114,59 @@ class RankedChoiceBot(object):
         update: Update, context: CallbackContext.DEFAULT_TYPE
     ) -> None:
         # Print the received data and remove the button.
-        # Here we use `json.loads`, since the WebApp sends the data JSON serialized string
+        # Here we use `json.loads`, since the WebApp sends 
+        # the data JSON serialized string
         # (see webappbot.html)
         data = json.loads(update.effective_message.web_app_data.data)
         await update.message.reply_text()
     """
 
     @track_errors
-    async def start_handler(self, update):
+    async def start_handler(
+        self, update, context: ContextTypes.DEFAULT_TYPE
+    ):
         # Send a message when the command /start is issued.
-        await update.message.reply_text('Bot started')
+        message = update.message
+        chat_type = update.message.chat.type
+        args = context.args
+        # print('CONTEXT_ARGS', args)
 
-    @track_errors
-    async def vote_webapp(self, update, context: ContextTypes.DEFAULT_TYPE):
-        # triggers voting webapp using /vote_webapp
-        poll_id_parameter = context.args[0] if context.args else None
-        if not poll_id_parameter:
-            await update.message.reply_text("no poll id sent")
+        if len(args) == 0:
+            await update.message.reply_text('Bot started')
+            return True
+        if chat_type != 'private':
+            await update.message.reply_text('Can only vote with /start in DM')
+            return False
+
+        pattern_match = re.match('poll_id=([0-9]+)', args[0])
+
+        if not pattern_match:
+            await update.message.reply_text(f'Invalid params: {args}')
+            return False
+
+        poll_id = int(pattern_match.group(1))
+        user = update.message.from_user
+        chat_username = user['username']
+
+        view_poll_result = self._view_poll(
+            poll_id=poll_id, chat_username=chat_username,
+            bot_username=context.bot.username
+        )
+
+        if view_poll_result.is_ok():
+            poll_message = view_poll_result.ok()
         else:
-            await update.message.reply_text(f"POLL_ID = {poll_id_parameter}")
+            error_message = view_poll_result.err()
+            await error_message.call(message.reply_text)
+            return False
+
+        # create vote button for reply message
+        markup_layout = [[InlineKeyboardButton(
+            text='Vote', web_app=WebAppInfo(url=self.webhook_url)
+        )]]
+
+        reply_markup = InlineKeyboardMarkup(markup_layout)
+        await message.reply_text(poll_message, reply_markup=reply_markup)
 
     @track_errors
     async def name_id_handler(self, update, *args):
@@ -293,7 +326,6 @@ class RankedChoiceBot(object):
             ))
 
         group_id = update.message.chat_id
-        print('GROUND_ID', group_id)
         chat = Chats.create(
             poll_id=new_poll_id, tele_id=group_id,
             broadcasted=False
@@ -311,13 +343,20 @@ class RankedChoiceBot(object):
             num_voters=len(poll_users)
         )
 
-        # create vote button for reply message
-        markup_layout = [[InlineKeyboardButton(
-            text='Vote', web_app=WebAppInfo(url="https://google.com")
-        )]]
+        chat_type = update.message.chat.type
+        reply_markup = None
 
-        reply_markup = InlineKeyboardMarkup(markup_layout)
-        await message.reply_text(poll_message, reply_markup=reply_markup)
+        if chat_type == 'private':
+            # create vote button for reply message
+            markup_layout = [[InlineKeyboardButton(
+                text='Vote', web_app=WebAppInfo(url=self.webhook_url)
+            )]]
+
+            reply_markup = InlineKeyboardMarkup(markup_layout)
+
+        await message.reply_text(
+            poll_message, reply_markup=reply_markup
+        )
 
     @staticmethod
     def generate_poll_info(
@@ -329,7 +368,8 @@ class RankedChoiceBot(object):
             in enumerate(poll_options)
         ]
 
-        deep_link_url = f'https://t.me/{bot_username}?vote_webapp={poll_id}'
+        args = f'poll_id={poll_id}'
+        deep_link_url = f'https://t.me/{bot_username}?start={args}'
 
         return (
             textwrap.dedent(f"""
@@ -527,30 +567,16 @@ class RankedChoiceBot(object):
 
         await message.reply_text(f'poll {poll_id} has been unclosed')
 
-    @track_errors
-    async def view_poll(self, update, *args, **kwargs):
-        """
-        example:
-        /view_poll 3
-        """
-        message = update.message
-        user = update.message.from_user
-        chat_username = user['username']
-
-        extract_result = self.extract_poll_id(update)
-
-        if extract_result.is_ok():
-            poll_id = extract_result.ok()
-        else:
-            error_message = extract_result.err()
-            await error_message.call(message.reply_text)
-            return False
+    def _view_poll(
+        self, poll_id: int, chat_username: str, bot_username: str
+    ) -> Result[str, MessageBuilder]:
+        error_message = MessageBuilder()
 
         poll = Polls.select().where(Polls.id == poll_id).get()
         has_poll_access = self.has_poll_access(poll_id, chat_username)
         if not has_poll_access:
-            await message.reply_text(f'You have no access to poll {poll_id}')
-            return False
+            error_message.add(f'You have no access to poll {poll_id}')
+            return Err(error_message)
 
         poll_option_rows = Options.select().where(
             Options.poll_id == poll.id
@@ -572,12 +598,45 @@ class RankedChoiceBot(object):
 
         poll_message = self.generate_poll_info(
             poll_id, poll_question, poll_options,
+            bot_username=bot_username,
             num_voters=num_poll_voters,
             num_votes=num_poll_votes
         )
 
-        # print('POLL_OPTIONS', poll_options, poll.id)
-        await message.reply_text(poll_message)
+        return Ok(poll_message)
+
+    @track_errors
+    async def view_poll(self, update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        example:
+        /view_poll 3
+        """
+        message = update.message
+        user = update.message.from_user
+        chat_username = user['username']
+
+        extract_result = self.extract_poll_id(update)
+
+        if extract_result.is_ok():
+            poll_id = extract_result.ok()
+        else:
+            error_message = extract_result.err()
+            await error_message.call(message.reply_text)
+            return False
+
+        view_poll_result = self._view_poll(
+            poll_id=poll_id, chat_username=chat_username,
+            bot_username=context.bot.username
+        )
+
+        if view_poll_result.is_ok():
+            poll_message = view_poll_result.ok()
+            await message.reply_text(poll_message)
+            return True
+        else:
+            error_message = view_poll_result.err()
+            await error_message.call(message.reply_text)
+            return False
 
     async def vote_and_report(self, raw_text, chat_username, message):
         vote_result = self._vote_for_poll(
