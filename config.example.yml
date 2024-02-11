@@ -1,3 +1,9 @@
+settings:
+  # whether bot is deployed in production mode
+  production: True
+  # auth bypass token for accessing webapp server
+  # from when the website loaded directly on the browser
+  auth_bypass_token: YOUR_AUTH_BYPASS_TOKEN
 database:
   name: ranked_choice_voting
   user: rcv_user

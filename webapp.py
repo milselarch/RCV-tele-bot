@@ -1,20 +1,20 @@
-import yaml
 import hashlib
 import hmac
 import json
 import argparse
 import uvicorn
-from starlette.responses import JSONResponse
+import dataclasses
 
 from database import *
 from load_config import *
-from urllib.parse import parse_qs
+from BaseLoader import BaseLoader
 from fastapi import FastAPI, APIRouter, UploadFile, HTTPException
 from pydantic import BaseModel, field_validator, validator
 from typing import List, Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, unquote, urlencode, quote_plus
+from starlette.responses import JSONResponse
 
 TELEGRAM_DATA_HEADER = 'telegram-data'
 
@@ -29,7 +29,35 @@ class VoteRequestPayload(BaseModel):
 
 
 class VerifyMiddleware(BaseHTTPMiddleware):
+    @staticmethod
+    async def dev_dispatch(request: Request, call_next):
+        """
+        convert url GET params into telegram-data request
+        header before passing request along to handler in dev mode
+        """
+        query_params = dict(request.query_params)
+        encoded_params = "&".join(
+            f"{key}={quote_plus(value)}"
+            for key, value in query_params.items()
+        )
+
+        custom_headers = dict(request.headers)
+        custom_headers['telegram-data'] = encoded_params.encode('utf-8')
+        request.scope['headers'] = [
+            (k.encode('utf-8'), v) for k, v in custom_headers.items()
+        ]
+
+        response = await call_next(request)
+        return response
+
     async def dispatch(self, request: Request, call_next):
+        query_params = dict(request.query_params)
+
+        if not PRODUCTION_MODE and 'auth_bypass' in query_params:
+            return await self.dev_dispatch(
+                request=request, call_next=call_next
+            )
+
         telegram_data_header = request.headers.get(TELEGRAM_DATA_HEADER)
         if not telegram_data_header:
             content = {'detail': 'Missing telegram-data header'}
@@ -76,7 +104,7 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         return None
 
 
-class VotingWebApp(object):
+class VotingWebApp(BaseLoader):
     def __init__(self):
         self.router = APIRouter()
         self.router.add_api_route(
@@ -91,11 +119,20 @@ class VotingWebApp(object):
         parsed_query = parse_qs(telegram_data_header)
         user_json_str = unquote(parsed_query['user'][0])
         user_info = json.loads(user_json_str)
-        username = user_info['username']
 
+        chat_username = user_info['username']
+        read_poll_result = self.read_poll_info(
+            poll_id=payload.poll_id, chat_username=chat_username
+        )
 
+        if read_poll_result.is_err():
+            error = read_poll_result.err()
+            return JSONResponse(
+                status_code=500, content={'error': error.get_content()}
+            )
 
-        raise NotImplementedError
+        poll_info = read_poll_result.ok()
+        return dataclasses.asdict(poll_info)
 
     def cast_vote(self, payload: VoteRequestPayload):
         raise NotImplementedError
