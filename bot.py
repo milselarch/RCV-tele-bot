@@ -9,6 +9,8 @@ import re
 import RankedChoice
 
 from database import *
+from load_config import *
+from BaseLoader import BaseLoader
 from result import Ok, Err, Result
 from RankedVote import RankedVote
 from MessageBuilder import MessageBuilder
@@ -60,29 +62,20 @@ def track_errors(func):
     return caller
 
 
-class RankedChoiceBot(object):
+class RankedChoiceBot(BaseLoader):
     def __init__(self, config_path='config.yml'):
         self.config_path = config_path
-
         self.bot = None
         self.app = None
-        self.yaml_config = None
 
         self.poll_max_options = 20
         self.poll_option_max_length = 100
         self.webhook_url = None
 
     def start_bot(self):
-        with open(self.config_path, 'r') as config_file_obj:
-            yaml_config = yaml.safe_load(config_file_obj)
-            self.yaml_config = yaml_config
-            tele_config = self.yaml_config['telegram']
-
-            api_key = tele_config['bot_token']
-            self.bot = telegram.Bot(token=api_key)
-            self.webhook_url = tele_config['webhook_url']
-
-        self.app = ApplicationBuilder().token(api_key).build()
+        self.bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+        self.webhook_url = TELE_CONFIG['webhook_url']
+        self.app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
         # on different commands - answer in Telegram
         self.register_commands(self.app, commands_mapping=self.kwargify(
@@ -359,80 +352,6 @@ class RankedChoiceBot(object):
             poll_message, reply_markup=reply_markup
         )
 
-    @staticmethod
-    def generate_poll_info(
-        poll_id, poll_question, poll_options, bot_username,
-        num_votes=0, num_voters=0
-    ):
-        numbered_poll_options = [
-            f'{k + 1}. {poll_option}' for k, poll_option,
-            in enumerate(poll_options)
-        ]
-
-        args = f'poll_id={poll_id}'
-        stamp = int(time.time())
-        deep_link_url = (
-            f'https://t.me/{bot_username}?start={args}&stamp={stamp}'
-        )
-
-        return (
-            textwrap.dedent(f"""
-                POLL ID: {poll_id}
-                POLL QUESTION: 
-                {poll_question}
-                ——————————————————
-                {num_votes} / {num_voters} voted
-                ——————————————————
-            """) + f'\n'.join(numbered_poll_options) +
-            f'\n——————————————————'
-            f'\nvote on the webapp at {deep_link_url}'
-        )
-
-    @staticmethod
-    def get_poll_voter(poll_id, chat_username):
-        # check if voter is part of the poll
-        voter = PollVoters.select().join(
-            Polls, on=(Polls.id == PollVoters.poll_id)
-        ).where(
-            (Polls.id == poll_id) &
-            (PollVoters.username == chat_username)
-        )
-
-        return voter
-
-    @classmethod
-    def is_poll_voter(cls, *args, **kwargs):
-        return cls.get_poll_voter(*args, **kwargs).count() > 0
-
-    @staticmethod
-    def extract_poll_id(update) -> Result[int, MessageBuilder]:
-        message = update.message
-        raw_text = message.text.strip()
-        error_message = MessageBuilder()
-
-        if ' ' not in raw_text:
-            error_message.add('no poll id specified')
-            return Err(error_message)
-
-        raw_poll_id = raw_text[raw_text.index(' '):].strip()
-
-        try:
-            poll_id = int(raw_poll_id)
-        except ValueError:
-            error_message.add(f'invalid poll id: {raw_poll_id}')
-            return Err(error_message)
-
-        return Ok(poll_id)
-
-    def has_poll_access(self, poll_id, chat_username):
-        try:
-            poll = Polls.select().where(Polls.id == poll_id).get()
-        except Polls.DoesNotExist:
-            return False
-
-        voter_in_poll = self.is_poll_voter(poll_id, chat_username)
-        return voter_in_poll or (poll.creator == chat_username)
-
     @track_errors
     async def view_votes(self, update, *args, **kwargs):
         message = update.message
@@ -552,7 +471,7 @@ class RankedChoiceBot(object):
         user = update.message.from_user
         user_id = user['id']
 
-        if user_id != self.yaml_config['telegram']['sudo_id']:
+        if user_id != YAML_CONFIG['telegram']['sudo_id']:
             await message.reply_text('ACCESS DENIED')
             return False
 
@@ -570,44 +489,6 @@ class RankedChoiceBot(object):
         ).execute()
 
         await message.reply_text(f'poll {poll_id} has been unclosed')
-
-    def _view_poll(
-        self, poll_id: int, chat_username: str, bot_username: str
-    ) -> Result[str, MessageBuilder]:
-        error_message = MessageBuilder()
-
-        poll = Polls.select().where(Polls.id == poll_id).get()
-        has_poll_access = self.has_poll_access(poll_id, chat_username)
-        if not has_poll_access:
-            error_message.add(f'You have no access to poll {poll_id}')
-            return Err(error_message)
-
-        poll_option_rows = Options.select().where(
-            Options.poll_id == poll.id
-        ).order_by(Options.option_number)
-
-        poll_options = [
-            poll_option.option_name for poll_option in poll_option_rows
-        ]
-
-        poll_question = poll.desc
-        num_poll_voters = PollVoters.select().where(
-            PollVoters.poll_id == poll_id
-        ).count()
-        # count number of first choice votes in poll
-        num_poll_votes = Votes.select().where(
-            (Votes.poll_id == poll_id) &
-            (Votes.ranking == 0)
-        ).count()
-
-        poll_message = self.generate_poll_info(
-            poll_id, poll_question, poll_options,
-            bot_username=bot_username,
-            num_voters=num_poll_voters,
-            num_votes=num_poll_votes
-        )
-
-        return Ok(poll_message)
 
     @track_errors
     async def view_poll(self, update, context: ContextTypes.DEFAULT_TYPE):
@@ -746,7 +627,7 @@ class RankedChoiceBot(object):
         user = update.message.from_user
         user_id = user['id']
 
-        if user_id != self.yaml_config['telegram']['sudo_id']:
+        if user_id != YAML_CONFIG['telegram']['sudo_id']:
             await message.reply_text('ACCESS DENIED')
             return False
 

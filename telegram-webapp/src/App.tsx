@@ -44,6 +44,11 @@ function App() {
   const has_credential = initData !== '';
   // console.log('INIT_DATA', [initData]);
 
+  if (has_credential) {
+    axios.defaults.headers.common['telegram-data'] = initData;
+
+  }
+
   return (
     <div className="App">
       <header className="App-header">
