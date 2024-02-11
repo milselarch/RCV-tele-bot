@@ -1,4 +1,5 @@
 import logging
+import time
 
 import telegram
 import traceback
@@ -369,7 +370,10 @@ class RankedChoiceBot(object):
         ]
 
         args = f'poll_id={poll_id}'
-        deep_link_url = f'https://t.me/{bot_username}?start={args}'
+        stamp = int(time.time())
+        deep_link_url = (
+            f'https://t.me/{bot_username}?start={args}&stamp={stamp}'
+        )
 
         return (
             textwrap.dedent(f"""

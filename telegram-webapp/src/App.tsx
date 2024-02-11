@@ -1,15 +1,14 @@
-import React from 'react';
-
 import axios from 'axios';
 import { ReactComponent as Logo } from './logo.svg';
 import './App.css';
 
-import { MainButton, useShowPopup } from '@vkruglikov/react-telegram-web-app';
+// import { MainButton, useShowPopup } from '@vkruglikov/react-telegram-web-app';
 
 axios.defaults.headers.common['Telegram-Data'] = (
     window?.Telegram?.WebApp?.initData
 );
 
+/*
 const Content = () => {
   const showPopup = useShowPopup();
 
@@ -20,36 +19,36 @@ const Content = () => {
 
   return <MainButton text="SHOW POPUP" onClick={handleClick} />;
 };
+*/
+
+const Content = ({authenticated}: {authenticated: boolean}) => {
+  console.log('AUTHENTICATED', authenticated)
+
+  if (!authenticated) {
+    return <p> User not authenticated </p>
+  } else {
+    return <p> authenticated </p>
+  }
+}
+
 
 function App() {
+  /*
   const showPopup = useShowPopup();
-
-  const handleClick = () =>
-    showPopup({
-      message: 'Hello, I am popup',
-    });
+  const handleClick = () => showPopup({
+    message: 'Hello, I am popup',
+  });
+  */
 
   const { initData } = window?.Telegram?.WebApp ?? {};
+  const has_credential = initData !== '';
+  // console.log('INIT_DATA', [initData]);
 
   return (
     <div className="App">
       <header className="App-header">
         <Logo className="App-logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-          <code> --- {[initData]} --- </code>
-        </p>
-        <Content/>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-
-        <MainButton text="SHOW POPUP" onClick={handleClick} />;
+        <Content authenticated={has_credential}/>
       </header>
     </div>
   );
