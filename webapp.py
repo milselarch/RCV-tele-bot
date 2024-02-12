@@ -7,6 +7,8 @@ import time
 import uvicorn
 import dataclasses
 
+from starlette.middleware.cors import CORSMiddleware
+
 from database import *
 from load_config import *
 from BaseLoader import BaseLoader
@@ -35,9 +37,15 @@ class VerifyMiddleware(BaseHTTPMiddleware):
     AUTH_TOKEN_EXPIRY = 24 * 3600
 
     async def dispatch(self, request: Request, call_next):
+        if request.method == "OPTIONS":
+            # skip authentication checks for preflight CORS requests
+            return await call_next(request)
+
+        # print('PRE-REQUEST', request.headers)
         telegram_data_header = request.headers.get(TELEGRAM_DATA_HEADER)
 
         if not telegram_data_header:
+            # print('HEADERS_NO_THERE', request.headers)
             content = {'detail': 'Missing telegram-data header'}
             return JSONResponse(content=content, status_code=401)
 
@@ -70,13 +78,23 @@ class VerifyMiddleware(BaseHTTPMiddleware):
     @classmethod
     def parse_auth_string(cls, init_data: str):
         params = parse_qs(init_data)
+        # print('AUTH_PARAMS', params)
         signature = params.get('hash', [None])[0]
         if signature is None:
             return None
 
-        del params['hash']
-        sorted_params = sorted(params.items())
-        data_check_string = "\n".join(f"{k}={v[0]}" for k, v in sorted_params)
+        auth_param_items = []
+        for item in params.items():
+            param_key, param_value = item
+            if param_key not in ('auth_date', 'query_id', 'user'):
+                continue
+
+            auth_param_items.append(item)
+
+        auth_param_items = sorted(auth_param_items)
+        data_check_string = "\n".join(
+            f"{k}={v[0]}" for k, v in auth_param_items
+        )
         return data_check_string, signature, params
 
     @classmethod
@@ -84,13 +102,19 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         cls, init_data: str, bot_token: str
     ) -> Optional[dict]:
         parse_result = cls.parse_auth_string(init_data)
+        # print('PARSE_RESULT', parse_result)
         data_check_string, signature, params = parse_result
-        secret_key = hashlib.sha256(bot_token.encode()).digest()
+
+        secret_key = hmac.new(
+            key=b"WebAppData", msg=bot_token.encode(),
+            digestmod=hashlib.sha256
+        ).digest()
 
         validation_hash = hmac.new(
             secret_key, data_check_string.encode(), hashlib.sha256
         ).hexdigest()
 
+        # print('VALIDATION_HASH', validation_hash, signature)
         if validation_hash == signature:
             return {k: v[0] for k, v in params.items()}
 
@@ -134,6 +158,17 @@ class VotingWebApp(BaseLoader):
 app = FastAPI()
 predictor = VotingWebApp()
 app.include_router(predictor.router)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://rcvdev.milselarch.com",
+        "https://rcvprod.milselarch.com",
+        "http://localhost:5001"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(VerifyMiddleware)
 
 
