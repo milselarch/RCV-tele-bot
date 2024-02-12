@@ -51,11 +51,12 @@ const fetch_poll = async (poll_id: number) => {
 }
 
 const Content = ({
-   authenticated
+   authenticated, poll
 }: {
-  authenticated: boolean
+  authenticated: boolean, poll: Poll | null
 }) => {
   console.log('AUTHENTICATED', authenticated)
+  
 
   if (!authenticated) {
     return <p> User not authenticated </p>
@@ -80,7 +81,8 @@ function App() {
 
   const [headers, set_headers] = useState('');
   const [has_credential, set_has_credential] = useState(false);
-  const [poll, set_poll] = useState(null)
+  const [poll, set_poll] = useState<Poll>(null)
+  const [vote_rankings, set_vote_rankings] = useState([])
 
   useEffect(() => {
     const headers = load_tele_headers()
@@ -118,7 +120,7 @@ function App() {
     <div className="App">
       <header className="App-header">
         <ReactLoading type="spin" height={'10rem'} width={'10rem'}/>
-        <Content authenticated={has_credential}/>
+        <Content authenticated={has_credential} poll={poll}/>
       </header>
     </div>
   );
