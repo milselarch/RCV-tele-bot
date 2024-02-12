@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import json
 import argparse
+import time
+
 import uvicorn
 import dataclasses
 
@@ -29,39 +31,30 @@ class VoteRequestPayload(BaseModel):
 
 
 class VerifyMiddleware(BaseHTTPMiddleware):
-    @staticmethod
-    async def dev_dispatch(request: Request, call_next):
-        """
-        convert url GET params into telegram-data request
-        header before passing request along to handler in dev mode
-        """
-        query_params = dict(request.query_params)
-        encoded_params = "&".join(
-            f"{key}={quote_plus(value)}"
-            for key, value in query_params.items()
-        )
-
-        custom_headers = dict(request.headers)
-        custom_headers['telegram-data'] = encoded_params.encode('utf-8')
-        request.scope['headers'] = [
-            (k.encode('utf-8'), v) for k, v in custom_headers.items()
-        ]
-
-        response = await call_next(request)
-        return response
+    # how many seconds auth tokens are valid for
+    AUTH_TOKEN_EXPIRY = 24 * 3600
 
     async def dispatch(self, request: Request, call_next):
-        query_params = dict(request.query_params)
-
-        if not PRODUCTION_MODE and 'auth_bypass' in query_params:
-            return await self.dev_dispatch(
-                request=request, call_next=call_next
-            )
-
         telegram_data_header = request.headers.get(TELEGRAM_DATA_HEADER)
+
         if not telegram_data_header:
             content = {'detail': 'Missing telegram-data header'}
             return JSONResponse(content=content, status_code=401)
+
+        if PRODUCTION_MODE:
+            # only allow auth headers that were created in the last 24 hours
+            parsed_query = parse_qs(telegram_data_header)
+
+            try:
+                auth_stamp = int(parsed_query.get('auth_date')[0])
+            except (KeyError, ValueError) as e:
+                content = {'detail': 'Auth date not found or invalid'}
+                return JSONResponse(content=content, status_code=400)
+
+            current_stamp = time.time()
+            if abs(current_stamp - auth_stamp) > self.AUTH_TOKEN_EXPIRY:
+                content = {'detail': 'Auth token expired'}
+                return JSONResponse(content=content, status_code=401)
 
         user_params = self.check_authorization(
             telegram_data_header, TELEGRAM_BOT_TOKEN
