@@ -152,7 +152,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--port', type=int,
-        default=8080, help='web app port'
+        default=5010, help='web app port'
     )
 
     parse_args = parser.parse_args()

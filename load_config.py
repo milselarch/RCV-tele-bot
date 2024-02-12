@@ -8,5 +8,7 @@ with open(CONFIG_PATH, 'r') as config_file_obj:
 TELE_CONFIG = YAML_CONFIG['telegram']
 TELEGRAM_BOT_TOKEN = TELE_CONFIG['bot_token']
 SETTINGS = YAML_CONFIG['settings']
-PRODUCTION_MODE = ast.literal_eval(SETTINGS['production'])
+PRODUCTION_MODE = bool(SETTINGS['production'])
 AUTH_BYPASS_TOKEN = SETTINGS['auth_bypass_token']
+
+print('PRODUCTION_MODE =', PRODUCTION_MODE)
