@@ -1,6 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 // import {ReactComponent as Logo} from './logo.svg';
 import './App.scss';
+import { MainButton } from '@vkruglikov/react-telegram-web-app';
 import {useEffect, useState} from "react";
 import {BACKEND_URL} from "./config";
 import ReactLoading from 'react-loading';
@@ -72,7 +73,7 @@ function App() {
   const [headers, set_headers] = useState('');
   const [has_credential, set_has_credential] = useState(false);
   const [poll, set_poll] = useState<Poll | null>(null)
-  const [vote_rankings, set_vote_rankings] = useState<Array<number>>([0])
+  const [vote_rankings, set_vote_rankings] = useState<Array<number>>([])
   const [loading, set_loading] = useState(false)
   const [status, set_status] = useState<string>(null)
 
@@ -103,6 +104,7 @@ function App() {
 
     const poll_id = Number.parseInt(query_params['poll_id'])
     if (poll_id === null) {
+      set_status('NO POLL ID SPECIFIED')
       throw 'NO POLL ID SPECIFIED'
     }
 
@@ -138,6 +140,11 @@ function App() {
     });
   }, [])
 
+  const handleSubmit = () => {
+    console.log('SUBMITTED');
+    window.Telegram.WebApp.sendData(JSON.stringify(vote_rankings));
+  }
+
   return (
     <div className="App">
       <header className="App-header">
@@ -148,6 +155,7 @@ function App() {
           on_add_option={add_ranking}
           on_remove_option={remove_ranking}
         />
+        <MainButton onClick={handleSubmit}/>
       </header>
     </div>
   )

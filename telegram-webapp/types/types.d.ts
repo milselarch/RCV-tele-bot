@@ -9,6 +9,7 @@ interface Window {
   Telegram: {
     WebApp: {
       initData: string | null;
+      sendData: (json_data: string) => void;
     };
   };
 }

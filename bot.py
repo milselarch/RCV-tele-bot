@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 
@@ -14,6 +15,7 @@ from BaseLoader import BaseLoader
 from result import Ok, Err, Result
 from RankedVote import RankedVote
 from MessageBuilder import MessageBuilder
+from requests.models import PreparedRequest
 from RankedChoice import SpecialVotes
 from typing import List, Tuple
 
@@ -22,7 +24,7 @@ from telegram import (
     WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 )
 from telegram.ext import (
-    CommandHandler, ApplicationBuilder, ContextTypes
+    CommandHandler, ApplicationBuilder, ContextTypes, CallbackContext, MessageHandler, filters
 )
 
 # Enable logging
@@ -76,6 +78,9 @@ class RankedChoiceBot(BaseLoader):
         self.bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
         self.webhook_url = TELE_CONFIG['webhook_url']
         self.app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+        self.app.add_handler(MessageHandler(
+            filters.StatusUpdate.WEB_APP_DATA, self.web_app_data
+        ))
 
         # on different commands - answer in Telegram
         self.register_commands(self.app, commands_mapping=self.kwargify(
@@ -98,7 +103,7 @@ class RankedChoiceBot(BaseLoader):
 
         # log all errors
         # dp.add_error_handler(error_logger)
-        self.app.run_polling(allowed_updates=[Update.MESSAGE])
+        self.app.run_polling()
 
     """
     @staticmethod
@@ -154,13 +159,31 @@ class RankedChoiceBot(BaseLoader):
             await error_message.call(message.reply_text)
             return False
 
-        # create vote button for reply message
-        markup_layout = [[InlineKeyboardButton(
-            text='Vote', web_app=WebAppInfo(url=self.webhook_url)
-        )]]
-
+        markup_layout = self.create_vote_markup(poll_id=poll_id)
         reply_markup = InlineKeyboardMarkup(markup_layout)
         await message.reply_text(poll_message, reply_markup=reply_markup)
+
+    async def web_app_data(self, update: Update, context: CallbackContext):
+        data = json.loads(update.message.web_app_data.data)
+        await update.message.reply_text(f"Your data was: {data}")
+
+    def generate_poll_url(self, poll_id: int) -> str:
+        req = PreparedRequest()
+        params = {'poll_id': str(poll_id)}
+        req.prepare_url(self.webhook_url, params)
+        return req.url
+
+    def create_vote_markup(
+        self, poll_id: int
+    ) -> List[List[InlineKeyboardButton]]:
+        poll_url = self.generate_poll_url(poll_id=poll_id)
+        logger.info(f'POLL_URL = {poll_url}')
+        # create vote button for reply message
+        markup_layout = [[InlineKeyboardButton(
+            text='Vote', web_app=WebAppInfo(url=poll_url)
+        )]]
+
+        return markup_layout
 
     @track_errors
     async def name_id_handler(self, update, *args):
@@ -303,7 +326,8 @@ class RankedChoiceBot(BaseLoader):
         )
 
         new_poll.save()
-        new_poll_id = new_poll.id
+        new_poll_id: int = new_poll.id
+        assert isinstance(new_poll_id, int)
         poll_option_rows = []
         poll_user_rows = []
 
@@ -342,10 +366,7 @@ class RankedChoiceBot(BaseLoader):
 
         if chat_type == 'private':
             # create vote button for reply message
-            markup_layout = [[InlineKeyboardButton(
-                text='Vote', web_app=WebAppInfo(url=self.webhook_url)
-            )]]
-
+            markup_layout = self.create_vote_markup(poll_id=new_poll_id)
             reply_markup = InlineKeyboardMarkup(markup_layout)
 
         await message.reply_text(
