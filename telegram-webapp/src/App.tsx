@@ -1,16 +1,11 @@
 import axios, { AxiosResponse } from 'axios';
-import {ReactComponent as Logo} from './logo.svg';
-import './App.css';
-import * as url from "url";
+// import {ReactComponent as Logo} from './logo.svg';
+import './App.scss';
 import {useEffect, useState} from "react";
 import {BACKEND_URL} from "./config";
 import ReactLoading from 'react-loading';
 
 // import { MainButton, useShowPopup } from '@vkruglikov/react-telegram-web-app';
-
-axios.defaults.headers.common['Telegram-Data'] = (
-    window?.Telegram?.WebApp?.initData
-);
 
 const load_tele_headers = () => {
   let headers = window?.Telegram?.WebApp?.initData ?? '';
@@ -31,22 +26,14 @@ const fetch_poll = async (poll_id: number) => {
   console.log('ENDPOINT', endpoint, poll_id)
 
   const request = axios.post(
-      endpoint, {'poll_id': poll_id},
-      {headers: {'Content-Type': 'application/json'}}
+    endpoint, {'poll_id': poll_id}, {
+      headers: {'Content-Type': 'application/json'},
+      timeout: 5000 // time out after 5 seconds
+    }
   )
 
-  let response: AxiosResponse<any, any>;
-
-  try {
-    response = await request
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      console.error('Axios error:', error.toJSON());
-    } else {
-      console.error('Unexpected error:', error);
-    }
-  }
-
+  const response = await request
+  console.log('ENDPOINT RESPONSE', response)
   return response
 }
 
@@ -56,12 +43,28 @@ const Content = ({
   authenticated: boolean, poll: Poll | null
 }) => {
   console.log('AUTHENTICATED', authenticated)
-  
+
+  let render_items: Array<JSX.Element> = []
+  if (poll !== null) {
+    console.log('POLL', poll)
+    render_items = poll.poll_options.map((option, index) => (
+      <div key={index} className="poll-option">
+        <p className="index">{index+1}.</p>
+        <p className="option">{option}</p>
+      </div>
+    ));
+  }
 
   if (!authenticated) {
-    return <p> User not authenticated </p>
+    return null
   } else {
-    return <p> authenticated </p>
+    return (
+      <div className="poll-container">
+        <div className="poll-options">
+          {render_items.map((render_item) => ( render_item ))}
+        </div>
+      </div>
+    )
   }
 }
 
@@ -69,6 +72,27 @@ interface Poll {
   poll_options: Array<string>,
   poll_title: string,
   poll_id: number
+}
+
+const StatusLoader = ({
+  loading, status
+}: {loading: boolean, status: string | null}) => {
+  if (status === null) {
+    return null
+  } else if (loading) {
+    return (
+      <div>
+        <p>{status}</p>
+        <ReactLoading type="spin" height={'10rem'} width={'10rem'}/>
+      </div>
+    )
+  } else {
+    return (
+      <div>
+        <p>{status}</p>
+      </div>
+    )
+  }
 }
 
 function App() {
@@ -81,8 +105,10 @@ function App() {
 
   const [headers, set_headers] = useState('');
   const [has_credential, set_has_credential] = useState(false);
-  const [poll, set_poll] = useState<Poll>(null)
-  const [vote_rankings, set_vote_rankings] = useState([])
+  const [poll, set_poll] = useState<Poll | null>(null)
+  const [vote_rankings, set_vote_rankings] = useState<Array<number>>([])
+  const [loading, set_loading] = useState(false)
+  const [status, set_status] = useState<string>(null)
 
   useEffect(() => {
     const headers = load_tele_headers()
@@ -104,26 +130,43 @@ function App() {
       throw 'NO POLL ID SPECIFIED'
     }
 
-    fetch_poll(poll_id).then((response) => {
-        console.log('AXIOS RESPONSE', response)
-        const poll: Poll = {
-          'poll_options': response['poll_options'],
-          'poll_title': response['poll_question'],
-          'poll_id': poll_id
-        }
+    set_loading(true)
+    set_status('loading')
 
-        set_poll(poll);
+    fetch_poll(poll_id).then((response) => {
+      if (response === null) { throw 'REQUEST FAILED' }
+      console.log('AXIOS RESPONSE', response)
+      const poll: Poll = response.data;
+      set_status(null)
+      set_poll(poll)
+
+    }).catch((error) => {
+      if (axios.isAxiosError(error)) {
+        console.error('Axios error:', error.toJSON());
+        if (error.code === "ECONNABORTED") {
+          set_status('Connection timed out')
+        } else {
+          set_status('Server request failed')
+        }
+      } else {
+        console.error('Unexpected error:', error);
+        set_status('Unexpected error')
+      }
+
+    }).finally(() => {
+      set_loading(false)
     });
   }, [])
 
   return (
     <div className="App">
       <header className="App-header">
-        <ReactLoading type="spin" height={'10rem'} width={'10rem'}/>
+        <StatusLoader loading={loading} status={status} />
         <Content authenticated={has_credential} poll={poll}/>
       </header>
     </div>
-  );
+  )
 }
 
 export default App;
+

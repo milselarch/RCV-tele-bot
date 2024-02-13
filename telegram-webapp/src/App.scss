@@ -36,3 +36,23 @@
     transform: rotate(360deg);
   }
 }
+
+div.poll-container {
+  width: 60%;
+  display: flex;
+  justify-content: center;
+
+  & > div.poll-options {
+    display: flex;
+    flex-direction: column;
+
+    & > div.poll-option {
+      display: flex;
+      & > p.index {
+        width: 3rem;
+        text-align: right;
+        margin-right: 1rem;
+      }
+    }
+  }
+}
