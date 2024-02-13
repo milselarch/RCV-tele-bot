@@ -24,6 +24,22 @@
   color: white;
 }
 
+.no-select {
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* Internet Explorer/Edge */
+  user-select: none;         /* Non-prefixed version, currently supported by Chrome, Opera, and Edge */
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url(fonts/open_sans.ttf) format('ttf');
+}
+@font-face {
+  font-family: 'Ubuntu Mono';
+  src: url(fonts/ubuntu_mono.ttf) format('ttf');
+}
+
 .App-link {
   color: #61dafb;
 }
@@ -37,22 +53,100 @@
   }
 }
 
+p {
+  margin: 1rem;
+}
+
+span.mono {
+  font-family: 'Ubuntu Mono', sans-serif;
+}
+
+* {
+  font-family: 'Open Sans', sans-serif;
+}
+
+$header-height: 6rem;
+
 div.poll-container {
-  width: 60%;
+  max-width: 60%;
   display: flex;
   justify-content: center;
+  flex-direction: column;
 
-  & > div.poll-options {
+  & div.title {
+    margin: auto;
+    position: fixed;
     display: flex;
-    flex-direction: column;
+    height: $header-height;
+    font-size: 2rem;
+    width: 100%;
 
-    & > div.poll-option {
+    top: 0;
+    left: 0;
+    background: linear-gradient(
+        to top, rgba(40, 44, 52, 0.7), rgba(40, 44, 52, 1)
+    );
+
+    & > p {
+      width: fit-content;
+      margin: auto;
+    }
+  }
+
+  & > div.poll-selector {
+    & > div.buffer {
+      height: $header-height;
+      width: 100%;
+    }
+
+    & > div.poll-options {
       display: flex;
-      & > p.index {
-        width: 3rem;
-        text-align: right;
-        margin-right: 1rem;
+      flex-direction: column;
+      margin-left: auto;
+      margin-right: auto;
+      overflow-y: auto;
+      gap: 0.5rem;
+
+      & > div.poll-option {
+        display: flex;
+        border: 2px solid #555;
+
+        &:active {
+          border-color: white;
+        }
+
+        &:first-child {
+          border-top-left-radius: 0.5rem;
+          border-top-right-radius: 0.5rem;
+        }
+
+        &:last-child {
+          border-bottom-left-radius: 0.5rem;
+          border-bottom-right-radius: 0.5rem;
+        }
+
+        & > p {
+          color: #DDD;
+          font-family: 'Ubuntu Mono', sans-serif;
+          font-size: 1.25rem;
+
+          &.index {
+            width: 3rem;
+            text-align: right;
+            margin-right: 1rem;
+          }
+
+          &.option {
+            margin-right: 2rem;
+          }
+        }
       }
     }
+  }
+
+  & > span.mono {
+    margin-top: 2rem;
+    font-size: 1.25rem;
+    margin-bottom: 2rem;
   }
 }

@@ -5,6 +5,9 @@ import {useEffect, useState} from "react";
 import {BACKEND_URL} from "./config";
 import ReactLoading from 'react-loading';
 
+import {PollOptionsList} from "./PollOptionsList";
+import {Poll} from "./poll";
+
 // import { MainButton, useShowPopup } from '@vkruglikov/react-telegram-web-app';
 
 const load_tele_headers = () => {
@@ -37,46 +40,9 @@ const fetch_poll = async (poll_id: number) => {
   return response
 }
 
-const Content = ({
-   authenticated, poll
-}: {
-  authenticated: boolean, poll: Poll | null
-}) => {
-  console.log('AUTHENTICATED', authenticated)
-
-  let render_items: Array<JSX.Element> = []
-  if (poll !== null) {
-    console.log('POLL', poll)
-    render_items = poll.poll_options.map((option, index) => (
-      <div key={index} className="poll-option">
-        <p className="index">{index+1}.</p>
-        <p className="option">{option}</p>
-      </div>
-    ));
-  }
-
-  if (!authenticated) {
-    return null
-  } else {
-    return (
-      <div className="poll-container">
-        <div className="poll-options">
-          {render_items.map((render_item) => ( render_item ))}
-        </div>
-      </div>
-    )
-  }
-}
-
-interface Poll {
-  poll_options: Array<string>,
-  poll_title: string,
-  poll_id: number
-}
-
 const StatusLoader = ({
   loading, status
-}: {loading: boolean, status: string | null}) => {
+}: { loading: boolean, status: string | null }) => {
   if (status === null) {
     return null
   } else if (loading) {
@@ -106,9 +72,19 @@ function App() {
   const [headers, set_headers] = useState('');
   const [has_credential, set_has_credential] = useState(false);
   const [poll, set_poll] = useState<Poll | null>(null)
-  const [vote_rankings, set_vote_rankings] = useState<Array<number>>([])
+  const [vote_rankings, set_vote_rankings] = useState<Array<number>>([0])
   const [loading, set_loading] = useState(false)
   const [status, set_status] = useState<string>(null)
+
+  const remove_ranking = (option_index: number) => {
+    set_vote_rankings(vote_rankings.filter(
+      rank => rank !== option_index
+    ))
+  }
+
+  const add_ranking = (option_index: number) => {
+    set_vote_rankings([...vote_rankings, option_index])
+  }
 
   useEffect(() => {
     const headers = load_tele_headers()
@@ -142,11 +118,15 @@ function App() {
 
     }).catch((error) => {
       if (axios.isAxiosError(error)) {
-        console.error('Axios error:', error.toJSON());
+        console.error('Axios error:', error);
+        const status_code = error.response?.status;
+
         if (error.code === "ECONNABORTED") {
           set_status('Connection timed out')
+        } else if (status_code === 401) {
+          set_status('Unauthorized')
         } else {
-          set_status('Server request failed')
+          set_status('Server request failed ;--;')
         }
       } else {
         console.error('Unexpected error:', error);
@@ -162,7 +142,12 @@ function App() {
     <div className="App">
       <header className="App-header">
         <StatusLoader loading={loading} status={status} />
-        <Content authenticated={has_credential} poll={poll}/>
+        <PollOptionsList
+          authenticated={has_credential} poll={poll}
+          vote_rankings={vote_rankings}
+          on_add_option={add_ranking}
+          on_remove_option={remove_ranking}
+        />
       </header>
     </div>
   )
