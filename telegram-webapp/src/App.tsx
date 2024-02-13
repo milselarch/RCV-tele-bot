@@ -1,7 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 // import {ReactComponent as Logo} from './logo.svg';
 import './App.scss';
-import { MainButton } from '@vkruglikov/react-telegram-web-app';
+// import { MainButton } from '@vkruglikov/react-telegram-web-app';
 import {useEffect, useState} from "react";
 import {BACKEND_URL} from "./config";
 import ReactLoading from 'react-loading';
@@ -88,6 +88,14 @@ function App() {
   }
 
   useEffect(() => {
+    const mainButton = window.Telegram.WebApp.MainButton;
+    mainButton.text = "Enter Vote";
+    mainButton.enable();
+    mainButton.show();
+    mainButton.onClick(() => {
+      window.Telegram.WebApp.sendData(JSON.stringify(vote_rankings));
+    })
+
     const headers = load_tele_headers()
     const has_credential = headers !== ''
 
@@ -109,7 +117,7 @@ function App() {
     }
 
     set_loading(true)
-    set_status('loading')
+    set_status('loading (V0.1.1)')
 
     fetch_poll(poll_id).then((response) => {
       if (response === null) { throw 'REQUEST FAILED' }
@@ -140,11 +148,6 @@ function App() {
     });
   }, [])
 
-  const handleSubmit = () => {
-    console.log('SUBMITTED');
-    window.Telegram.WebApp.sendData(JSON.stringify(vote_rankings));
-  }
-
   return (
     <div className="App">
       <header className="App-header">
@@ -155,7 +158,6 @@ function App() {
           on_add_option={add_ranking}
           on_remove_option={remove_ranking}
         />
-        <MainButton onClick={handleSubmit}/>
       </header>
     </div>
   )

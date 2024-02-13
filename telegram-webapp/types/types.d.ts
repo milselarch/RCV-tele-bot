@@ -8,6 +8,7 @@ declare module '*.svg' {
 interface Window {
   Telegram: {
     WebApp: {
+      MainButton: any;
       initData: string | null;
       sendData: (json_data: string) => void;
     };
