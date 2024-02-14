@@ -117,7 +117,7 @@ function App() {
     }
 
     set_loading(true)
-    set_status('loading (V0.1.1)')
+    set_status('loading')
 
     fetch_poll(poll_id).then((response) => {
       if (response === null) { throw 'REQUEST FAILED' }

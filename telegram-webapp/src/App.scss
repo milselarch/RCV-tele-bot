@@ -68,7 +68,7 @@ span.mono {
 $header-height: 6rem;
 
 div.poll-container {
-  max-width: 60%;
+  max-width: 90%;
   display: flex;
   justify-content: center;
   flex-direction: column;
@@ -78,7 +78,7 @@ div.poll-container {
     position: fixed;
     display: flex;
     height: $header-height;
-    font-size: 2rem;
+    font-size: 1.4rem;
     width: 100%;
 
     top: 0;
@@ -135,16 +135,18 @@ div.poll-container {
         & > p {
           color: #DDD;
           font-family: 'Ubuntu Mono', sans-serif;
-          font-size: 1.25rem;
+          font-size: 1rem;
 
           &.index {
-            width: 3rem;
+            width: 1.5rem;
             text-align: right;
             margin-right: 1rem;
+            flex-shrink: 0;
           }
 
           &.option {
-            margin-right: 2rem;
+            margin-right: 1.5rem;
+            text-align: left;
           }
         }
       }

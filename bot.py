@@ -24,7 +24,8 @@ from telegram import (
     WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 )
 from telegram.ext import (
-    CommandHandler, ApplicationBuilder, ContextTypes, CallbackContext, MessageHandler, filters
+    CommandHandler, ApplicationBuilder, ContextTypes, CallbackContext,
+    MessageHandler, filters
 )
 
 # Enable logging
@@ -103,7 +104,9 @@ class RankedChoiceBot(BaseLoader):
 
         # log all errors
         # dp.add_error_handler(error_logger)
-        self.app.run_polling()
+        self.app.run_polling(allowed_updates=[
+            Update.MESSAGE, Update.INLINE_QUERY, Update.CALLBACK_QUERY
+        ])
 
     """
     @staticmethod

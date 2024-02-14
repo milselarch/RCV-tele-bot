@@ -63,7 +63,7 @@ span.mono {
 }
 
 div.poll-container {
-  max-width: 60%;
+  max-width: 90%;
   display: flex;
   justify-content: center;
   flex-direction: column;
@@ -73,7 +73,7 @@ div.poll-container div.title {
   position: fixed;
   display: flex;
   height: 6rem;
-  font-size: 2rem;
+  font-size: 1.4rem;
   width: 100%;
   top: 0;
   left: 0;
@@ -118,15 +118,17 @@ div.poll-container > div.poll-selector > div.poll-options > div.poll-option:last
 div.poll-container > div.poll-selector > div.poll-options > div.poll-option > p {
   color: #DDD;
   font-family: "Ubuntu Mono", sans-serif;
-  font-size: 1.25rem;
+  font-size: 1rem;
 }
 div.poll-container > div.poll-selector > div.poll-options > div.poll-option > p.index {
-  width: 3rem;
+  width: 1.5rem;
   text-align: right;
   margin-right: 1rem;
+  flex-shrink: 0;
 }
 div.poll-container > div.poll-selector > div.poll-options > div.poll-option > p.option {
-  margin-right: 2rem;
+  margin-right: 1.5rem;
+  text-align: left;
 }
 div.poll-container > span.mono {
   margin-top: 2rem;
