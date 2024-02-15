@@ -1,7 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 // import {ReactComponent as Logo} from './logo.svg';
 import './App.scss';
-import { MainButton } from '@vkruglikov/react-telegram-web-app';
+import { MainButton, WebAppProvider } from '@vkruglikov/react-telegram-web-app';
 import {useEffect, useState} from "react";
 import {BACKEND_URL} from "./config";
 import ReactLoading from 'react-loading';
@@ -153,9 +153,11 @@ function App() {
           on_add_option={add_ranking}
           on_remove_option={remove_ranking}
         />
-        <MainButton
-          text="Cast Vote" onClick={submit_vote_handler}
-        />
+        <WebAppProvider>
+          <MainButton
+            text="Cast Vote" onClick={submit_vote_handler}
+          />
+        </WebAppProvider>
       </header>
     </div>
   )
