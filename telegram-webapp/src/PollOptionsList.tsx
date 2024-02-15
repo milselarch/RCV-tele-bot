@@ -78,7 +78,7 @@ export const PollOptionsList = ({
         </div>
       </div>
 
-      <span className="mono"> [{poll?.poll_id}]</span>
+      <span className="mono"> #{poll?.poll_id} </span>
     </div>
   )
 }

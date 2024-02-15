@@ -166,8 +166,10 @@ class RankedChoiceBot(BaseLoader):
         reply_markup = InlineKeyboardMarkup(markup_layout)
         await message.reply_text(poll_message, reply_markup=reply_markup)
 
+    @track_errors
     async def web_app_data(self, update: Update, context: CallbackContext):
         data = json.loads(update.message.web_app_data.data)
+        logger.info(f'WEB_APP_DATA = {data}')
         await update.message.reply_text(f"Your data was: {data}")
 
     def generate_poll_url(self, poll_id: int) -> str:

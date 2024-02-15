@@ -1,7 +1,7 @@
 import axios, { AxiosResponse } from 'axios';
 // import {ReactComponent as Logo} from './logo.svg';
 import './App.scss';
-// import { MainButton } from '@vkruglikov/react-telegram-web-app';
+import { MainButton } from '@vkruglikov/react-telegram-web-app';
 import {useEffect, useState} from "react";
 import {BACKEND_URL} from "./config";
 import ReactLoading from 'react-loading';
@@ -82,20 +82,15 @@ function App() {
       rank => rank !== option_index
     ))
   }
-
   const add_ranking = (option_index: number) => {
     set_vote_rankings([...vote_rankings, option_index])
   }
 
-  useEffect(() => {
-    const mainButton = window.Telegram.WebApp.MainButton;
-    mainButton.text = "Enter Vote";
-    mainButton.enable();
-    mainButton.show();
-    mainButton.onClick(() => {
-      window.Telegram.WebApp.sendData(JSON.stringify(vote_rankings));
-    })
+  const submit_vote_handler = () => {
+    window.Telegram.WebApp.sendData(JSON.stringify(vote_rankings));
+  }
 
+  useEffect(() => {
     const headers = load_tele_headers()
     const has_credential = headers !== ''
 
@@ -157,6 +152,9 @@ function App() {
           vote_rankings={vote_rankings}
           on_add_option={add_ranking}
           on_remove_option={remove_ranking}
+        />
+        <MainButton
+          text="Cast Vote" onClick={submit_vote_handler}
         />
       </header>
     </div>
