@@ -14,11 +14,9 @@ import {Poll} from "./poll";
 const load_tele_headers = () => {
   let headers = window?.Telegram?.WebApp?.initData ?? '';
 
-  if ((process.env.NODE_ENV === "development") && (headers === '')) {
+  if (headers === '') {
     console.log("Development mode");
     headers = window.location.search;
-  } else {
-    console.log("Production mode");
   }
 
   // console.log('INIT_DATA', initData)

@@ -81,13 +81,15 @@ div.poll-container div.title {
 }
 div.poll-container div.title > p {
   width: fit-content;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
   margin: auto;
 }
 div.poll-container > div.poll-selector {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0px;
+  gap: 0;
 }
 div.poll-container > div.poll-selector > div.buffer {
   height: 6rem;

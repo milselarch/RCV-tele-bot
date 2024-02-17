@@ -89,6 +89,8 @@ div.poll-container {
 
     & > p {
       width: fit-content;
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
       margin: auto;
       // font-family: 'Ubuntu Mono', sans-serif;
     }
@@ -98,7 +100,7 @@ div.poll-container {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 0px;
+    gap: 0;
 
     & > div.buffer {
       height: $header-height;

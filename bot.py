@@ -104,24 +104,7 @@ class RankedChoiceBot(BaseLoader):
 
         # log all errors
         # dp.add_error_handler(error_logger)
-        self.app.run_polling(allowed_updates=[
-            Update.MESSAGE, Update.INLINE_QUERY, Update.CALLBACK_QUERY
-        ])
-
-    """
-    @staticmethod
-    @track_errors
-    # Handle incoming WebAppData
-    async def web_app_data(
-        update: Update, context: CallbackContext.DEFAULT_TYPE
-    ) -> None:
-        # Print the received data and remove the button.
-        # Here we use `json.loads`, since the WebApp sends 
-        # the data JSON serialized string
-        # (see webappbot.html)
-        data = json.loads(update.effective_message.web_app_data.data)
-        await update.message.reply_text()
-    """
+        self.app.run_polling(allowed_updates=Update.ALL_TYPES)
 
     @track_errors
     async def start_handler(
@@ -162,13 +145,13 @@ class RankedChoiceBot(BaseLoader):
             await error_message.call(message.reply_text)
             return False
 
-        markup_layout = self.create_vote_markup(poll_id=poll_id)
-        reply_markup = InlineKeyboardMarkup(markup_layout)
+        markup_layout = self.build_vote_markup(poll_id=poll_id)
+        reply_markup = ReplyKeyboardMarkup(markup_layout)
         await message.reply_text(poll_message, reply_markup=reply_markup)
 
     @track_errors
-    async def web_app_data(self, update: Update, context: CallbackContext):
-        data = json.loads(update.message.web_app_data.data)
+    async def web_app_data(self, update: Update, _):
+        data = json.loads(update.effective_message.web_app_data.data)
         logger.info(f'WEB_APP_DATA = {data}')
         await update.message.reply_text(f"Your data was: {data}")
 
@@ -178,14 +161,14 @@ class RankedChoiceBot(BaseLoader):
         req.prepare_url(self.webhook_url, params)
         return req.url
 
-    def create_vote_markup(
+    def build_vote_markup(
         self, poll_id: int
-    ) -> List[List[InlineKeyboardButton]]:
+    ) -> List[List[KeyboardButton]]:
         poll_url = self.generate_poll_url(poll_id=poll_id)
         logger.info(f'POLL_URL = {poll_url}')
         # create vote button for reply message
-        markup_layout = [[InlineKeyboardButton(
-            text='Vote', web_app=WebAppInfo(url=poll_url)
+        markup_layout = [[KeyboardButton(
+            text=f'Vote for Poll #{poll_id}', web_app=WebAppInfo(url=poll_url)
         )]]
 
         return markup_layout
@@ -371,8 +354,8 @@ class RankedChoiceBot(BaseLoader):
 
         if chat_type == 'private':
             # create vote button for reply message
-            markup_layout = self.create_vote_markup(poll_id=new_poll_id)
-            reply_markup = InlineKeyboardMarkup(markup_layout)
+            markup_layout = self.build_vote_markup(poll_id=new_poll_id)
+            reply_markup = ReplyKeyboardMarkup(markup_layout)
 
         await message.reply_text(
             poll_message, reply_markup=reply_markup
@@ -541,8 +524,16 @@ class RankedChoiceBot(BaseLoader):
         )
 
         if view_poll_result.is_ok():
+            chat_type = update.message.chat.type
+            reply_markup = None
+
+            if chat_type == 'private':
+                # create vote button for reply message
+                markup_layout = self.build_vote_markup(poll_id=poll_id)
+                reply_markup = ReplyKeyboardMarkup(markup_layout)
+
             poll_message = view_poll_result.ok()
-            await message.reply_text(poll_message)
+            await message.reply_text(poll_message, reply_markup=reply_markup)
             return True
         else:
             error_message = view_poll_result.err()
