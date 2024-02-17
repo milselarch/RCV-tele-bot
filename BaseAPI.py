@@ -212,6 +212,10 @@ class BaseAPI(object):
         :return: true if vote was registered, false otherwise
         """
         error_message = MessageBuilder()
+        if len(rankings) == 0:
+            error_message.add('At least one ranking must be provided')
+            return Err(error_message)
+
         # check if voter is part of the poll
         poll_voter = cls.get_poll_voter(poll_id, chat_username)
         print('CC', poll_voter.count(), [chat_username, poll_id])
