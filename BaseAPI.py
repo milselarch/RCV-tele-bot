@@ -5,9 +5,10 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-from typing import List
 
 from database import *
+
+from typing import List
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes

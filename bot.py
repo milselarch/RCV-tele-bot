@@ -20,12 +20,11 @@ from RankedChoice import SpecialVotes
 from typing import List, Tuple, Dict
 
 from telegram import (
-    InlineKeyboardButton, InlineKeyboardMarkup, Update,
-    WebAppInfo, ReplyKeyboardMarkup, KeyboardButton, User,
-    Message
+    Update, Message, WebAppInfo, ReplyKeyboardMarkup,
+    KeyboardButton, User
 )
 from telegram.ext import (
-    CommandHandler, ApplicationBuilder, ContextTypes, CallbackContext,
+    CommandHandler, ApplicationBuilder, ContextTypes,
     MessageHandler, filters
 )
 
