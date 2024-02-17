@@ -1,23 +1,18 @@
-import hashlib
-import hmac
 import json
 import argparse
-import time
-
 import uvicorn
 import dataclasses
 
 from starlette.middleware.cors import CORSMiddleware
 
-from database import *
 from load_config import *
 from BaseAPI import BaseAPI
-from fastapi import FastAPI, APIRouter, UploadFile, HTTPException
-from pydantic import BaseModel, field_validator, validator
+from fastapi import FastAPI, APIRouter
+from pydantic import BaseModel
 from typing import List, Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from urllib.parse import parse_qs, unquote, urlencode, quote_plus
+from urllib.parse import parse_qs, unquote
 from starlette.responses import JSONResponse
 
 TELEGRAM_DATA_HEADER = 'telegram-data'

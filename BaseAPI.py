@@ -24,7 +24,7 @@ class PollInfo(object):
 
 class BaseAPI(object):
     @staticmethod
-    def get_poll_voter(poll_id, chat_username):
+    def get_poll_voter(poll_id: int, chat_username: str):
         # check if voter is part of the poll
         voter = PollVoters.select().join(
             Polls, on=(Polls.id == PollVoters.poll_id)
@@ -250,7 +250,7 @@ class BaseAPI(object):
 
     @classmethod
     def _register_vote(
-        cls, poll_id, poll_voter_id, rankings
+        cls, poll_id: int, poll_voter_id: int, rankings: List[int]
     ) -> Result[bool, MessageBuilder]:
         """
         registers a vote for the poll
@@ -260,7 +260,6 @@ class BaseAPI(object):
         :param poll_id:
         :param poll_voter_id:
         :param rankings:
-        :param message: telegram message object
         :return: true if vote was registered, false otherwise
         """
         error_message = MessageBuilder()
