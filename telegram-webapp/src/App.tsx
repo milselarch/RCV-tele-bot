@@ -3,7 +3,7 @@ import axios, { AxiosResponse } from 'axios';
 import './App.scss';
 import { MainButton, WebAppProvider } from '@vkruglikov/react-telegram-web-app';
 import {useEffect, useState} from "react";
-import {BACKEND_URL} from "./config";
+import {BACKEND_DEV_URL, BACKEND_PROD_URL} from "./config";
 import ReactLoading from 'react-loading';
 
 import {PollOptionsList} from "./PollOptionsList";
@@ -23,8 +23,17 @@ const load_tele_headers = () => {
   return headers
 }
 
+const get_backend_url = () => {
+    if (!process.env.NODE_ENV || process.env.NODE_ENV === 'development') {
+      return BACKEND_DEV_URL
+  } else {
+      return BACKEND_PROD_URL
+  }
+}
+
 const fetch_poll = async (poll_id: number) => {
-  const endpoint = `${BACKEND_URL}/fetch_poll`;
+  const backend_url = get_backend_url()
+  const endpoint = `${backend_url}/fetch_poll`;
   console.log('ENDPOINT', endpoint, poll_id)
 
   const request = axios.post(

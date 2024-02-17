@@ -1,1 +1,2 @@
-export const BACKEND_URL = 'https://rcvprod.milselarch.com/backend'
+export const BACKEND_DEV_URL = 'https://rcvdev.milselarch.com/backend'
+export const BACKEND_PROD_URL = 'https://rcvdev.milselarch.com/backend_prod'
