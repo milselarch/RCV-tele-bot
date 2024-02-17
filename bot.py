@@ -99,7 +99,7 @@ class RankedChoiceBot(BaseAPI):
             close_poll_admin=self.close_poll_admin
         ))
 
-        # catch all to handle responses to unknown commands
+        # catch-all to handle responses to unknown commands
         self.app.add_handler(MessageHandler(
             filters.Regex(r'^/') & filters.COMMAND,
             self.handle_unknown_command
