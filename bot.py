@@ -92,6 +92,7 @@ class RankedChoiceBot(BaseAPI):
             close_poll=self.close_poll,
             view_votes=self.view_votes,
             view_voters=self.view_poll_voters,
+            about=self.show_about,
             help=self.show_help,
 
             vote_admin=self.vote_for_poll_admin,
@@ -928,8 +929,16 @@ class RankedChoiceBot(BaseAPI):
         return winning_option_id
 
     @track_errors
-    async def show_help(self, update, *args, **kwargs):
-        message = update.message
+    async def show_about(self, update: Update, *args, **kwargs):
+        message: Message = update.message
+        await message.reply_text(textwrap.dedent("""
+            The source code for this bot can be found at:
+            https://github.com/milselarch/RCV-tele-bot
+        """))
+
+    @track_errors
+    async def show_help(self, update: Update, *args, **kwargs):
+        message: Message = update.message
         await message.reply_text(textwrap.dedent("""
         /start - start bot
         /user_details - shows your username and user id
@@ -975,6 +984,8 @@ class RankedChoiceBot(BaseAPI):
         ——————————————————
         /view_voters {poll_id}
         - show which voters have voted and which have not
+        ——————————————————
+        /about - view miscellaneous information about the bot
         ——————————————————
         /help - view commands available to the bot
         """))
