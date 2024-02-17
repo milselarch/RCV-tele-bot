@@ -155,7 +155,7 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <StatusLoader loading={loading} status={status} />
+        <StatusLoader loading={loading} status={status}/>
         <PollOptionsList
           authenticated={has_credential} poll={poll}
           vote_rankings={vote_rankings}
