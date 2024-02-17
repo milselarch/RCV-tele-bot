@@ -85,7 +85,9 @@ function App() {
   }
 
   const submit_vote_handler = () => {
-    window.Telegram.WebApp.sendData(JSON.stringify(vote_rankings));
+    window.Telegram.WebApp.sendData(JSON.stringify({
+      'poll_id': poll.poll_id, 'rankings': vote_rankings
+    }));
   }
 
   useEffect(() => {

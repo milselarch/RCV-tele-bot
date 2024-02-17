@@ -9,5 +9,7 @@ TELE_CONFIG = YAML_CONFIG['telegram']
 TELEGRAM_BOT_TOKEN = TELE_CONFIG['bot_token']
 SETTINGS = YAML_CONFIG['settings']
 PRODUCTION_MODE = bool(SETTINGS['production'])
+CORS_ORIGINS = YAML_CONFIG['webapp']['cors_origins']
 
+print('CORS_ORIGINS =', CORS_ORIGINS)
 print('PRODUCTION_MODE =', PRODUCTION_MODE)

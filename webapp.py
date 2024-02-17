@@ -11,7 +11,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from database import *
 from load_config import *
-from BaseLoader import BaseLoader
+from BaseAPI import BaseAPI
 from fastapi import FastAPI, APIRouter, UploadFile, HTTPException
 from pydantic import BaseModel, field_validator, validator
 from typing import List, Optional
@@ -34,7 +34,7 @@ class VoteRequestPayload(BaseModel):
 
 class VerifyMiddleware(BaseHTTPMiddleware):
     # how many seconds auth tokens are valid for
-    AUTH_TOKEN_EXPIRY = 24 * 3600
+    # AUTH_TOKEN_EXPIRY = 24 * 3600
 
     async def dispatch(self, request: Request, call_next):
         if request.method == "OPTIONS":
@@ -49,6 +49,7 @@ class VerifyMiddleware(BaseHTTPMiddleware):
             content = {'detail': 'Missing telegram-data header'}
             return JSONResponse(content=content, status_code=401)
 
+        """
         if PRODUCTION_MODE:
             # only allow auth headers that were created in the last 24 hours
             parsed_query = parse_qs(telegram_data_header)
@@ -63,6 +64,7 @@ class VerifyMiddleware(BaseHTTPMiddleware):
             if abs(current_stamp - auth_stamp) > self.AUTH_TOKEN_EXPIRY:
                 content = {'detail': 'Auth token expired'}
                 return JSONResponse(content=content, status_code=401)
+        """
 
         user_params = self.check_authorization(
             telegram_data_header, TELEGRAM_BOT_TOKEN
@@ -83,17 +85,10 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         if signature is None:
             return None
 
-        auth_param_items = []
-        for item in params.items():
-            param_key, param_value = item
-            if param_key not in ('auth_date', 'query_id', 'user'):
-                continue
-
-            auth_param_items.append(item)
-
-        auth_param_items = sorted(auth_param_items)
-        data_check_string = "\n".join(
-            f"{k}={v[0]}" for k, v in auth_param_items
+        data_check_string = BaseAPI.make_data_check_string(
+            auth_date=params.get('auth_date', [''])[0],
+            query_id=params.get('query_id', [''])[0],
+            user=params.get('user', [''])[0]
         )
         return data_check_string, signature, params
 
@@ -104,15 +99,9 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         parse_result = cls.parse_auth_string(init_data)
         # print('PARSE_RESULT', parse_result)
         data_check_string, signature, params = parse_result
-
-        secret_key = hmac.new(
-            key=b"WebAppData", msg=bot_token.encode(),
-            digestmod=hashlib.sha256
-        ).digest()
-
-        validation_hash = hmac.new(
-            secret_key, data_check_string.encode(), hashlib.sha256
-        ).hexdigest()
+        validation_hash = BaseAPI.sign_data_check_string(
+            data_check_string=data_check_string, bot_token=bot_token
+        )
 
         # print('VALIDATION_HASH', validation_hash, signature)
         if validation_hash == signature:
@@ -121,7 +110,7 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         return None
 
 
-class VotingWebApp(BaseLoader):
+class VotingWebApp(BaseAPI):
     def __init__(self):
         self.router = APIRouter()
         self.router.add_api_route(
@@ -160,11 +149,7 @@ predictor = VotingWebApp()
 app.include_router(predictor.router)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://rcvdev.milselarch.com",
-        "https://rcvprod.milselarch.com",
-        "http://localhost:5001"
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
