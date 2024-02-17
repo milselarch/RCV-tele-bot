@@ -1,3 +1,6 @@
+settings:
+  # whether bot is deployed in production mode
+  production: 1
 database:
   name: ranked_choice_voting
   user: rcv_user
@@ -9,3 +12,8 @@ telegram:
   webhook_port: YOUR_WEBHOOK_PORT
   webhook_url: YOUR_WEBHOOK_URL
   sudo_id: YOUR_SUDO_ID
+webapp:
+  cors_origins:
+    - https://rcvdev.milselarch.com
+    - https://rcvprod.milselarch.com
+    - http://localhost:5001

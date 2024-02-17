@@ -1,0 +1,163 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.no-select {
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* Internet Explorer/Edge */
+  user-select: none;         /* Non-prefixed version, currently supported by Chrome, Opera, and Edge */
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url(fonts/open_sans.ttf) format('ttf');
+}
+@font-face {
+  font-family: 'Ubuntu Mono';
+  src: url(fonts/ubuntu_mono.ttf) format('ttf');
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+p {
+  margin: 1rem;
+}
+
+span.mono {
+  font-family: 'Ubuntu Mono', sans-serif;
+}
+
+* {
+  font-family: 'Open Sans', sans-serif;
+}
+
+$header-height: 6rem;
+
+div.poll-container {
+  max-width: 90%;
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+
+  & div.title {
+    margin: auto;
+    position: fixed;
+    display: flex;
+    height: $header-height;
+    font-size: 1.4rem;
+    width: 100%;
+
+    top: 0;
+    left: 0;
+    background: linear-gradient(
+        to top, rgba(40, 44, 52, 0.7), rgba(40, 44, 52, 1)
+    );
+
+    & > p {
+      width: fit-content;
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+      margin: auto;
+      // font-family: 'Ubuntu Mono', sans-serif;
+    }
+  }
+
+  & > div.poll-selector {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+
+    & > div.buffer {
+      height: $header-height;
+      width: 100%;
+    }
+
+    & > div.poll-options {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      // margin-left: auto;
+      // margin-right: auto;
+      overflow-y: auto;
+      gap: 0.5rem;
+
+      & > div.poll-option {
+        display: flex;
+        border: 2px solid #555;
+
+        &:active {
+          border-color: white;
+        }
+
+        &:first-child {
+          border-top-left-radius: 0.5rem;
+          border-top-right-radius: 0.5rem;
+        }
+
+        &:last-child {
+          border-bottom-left-radius: 0.5rem;
+          border-bottom-right-radius: 0.5rem;
+        }
+
+        & > p {
+          color: #DDD;
+          font-family: 'Ubuntu Mono', sans-serif;
+          font-size: 1rem;
+
+          &.index {
+            width: 1.5rem;
+            text-align: right;
+            margin-right: 1rem;
+            flex-shrink: 0;
+          }
+
+          &.option {
+            margin-right: 1.5rem;
+            text-align: left;
+          }
+        }
+      }
+    }
+  }
+
+  & > span.mono {
+    margin-top: 2rem;
+    font-size: 1.25rem;
+    margin-bottom: 2rem;
+  }
+}

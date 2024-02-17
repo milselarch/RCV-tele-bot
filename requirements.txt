@@ -6,3 +6,8 @@ PyYAML==6.0.1
 pymysql==1.1.0
 cryptography==41.0.3
 result~=0.13.1
+uvicorn==0.25.0
+fastapi==0.105.0
+pydantic~=2.5.2
+starlette~=0.27.0
+requests==2.31.0

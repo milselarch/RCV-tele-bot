@@ -12,7 +12,6 @@
     animation: App-logo-spin infinite 20s linear;
   }
 }
-
 .App-header {
   background-color: #282c34;
   min-height: 100vh;
@@ -24,6 +23,21 @@
   color: white;
 }
 
+.no-select {
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* Internet Explorer/Edge */
+  user-select: none; /* Non-prefixed version, currently supported by Chrome, Opera, and Edge */
+}
+
+@font-face {
+  font-family: "Open Sans";
+  src: url(fonts/open_sans.ttf) format("ttf");
+}
+@font-face {
+  font-family: "Ubuntu Mono";
+  src: url(fonts/ubuntu_mono.ttf) format("ttf");
+}
 .App-link {
   color: #61dafb;
 }
@@ -36,3 +50,92 @@
     transform: rotate(360deg);
   }
 }
+p {
+  margin: 1rem;
+}
+
+span.mono {
+  font-family: "Ubuntu Mono", sans-serif;
+}
+
+* {
+  font-family: "Open Sans", sans-serif;
+}
+
+div.poll-container {
+  max-width: 90%;
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+}
+div.poll-container div.title {
+  margin: auto;
+  position: fixed;
+  display: flex;
+  height: 6rem;
+  font-size: 1.4rem;
+  width: 100%;
+  top: 0;
+  left: 0;
+  background: linear-gradient(to top, rgba(40, 44, 52, 0.7), rgb(40, 44, 52));
+}
+div.poll-container div.title > p {
+  width: fit-content;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  margin: auto;
+}
+div.poll-container > div.poll-selector {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+div.poll-container > div.poll-selector > div.buffer {
+  height: 6rem;
+  width: 100%;
+}
+div.poll-container > div.poll-selector > div.poll-options {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow-y: auto;
+  gap: 0.5rem;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.poll-option {
+  display: flex;
+  border: 2px solid #555;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.poll-option:active {
+  border-color: white;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.poll-option:first-child {
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.poll-option:last-child {
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.poll-option > p {
+  color: #DDD;
+  font-family: "Ubuntu Mono", sans-serif;
+  font-size: 1rem;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.poll-option > p.index {
+  width: 1.5rem;
+  text-align: right;
+  margin-right: 1rem;
+  flex-shrink: 0;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.poll-option > p.option {
+  margin-right: 1.5rem;
+  text-align: left;
+}
+div.poll-container > span.mono {
+  margin-top: 2rem;
+  font-size: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+/*# sourceMappingURL=App.css.map */

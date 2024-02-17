@@ -11,7 +11,7 @@ class MessageBuilder(object):
 
         self.lines.append(text)
 
-    def get_content(self):
+    def get_content(self) -> str:
         str_lines = []
 
         for line in self.lines:
