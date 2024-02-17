@@ -80,6 +80,7 @@ class BaseAPI(object):
         poll_options = [
             poll_option.option_name for poll_option in poll_option_rows
         ]
+        # [poll_option.id for poll_option in poll_option_rows]
 
         poll_question = poll.desc
         num_poll_voters = PollVoters.select().where(
@@ -206,7 +207,7 @@ class BaseAPI(object):
 
         :param poll_id:
         :param rankings:
-        :param chat_username: chat username pf voter
+        :param chat_username: chat username of voter
         :return: true if vote was registered, false otherwise
         """
         error_message = MessageBuilder()

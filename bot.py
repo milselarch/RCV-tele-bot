@@ -17,7 +17,7 @@ from RankedVote import RankedVote
 from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
 from RankedChoice import SpecialVotes
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup, Update,
@@ -80,9 +80,6 @@ class RankedChoiceBot(BaseAPI):
         self.bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
         self.webhook_url = TELE_CONFIG['webhook_url']
         self.app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-        self.app.add_handler(MessageHandler(
-            filters.StatusUpdate.WEB_APP_DATA, self.web_app_data
-        ))
 
         # on different commands - answer in Telegram
         self.register_commands(self.app, commands_mapping=self.kwargify(
@@ -103,8 +100,15 @@ class RankedChoiceBot(BaseAPI):
             close_poll_admin=self.close_poll_admin
         ))
 
-        # log all errors
-        # dp.add_error_handler(error_logger)
+        # catch all for all command that haven't been registered
+        self.app.add_handler(MessageHandler(
+            filters.Regex(r'^/') & filters.COMMAND,
+            self.handle_unknown_command
+        ))
+        self.app.add_handler(MessageHandler(
+            filters.StatusUpdate.WEB_APP_DATA, self.web_app_data
+        ))
+
         self.app.run_polling(allowed_updates=Update.ALL_TYPES)
 
     @track_errors
@@ -166,7 +170,10 @@ class RankedChoiceBot(BaseAPI):
         chat_username: str = user.username
 
         formatted_rankings = ' > '.join([str(rank) for rank in rankings])
-        await message.reply_text(f"Your rankings are: {formatted_rankings}")
+        await message.reply_text(textwrap.dedent(f"""
+            Your rankings are:
+            {poll_id}: {formatted_rankings}
+        """))
 
         vote_result = self.safe_register_vote(
             poll_id=poll_id, rankings=rankings,
@@ -179,6 +186,10 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         await self.do_post_vote_actions(poll_id=poll_id, message=message)
+
+    @track_errors
+    async def handle_unknown_command(self, update: Update, _):
+        await update.message.reply_text("Command not found")
 
     def generate_poll_url(self, poll_id: int, user: User) -> str:
         req = PreparedRequest()
@@ -409,8 +420,8 @@ class RankedChoiceBot(BaseAPI):
         )
 
     @track_errors
-    async def view_votes(self, update, *args, **kwargs):
-        message = update.message
+    async def view_votes(self, update: Update, *args, **kwargs):
+        message: Message = update.message
         extract_result = self.extract_poll_id(update)
 
         if extract_result.is_err():
@@ -418,9 +429,10 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = extract_result.ok()
-        user = update.message.from_user
-        chat_username = user['username']
+        poll_id: int = extract_result.ok()
+        user: User = update.message.from_user
+        chat_username: str = user.username
+        assert isinstance(chat_username, str)
         # check if voter is part of the poll
 
         try:
@@ -447,7 +459,7 @@ class RankedChoiceBot(BaseAPI):
             Options.poll_id == poll_id
         ).order_by(Options.option_number)
 
-        # map poll option ids to their option numbers
+        # map poll option ids to their option ranking numbers
         # (option number is the position of the option in the poll)
         option_index_map = {}
         for poll_option_row in poll_option_rows:
@@ -460,7 +472,7 @@ class RankedChoiceBot(BaseAPI):
             .order_by(Votes.option_id, Votes.ranking)
         )
 
-        vote_sequence_map = {}
+        vote_sequence_map: Dict[int, Dict[int, int]] = {}
         for vote_row in vote_rows:
             """
             Maps voters to their ranked vote
@@ -471,21 +483,25 @@ class RankedChoiceBot(BaseAPI):
             or either of the 0 or nil special votes
             (which are represented as negative numbers -1 and -2)
             """
-            voter_id = vote_row.poll_voter_id
+            voter_id: int = vote_row.poll_voter_id.id
+            assert isinstance(voter_id, int)
 
             if voter_id not in vote_sequence_map:
                 vote_sequence_map[voter_id] = {}
 
-            option_row = vote_row.option_id
-            if option_row is None:
+            option_id: int = vote_row.option_id.id
+            assert isinstance(option_id, int)
+
+            if option_id is None:
                 vote_value = vote_row.special_value
                 assert vote_value < 0
             else:
-                vote_value = option_row.id
+                vote_value = option_id
                 assert vote_value > 0
 
+            ranking = int(vote_row.ranking)
             ranking_map = vote_sequence_map[voter_id]
-            ranking_map[vote_row.ranking] = vote_value
+            ranking_map[ranking] = vote_value
 
         ranking_message = ''
         for voter_id in vote_sequence_map:
@@ -501,7 +517,9 @@ class RankedChoiceBot(BaseAPI):
 
             for vote_value in sorted_option_nos:
                 if vote_value > 0:
-                    str_rankings.append(str(vote_value))
+                    option_id = vote_value
+                    option_rank_no = option_index_map[option_id]
+                    str_rankings.append(str(option_rank_no))
                 else:
                     str_rankings.append(
                         SpecialVotes(vote_value).to_string()
