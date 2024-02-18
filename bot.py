@@ -143,13 +143,12 @@ class RankedChoiceBot(BaseAPI):
             bot_username=context.bot.username
         )
 
-        if view_poll_result.is_ok():
-            poll_message = view_poll_result.ok()
-        else:
+        if view_poll_result.is_err():
             error_message = view_poll_result.err()
             await error_message.call(message.reply_text)
             return False
 
+        poll_message = view_poll_result.ok()
         reply_markup = ReplyKeyboardMarkup(self.build_vote_markup(
             poll_id=poll_id, user=user
         ))
@@ -571,38 +570,36 @@ class RankedChoiceBot(BaseAPI):
         message = update.message
         user = update.message.from_user
         chat_username = user['username']
-
         extract_result = self.extract_poll_id(update)
 
-        if extract_result.is_ok():
-            poll_id = extract_result.ok()
-        else:
+        if extract_result.is_err():
             error_message = extract_result.err()
             await error_message.call(message.reply_text)
             return False
 
+        poll_id = extract_result.ok()
         view_poll_result = self._view_poll(
             poll_id=poll_id, chat_username=chat_username,
             bot_username=context.bot.username
         )
 
-        if view_poll_result.is_ok():
-            chat_type = update.message.chat.type
-            reply_markup = None
-
-            if chat_type == 'private':
-                # create vote button for reply message
-                reply_markup = ReplyKeyboardMarkup(self.build_vote_markup(
-                    poll_id=poll_id, user=user
-                ))
-
-            poll_message = view_poll_result.ok()
-            await message.reply_text(poll_message, reply_markup=reply_markup)
-            return True
-        else:
+        if view_poll_result.is_err():
             error_message = view_poll_result.err()
             await error_message.call(message.reply_text)
             return False
+
+        chat_type = update.message.chat.type
+        reply_markup = None
+
+        if chat_type == 'private':
+            # create vote button for reply message
+            reply_markup = ReplyKeyboardMarkup(self.build_vote_markup(
+                poll_id=poll_id, user=user
+            ))
+
+        poll_message = view_poll_result.ok()
+        await message.reply_text(poll_message, reply_markup=reply_markup)
+        return True
 
     async def vote_and_report(
         self, raw_text: str, chat_username: str, message: Message
@@ -668,13 +665,12 @@ class RankedChoiceBot(BaseAPI):
         message = update.message
         extract_result = self.extract_poll_id(update)
 
-        if extract_result.is_ok():
-            poll_id = extract_result.ok()
-        else:
+        if extract_result.is_err():
             error_message = extract_result.err()
             await error_message.call(message.reply_text)
             return False
 
+        poll_id = extract_result.ok()
         user = message.from_user
         chat_username = user['username']
 
@@ -1051,13 +1047,12 @@ class RankedChoiceBot(BaseAPI):
         message = update.message
         extract_result = self.extract_poll_id(update)
 
-        if extract_result.is_ok():
-            poll_id = extract_result.ok()
-        else:
+        if extract_result.is_err():
             error_message = extract_result.err()
             await error_message.call(message.reply_text)
             return False
 
+        poll_id = extract_result.ok()
         user = update.message.from_user
         chat_username = user['username']
         # check if voter is part of the poll

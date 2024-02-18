@@ -5,6 +5,7 @@ import time
 import hashlib
 import textwrap
 import dataclasses
+import telegram
 
 from database import *
 
@@ -110,8 +111,10 @@ class BaseAPI(object):
         return voter_in_poll or (poll.creator == chat_username)
 
     @staticmethod
-    def extract_poll_id(update) -> Result[int, MessageBuilder]:
-        message = update.message
+    def extract_poll_id(
+        update: telegram.Update
+    ) -> Result[int, MessageBuilder]:
+        message: telegram.Message = update.message
         raw_text = message.text.strip()
         error_message = MessageBuilder()
 
