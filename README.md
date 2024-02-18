@@ -84,5 +84,6 @@ Project was built using Python3.10
    ```
 
 ### Database Schema
-Database ORM definition can be found in `database.py`
+Database ORM definition can be found in `database.py`  
+
 ![Schema Image](https://github.com/milselarch/RCV-tele-bot/blob/master/schema.png)
