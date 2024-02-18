@@ -174,7 +174,7 @@ class RankedChoiceBot(BaseAPI):
             {poll_id}: {formatted_rankings}
         """))
 
-        vote_result = self.safe_register_vote(
+        vote_result = self.register_vote(
             poll_id=poll_id, rankings=rankings,
             chat_username=chat_username
         )
@@ -782,7 +782,7 @@ class RankedChoiceBot(BaseAPI):
         poll_id: int = unpacked_result[0]
         rankings: List[int] = unpacked_result[1]
 
-        return self.safe_register_vote(
+        return self.register_vote(
             poll_id=poll_id, rankings=rankings,
             chat_username=chat_username
         )

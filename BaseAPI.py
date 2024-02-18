@@ -201,7 +201,7 @@ class BaseAPI(object):
         return pwd
 
     @classmethod
-    def safe_register_vote(
+    def register_vote(
         cls, poll_id: int, rankings: List[int], chat_username: str
     ) -> Result[int, MessageBuilder]:
         """
@@ -239,7 +239,7 @@ class BaseAPI(object):
 
         poll_voter_id = poll_voter[0].id
         # print('POLL_VOTER_ID', poll_voter_id)
-        vote_register_result = cls._register_vote(
+        vote_register_result = cls.__unsafe_register_vote(
             poll_id, poll_voter_id=poll_voter_id,
             rankings=rankings
         )
@@ -257,7 +257,7 @@ class BaseAPI(object):
             return Err(error_message)
 
     @classmethod
-    def _register_vote(
+    def __unsafe_register_vote(
         cls, poll_id: int, poll_voter_id: int, rankings: List[int]
     ) -> Result[bool, MessageBuilder]:
         """
