@@ -982,7 +982,6 @@ class RankedChoiceBot(BaseAPI):
         - show which voters have voted and which have not
         ——————————————————
         /about - view miscellaneous information about the bot
-        ——————————————————
         /help - view commands available to the bot
         """))
 
