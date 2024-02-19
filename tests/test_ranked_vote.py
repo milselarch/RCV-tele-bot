@@ -7,6 +7,10 @@ from SpecialVotes import SpecialVotes
 
 
 class TestRankedChoiceVote(unittest.TestCase):
+    def __init__(self, *args, verbose=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.verbose = verbose
+
     """
     Unittests for the core ranked choice voting algorithm itself
     """
@@ -19,7 +23,7 @@ class TestRankedChoiceVote(unittest.TestCase):
             RankedVote([3, 2, 4]),
             RankedVote([4, 1])
         ]
-        result = ranked_choice_vote(votes)
+        result = ranked_choice_vote(votes, verbose=self.verbose)
         self.assertEqual(
             result, 1,
             "The winner should be candidate 1"
@@ -34,7 +38,7 @@ class TestRankedChoiceVote(unittest.TestCase):
             RankedVote([3, 2, 4]),
             RankedVote([1, 2])
         ]
-        result = ranked_choice_vote(votes)
+        result = ranked_choice_vote(votes, verbose=self.verbose)
         self.assertEqual(
             result, 1,
             "The winner should be candidate 1"
@@ -57,7 +61,7 @@ class TestRankedChoiceVote(unittest.TestCase):
             RankedVote([3, 2]),
             RankedVote([3])
         ]
-        result = ranked_choice_vote(votes, verbose=False)
+        result = ranked_choice_vote(votes, verbose=self.verbose)
         self.assertEqual(
             result, None,
             "Candidate 1's vote should not count, no one should win"
@@ -72,7 +76,7 @@ class TestRankedChoiceVote(unittest.TestCase):
             RankedVote([SpecialVotes.ZERO_VOTE]),
             RankedVote([SpecialVotes.NULL_VOTE])
         ]
-        result = ranked_choice_vote(votes, verbose=False)
+        result = ranked_choice_vote(votes, verbose=self.verbose)
         self.assertEqual(
             result, None,
             "No one should win if all votes were 0 or nil"
@@ -86,10 +90,25 @@ class TestRankedChoiceVote(unittest.TestCase):
             RankedVote([3, 2]),
             RankedVote([3])
         ]
-        result = ranked_choice_vote(votes, verbose=False)
+        result = ranked_choice_vote(votes, verbose=self.verbose)
         self.assertEqual(
             result, 3,
             "Candidate 3's vote should not count, no one should win"
+        )
+
+    def test_majoritarian_rule(self):
+        votes = [
+            RankedVote([1, 6, 15]),
+            RankedVote([1, 2, 6, 15, 5, 4, 7, 3, 11]),
+            RankedVote([6, 15, 1, 11, 10, 16, 17, 8, 2, 3, 5, 7]),
+            RankedVote([9, 8, 6, 11, 13, 3, 1]),
+            RankedVote([13, 14, 16, 6, 3, 4, 5, 2, 1, 8, 9])
+        ]
+
+        result = ranked_choice_vote(votes, verbose=self.verbose)
+        self.assertEqual(
+            result, 6,
+            "Candidate 6 should be the majoritarian winner"
         )
 
 
