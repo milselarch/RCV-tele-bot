@@ -7,7 +7,7 @@ from SpecialVotes import SpecialVotes
 
 
 class TestRankedChoiceVote(unittest.TestCase):
-    def __init__(self, *args, verbose=True, **kwargs):
+    def __init__(self, *args, verbose=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.verbose = verbose
 
