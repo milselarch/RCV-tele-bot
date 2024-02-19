@@ -67,6 +67,7 @@ div.poll-container {
   display: flex;
   justify-content: center;
   flex-direction: column;
+  margin-bottom: auto;
 }
 div.poll-container div.title {
   margin: auto;
@@ -77,7 +78,7 @@ div.poll-container div.title {
   width: 100%;
   top: 0;
   left: 0;
-  background: linear-gradient(to top, rgba(40, 44, 52, 0.7), rgb(40, 44, 52));
+  background: linear-gradient(to top, rgba(40, 44, 52, 0) 0%, rgba(40, 44, 52, 0.7) 30%, rgb(40, 44, 52) 100%);
 }
 div.poll-container div.title > p {
   width: fit-content;
@@ -85,15 +86,15 @@ div.poll-container div.title > p {
   padding-right: 0.5rem;
   margin: auto;
 }
+div.poll-container > div.buffer {
+  height: 6rem;
+  width: 100%;
+}
 div.poll-container > div.poll-selector {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0;
-}
-div.poll-container > div.poll-selector > div.buffer {
-  height: 6rem;
-  width: 100%;
+  gap: 1.5rem;
 }
 div.poll-container > div.poll-selector > div.poll-options {
   display: flex;
@@ -101,6 +102,9 @@ div.poll-container > div.poll-selector > div.poll-options {
   align-items: stretch;
   overflow-y: auto;
   gap: 0.5rem;
+}
+div.poll-container > div.poll-selector > div.poll-options:empty {
+  display: none;
 }
 div.poll-container > div.poll-selector > div.poll-options > div.poll-option {
   display: flex;

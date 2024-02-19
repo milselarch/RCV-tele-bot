@@ -63,16 +63,16 @@ export const PollOptionsList = ({
     <div className="poll-container">
       <div className="title">
         <p className="no-select">
-          {poll?.poll_question} &nbsp;
+          {poll?.poll_question}
         </p>
       </div>
 
+      <div className="buffer"></div>
+
       <div className="poll-selector">
-        <div className="buffer"></div>
-        <div className="poll-options">
+        <div className="poll-options selected">
           {used_poll_items.map((render_item) => (render_item))}
         </div>
-        <br/>
         <div className="poll-options">
           {unused_poll_items.map((render_item) => (render_item))}
         </div>

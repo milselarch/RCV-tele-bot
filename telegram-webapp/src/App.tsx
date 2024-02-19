@@ -39,7 +39,7 @@ const fetch_poll = async (poll_id: number) => {
   const request = axios.post(
     endpoint, {'poll_id': poll_id}, {
       headers: {'Content-Type': 'application/json'},
-      timeout: 5000 // time out after 5 seconds
+      timeout: 15 * 1000 // time out after 15 seconds
     }
   )
 

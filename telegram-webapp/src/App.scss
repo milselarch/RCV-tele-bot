@@ -72,6 +72,7 @@ div.poll-container {
   display: flex;
   justify-content: center;
   flex-direction: column;
+  margin-bottom: auto;
 
   & div.title {
     margin: auto;
@@ -84,7 +85,10 @@ div.poll-container {
     top: 0;
     left: 0;
     background: linear-gradient(
-        to top, rgba(40, 44, 52, 0.7), rgba(40, 44, 52, 1)
+        to top,
+        rgba(40, 44, 52, 0) 0%,
+        rgba(40, 44, 52, 0.7) 30%,
+        rgba(40, 44, 52, 1) 100%
     );
 
     & > p {
@@ -96,16 +100,16 @@ div.poll-container {
     }
   }
 
+  & > div.buffer {
+    height: $header-height;
+    width: 100%;
+  }
+
   & > div.poll-selector {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 0;
-
-    & > div.buffer {
-      height: $header-height;
-      width: 100%;
-    }
+    gap: 1.5rem;
 
     & > div.poll-options {
       display: flex;
@@ -115,6 +119,10 @@ div.poll-container {
       // margin-right: auto;
       overflow-y: auto;
       gap: 0.5rem;
+
+      &:empty {
+        display: none;
+      }
 
       & > div.poll-option {
         display: flex;
