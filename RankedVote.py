@@ -43,6 +43,12 @@ class RankedVote(object):
         assert has_option_1 and has_option_2
         return self.choices.index(option_1) < self.choices.index(option_2)
 
+    def get_inverse_score(self, option: int) -> float:
+        if option in self.choices:
+            return 1 / (self.choices.index(option) + 1)
+        else:
+            return 0
+
     def add_next_choice(self, choice: int):
         if isinstance(choice, SpecialVotes):
             choice = choice.value
