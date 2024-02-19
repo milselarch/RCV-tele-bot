@@ -84,6 +84,9 @@ def find_cycle(candidate, pref_graph, path=None, explored=None):
     explored.add(candidate)
 
     for neighbor in neighbors:
+        if neighbor in path:
+            return True, explored
+
         path.append(neighbor)
         cycle_found, _ = find_cycle(
             neighbor, pref_graph, path=path, explored=explored
