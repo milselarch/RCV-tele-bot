@@ -58,6 +58,7 @@ def resolve_weakest_candidates(
         return None
 
     # TODO: check for a cycle in the pecking order graph
+    raise NotImplementedError
 
 
 def ranked_choice_vote(
