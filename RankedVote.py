@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple, Optional
 from SpecialVotes import SpecialVotes
 
 
@@ -12,10 +12,11 @@ class RankedVote(object):
         if not first_to_last:
             choices = choices[::-1]
 
-        self.index = 0
-        self.choices = []
+        self.index: int = 0
+        self.choices: List[int] = []
 
         for choice in choices:
+            assert isinstance(choice, int)
             self.add_next_choice(choice)
 
     def __repr__(self):
@@ -24,8 +25,23 @@ class RankedVote(object):
     def __len__(self):
         return len(self.choices)
 
-    def raw_choices(self):
+    def raw_choices(self) -> Tuple[int, ...]:
         return tuple(self.choices)
+
+    def is_preferred_over(self, option_1, option_2) -> bool:
+        # whether option_1 is preferred over option_2
+        has_option_1 = option_1 in self.choices
+        has_option_2 = option_2 in self.choices
+
+        if not has_option_1 and not has_option_2:
+            return False
+        elif not has_option_2:
+            return True
+        elif not has_option_1:
+            return False
+
+        assert has_option_1 and has_option_2
+        return self.choices.index(option_1) < self.choices.index(option_2)
 
     def add_next_choice(self, choice: int):
         if isinstance(choice, SpecialVotes):
@@ -59,7 +75,7 @@ class RankedVote(object):
     def last_choice(self):
         return self.get_last_choice()
 
-    def get_last_choice(self):
+    def get_last_choice(self) -> Optional[int]:
         if len(self.choices) == 0:
             return None
 
@@ -69,7 +85,7 @@ class RankedVote(object):
     def top_choice(self):
         return self.get_top_choice()
 
-    def get_top_choice(self):
+    def get_top_choice(self) -> Optional[int]:
         if len(self.choices) == 0:
             return None
 

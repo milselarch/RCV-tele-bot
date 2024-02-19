@@ -1,9 +1,63 @@
 import copy
-import itertools
 
+from collections import defaultdict
 from SpecialVotes import SpecialVotes
 from RankedVote import RankedVote
-from typing import List, Dict
+from typing import List, Dict, Optional, Set
+
+
+def resolve_weakest_candidates(
+    candidates: List[int], ranked_votes: List[RankedVote]
+) -> Optional[List[int]]:
+    assert len(candidates) == len(set(candidates))
+    # maps candidate to a list of other candidates that it is preferred over
+    preferences_over: Dict[int, Set[int]] = defaultdict(set)
+    # maps candidate to a list of other candidates that are preferred over it
+    preferences_under: Dict[int, Set[int]] = defaultdict(set)
+    num_votes = len(ranked_votes)
+
+    # build a map from candidate to a list of other candidates
+    # that it is preferred over, and a list of other candidates
+    # that it is preferred under
+    for candidate in candidates:
+        for other_candidate in candidates:
+            if candidate == other_candidate:
+                continue
+
+            preferred_count = 0
+            for vote in ranked_votes:
+                if vote.is_preferred_over(candidate, other_candidate):
+                    preferred_count += 1
+
+            if preferred_count > num_votes // 2:
+                preferences_over[candidate].add(other_candidate)
+                preferences_under[other_candidate].add(candidate)
+
+    # strongest_candidates are candidates where there
+    # are no other candidates that are preferred over it
+    # weakest_candidates ares candidates where there
+    # are no other candidates that are preferred under it
+    strongest_candidates, weakest_candidates = [], []
+
+    for candidate in candidates:
+        is_strongest = len(preferences_over[candidate]) == 0
+        is_weakest = len(preferences_under[candidate]) == 0
+
+        if is_strongest and is_weakest:
+            # candidate is not in pecking order at all
+            # pecking order is impossible to establish
+            return None
+
+        if is_strongest:
+            strongest_candidates.append(candidate)
+        elif is_weakest:
+            weakest_candidates.append(candidate)
+
+    if (len(strongest_candidates) == 0) or (len(weakest_candidates) == 0):
+        # pecking order contains a cycle
+        return None
+
+    # TODO: check for a cycle in the pecking order graph
 
 
 def ranked_choice_vote(
