@@ -1,9 +1,157 @@
 import copy
 import itertools
 
+from collections import defaultdict, deque
 from SpecialVotes import SpecialVotes
 from RankedVote import RankedVote
-from typing import List, Dict
+from typing import List, Dict, Optional, Set, Tuple
+
+
+class PreferenceGraph(object):
+    def __init__(
+        self, candidates: List[int] = None,
+        ranked_votes: List[RankedVote] = None
+    ):
+        """
+        A candidate A is considered to be preferred over another
+        candidate B according to the majoritarian rule when the majority
+        of voters tank A further in front of B in their ranked votes.
+        """
+        # maps candidates to other candidates that are weaker preferences
+        self.preferences_over: Dict[int, Set[int]] = defaultdict(set)
+        # maps candidates to other candidates that are stronger preferences
+        self.preferences_under: Dict[int, Set[int]] = defaultdict(set)
+        self.preference_count: Dict[Tuple[int, int], int] = {}
+
+        self.candidates = candidates
+        self.ranked_votes = ranked_votes
+        self.num_votes = len(self.ranked_votes)
+        self.built = False
+        self.build()
+
+    def build(self):
+        assert not self.built
+        pairs = itertools.product(self.candidates, self.candidates)
+
+        for pair in pairs:
+            candidate, other_candidate = pair
+            if candidate == other_candidate:
+                continue
+
+            preferred_count = 0
+            for vote in self.ranked_votes:
+                if vote.is_preferred_over(candidate, other_candidate):
+                    preferred_count += 1
+
+            self.preference_count[pair] = preferred_count
+
+            if preferred_count > self.num_votes / 2:
+                self.preferences_over[candidate].add(other_candidate)
+                self.preferences_under[other_candidate].add(candidate)
+
+        self.built = True
+
+    def get_strong_weak_candidates(self) -> Tuple[List[int], List[int]]:
+        # strongest_candidates are candidates where there
+        # are no other candidates that are preferred over it
+        # weakest_candidates ares candidates where there
+        # are no other candidates that are preferred under it
+        strongest_candidates, weakest_candidates = [], []
+
+        for candidate in self.candidates:
+            pref_over = self.preferences_over[candidate]
+            pref_under = self.preferences_under[candidate]
+            is_strongest = len(pref_under) == 0
+            is_weakest = len(pref_over) == 0
+
+            if is_strongest and is_weakest:
+                # candidate is not in pecking order at all
+                # pecking order is impossible to establish
+                return [], []
+
+            if is_strongest:
+                strongest_candidates.append(candidate)
+            elif is_weakest:
+                weakest_candidates.append(candidate)
+
+        return strongest_candidates, weakest_candidates
+
+
+def find_cycle(candidate, pref_graph, path=None, explored=None):
+    explored = set() if explored is None else explored
+    path = [] if path is None else path
+    neighbors = pref_graph.preferences_over[candidate]
+    explored.add(candidate)
+
+    for neighbor in neighbors:
+        path.append(neighbor)
+        cycle_found, _ = find_cycle(
+            neighbor, pref_graph, path=path, explored=explored
+        )
+
+        if cycle_found:
+            return True, explored
+        else:
+            path.pop()
+
+    return False, explored
+
+
+def get_majoritarian_weakest(
+    candidates: List[int], ranked_votes: List[RankedVote],
+    verbose: bool = False
+) -> Optional[List[int]]:
+    """
+    Returns the weakest candidates according to the majoritarian rule
+
+    :param candidates:
+    :param verbose:
+    :param ranked_votes:
+    :return:
+    """
+    log = print if verbose else lambda *args, **kwargs: None
+
+    if len(candidates) <= 1:
+        log(f'ONE CANDIDATE ONLY: {candidates}')
+        return candidates
+
+    assert min(candidates) > 0
+    assert len(candidates) == len(set(candidates))
+
+    # strongest_candidates are candidates where there
+    # are no other candidates that are preferred over it
+    # weakest_candidates ares candidates where there
+    # are no other candidates that are preferred under it
+    pref_graph = PreferenceGraph(
+        candidates=candidates, ranked_votes=ranked_votes,
+    )
+
+    log(f'PREF_OVER {pref_graph.preferences_over}')
+    log(f'PREF_UNDER {pref_graph.preferences_under}')
+    strong_weak_candidates = pref_graph.get_strong_weak_candidates()
+    strongest_candidates, weakest_candidates = strong_weak_candidates
+    log(f'STRONGEST: {strongest_candidates}')
+
+    if (len(strongest_candidates) == 0) or (len(weakest_candidates) == 0):
+        # pecking order contains a cycle
+        log('PECKING ORDER CONTAINS A CYCLE')
+        return None
+
+    all_explored = set()
+    for candidate in strongest_candidates:
+        has_cycle, explored = find_cycle(candidate, pref_graph)
+        if has_cycle:
+            log(f'HAS_CYCLE {candidate}')
+            return None
+
+        for explored_candidate in explored:
+            all_explored.add(explored_candidate)
+
+    if len(all_explored) != len(candidates):
+        log(f'NOT ALL EXPLORED: {all_explored}')
+        return None
+
+    return weakest_candidates
 
 
 def ranked_choice_vote(
@@ -105,6 +253,16 @@ def ranked_choice_vote(
             if candidate_votes > effective_num_voters / 2:
                 winner = candidate
                 break
+
+        log('WEAKEST_CANDIDATES', weakest_candidates)
+        majoritarian_weakest_candidates = get_majoritarian_weakest(
+            candidates=weakest_candidates, ranked_votes=ranked_votes,
+            verbose=verbose
+        )
+
+        if majoritarian_weakest_candidates is not None:
+            log('MAJORITARIAN_WEAKEST', majoritarian_weakest_candidates)
+            weakest_candidates = majoritarian_weakest_candidates
 
         log('dropping candidates', weakest_candidates)
         if winner is not None:
