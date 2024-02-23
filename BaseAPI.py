@@ -45,6 +45,12 @@ class BaseAPI(object):
     def _view_poll(
         cls, poll_id: int, chat_username: str, bot_username: str
     ) -> Result[str, MessageBuilder]:
+        has_poll_access = cls.has_poll_access(poll_id, chat_username)
+        if not has_poll_access:
+            error_message = MessageBuilder()
+            error_message.add(f'You have no access to poll {poll_id}')
+            return Err(error_message)
+
         read_poll_result = cls.read_poll_info(
             poll_id=poll_id, chat_username=chat_username
         )
