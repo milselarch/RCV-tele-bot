@@ -28,14 +28,27 @@ class BaseAPI(object):
     @staticmethod
     def get_poll_voter(poll_id: int, chat_username: str):
         # check if voter is part of the poll
-        voter = PollVoters.select().join(
-            Polls, on=(Polls.id == PollVoters.poll_id)
-        ).where(
-            (Polls.id == poll_id) &
+        return PollVoters.select().where(
+            (PollVoters.poll_id == poll_id) &
             (PollVoters.username == chat_username)
         )
 
-        return voter
+    @staticmethod
+    def check_has_voted(poll_id: int, chat_username: str) -> bool:
+        # check if the user has voted for poll {poll_id}
+        with db.atomic():
+            # Perform selection operation first
+            poll_voter_ids = PollVoters.select(
+                PollVoters.id
+            ).where(PollVoters.username == chat_username)
+
+            # Use the selected poll_voter_ids to filter Votes table
+            has_voted = bool(Votes.select().where(
+                (Votes.poll_id == poll_id) &
+                (Votes.poll_voter_id.in_(poll_voter_ids))
+            ).count())
+
+            return has_voted
 
     @classmethod
     def is_poll_voter(cls, *args, **kwargs):

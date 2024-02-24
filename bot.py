@@ -250,10 +250,11 @@ class RankedChoiceBot(BaseAPI):
         user = update.message.from_user
         chat_username = user['username']
 
-        poll_id = self.extract_poll_id(update)
-        if poll_id is None:
+        extract_poll_id_result = self.extract_poll_id(update)
+        if extract_poll_id_result.is_err():
             return False
 
+        poll_id: int = extract_poll_id_result.ok()
         is_voter = self.is_poll_voter(
             poll_id=poll_id, chat_username=chat_username
         )
@@ -264,12 +265,9 @@ class RankedChoiceBot(BaseAPI):
             )
             return False
 
-        has_voted = bool(Votes.select().join(
-            PollVoters, on=(Votes.poll_voter_id == PollVoters.id)
-        ).where(
-            (Votes.poll_id == poll_id) &
-            (PollVoters.username == chat_username)
-        ).count())
+        has_voted = self.check_has_voted(
+            poll_id=poll_id, chat_username=chat_username
+        )
 
         if has_voted:
             await message.reply_text("you've voted already")
@@ -625,7 +623,7 @@ class RankedChoiceBot(BaseAPI):
         ).count()
 
         # count number of people who voted
-        num_poll_voted = self.fetch_voters(poll_id).count()
+        num_poll_voted = self.get_voted_voters(poll_id).count()
         everyone_voted = num_poll_voters == num_poll_voted
 
         if everyone_voted:
@@ -652,12 +650,13 @@ class RankedChoiceBot(BaseAPI):
             """))
 
     @staticmethod
-    def fetch_voters(poll_id):
-        return PollVoters.select().join(
-            Votes, on=(Votes.poll_voter_id == PollVoters.id)
-        ).where(
-            (Votes.poll_id == poll_id) &
-            (Votes.ranking == 0)
+    def get_voted_voters(poll_id: int):
+        # returns all voters who voted for this poll
+        return PollVoters.select().where(
+            PollVoters.id.in_(Votes.select(Votes.poll_voter_id).where(
+                (Votes.poll_id == poll_id) &
+                (Votes.ranking == 0)
+            ))
         )
 
     @track_errors
@@ -1012,7 +1011,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'You have no access to poll {poll_id}')
             return False
 
-        poll_voters_voted = self.fetch_voters(poll_id)
+        poll_voters_voted = self.get_voted_voters(poll_id)
         poll_voters = PollVoters.select().where(
             PollVoters.poll_id == poll_id
         )
