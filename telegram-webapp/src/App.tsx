@@ -84,18 +84,18 @@ function App() {
   const [loading, set_loading] = useState(false)
   const [status, set_status] = useState<string>(null)
 
-  const remove_ranking = (option_index: number) => {
+  const remove_ranking = (option_number: number) => {
     set_vote_rankings(vote_rankings.filter(
-      rank => rank !== option_index
+      rank => rank !== option_number
     ))
   }
-  const add_ranking = (option_index: number) => {
-    set_vote_rankings([...vote_rankings, option_index])
+  const add_ranking = (option_number: number) => {
+    set_vote_rankings([...vote_rankings, option_number])
   }
 
   const submit_vote_handler = () => {
     window.Telegram.WebApp.sendData(JSON.stringify({
-      'poll_id': poll.poll_id, 'rankings': vote_rankings
+      'poll_id': poll.poll_id, 'option_numbers': vote_rankings
     }));
   }
 
@@ -155,6 +155,7 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
+
         <StatusLoader loading={loading} status={status}/>
         <PollOptionsList
           authenticated={has_credential} poll={poll}

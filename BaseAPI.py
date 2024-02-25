@@ -19,9 +19,12 @@ from SpecialVotes import SpecialVotes
 class PollInfo(object):
     poll_id: int
     poll_question: str
+    # description of each option within the poll
     poll_options: List[str]
     num_poll_voters: int
     num_poll_votes: int
+    # numerical ranking of each option within the poll
+    option_numbers: List[int]
 
 
 class BaseAPI(object):
@@ -101,7 +104,9 @@ class BaseAPI(object):
         poll_options = [
             poll_option.option_name for poll_option in poll_option_rows
         ]
-        # [poll_option.id for poll_option in poll_option_rows]
+        poll_option_rankings = [
+            poll_option.option_number for poll_option in poll_option_rows
+        ]
 
         poll_question = poll.desc
         num_poll_voters = PollVoters.select().where(
@@ -116,7 +121,8 @@ class BaseAPI(object):
         return Ok(PollInfo(
             poll_id=poll_id, poll_question=poll_question,
             poll_options=poll_options, num_poll_voters=num_poll_voters,
-            num_poll_votes=num_poll_votes
+            num_poll_votes=num_poll_votes,
+            option_numbers=poll_option_rankings
         ))
 
     @classmethod

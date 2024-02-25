@@ -160,22 +160,22 @@ class RankedChoiceBot(BaseAPI):
         # TODO: refactor this here and on frontend to actually send rankings
         payload = json.loads(update.effective_message.web_app_data.data)
         poll_id = int(payload['poll_id'])
-        rankings: List[int] = [
-            vote_index + 1 for vote_index in payload['rankings']
-        ]
+        ranked_option_numbers: List[int] = payload['option_numbers']
 
         message: Message = update.message
         user: User = message.from_user
         chat_username: str = user.username
 
-        formatted_rankings = ' > '.join([str(rank) for rank in rankings])
+        formatted_rankings = ' > '.join([
+            str(rank) for rank in ranked_option_numbers
+        ])
         await message.reply_text(textwrap.dedent(f"""
             Your rankings are:
             {poll_id}: {formatted_rankings}
         """))
 
         vote_result = self.register_vote(
-            poll_id=poll_id, rankings=rankings,
+            poll_id=poll_id, rankings=ranked_option_numbers,
             chat_username=chat_username
         )
 

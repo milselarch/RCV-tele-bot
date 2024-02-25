@@ -1,7 +1,8 @@
 import {Poll} from "./poll";
 
 interface PollOption {
-  poll_index: number;
+  rank: number; // display rank number
+  option_number: number; // sort ID of option
   description: string;
 }
 
@@ -19,39 +20,52 @@ export const PollOptionsList = ({
     return null
   }
 
+  // map poll option sort IDs to their indexes within the poll
+  const option_nos_map = {}
+  for (let k = 0; k < poll.poll_options.length; k++) {
+    option_nos_map[poll.option_numbers[k]] = k;
+  }
+
   const unused_poll_options: Array<PollOption> = []
   for (let k = 0; k < poll.poll_options.length; k++) {
-    if (vote_rankings.indexOf(k) === -1) {
+    const option_number = poll.option_numbers[k]
+
+    if (vote_rankings.indexOf(option_number) === -1) {
       unused_poll_options.push({
-        description: poll.poll_options[k], poll_index: k
+        description: poll.poll_options[k],
+        rank: poll.option_numbers[k],
+        option_number: poll.option_numbers[k]
       })
     }
   }
 
   const used_poll_options: Array<
     PollOption
-  > = vote_rankings.map((option_index: number) => {
+  > = vote_rankings.map((option_number: number, index: number) => {
+    const option_index = option_nos_map[option_number]
+    const description = poll.poll_options[option_index]
     return {
-      description: poll.poll_options[option_index], poll_index: option_index
+      description: description, rank: index+1,
+      option_number: option_number
     }
   })
 
   console.log('POLL', poll)
-  const poll_option_renderer = (option: PollOption, index: number) => (
+  const poll_option_renderer = (option: PollOption) => (
     <div
-      key={index} className="poll-option"
-      onClick={() => on_add_option(option.poll_index)}
+      key={option.option_number} className="poll-option"
+      onClick={() => on_add_option(option.option_number)}
     >
-      <p className="no-select index">{index + 1}.</p>
+      <p className="no-select index">{option.rank}.</p>
       <p className="no-select option">{option.description}</p>
     </div>
   )
-  const voted_option_renderer = (option: PollOption, index: number) => (
+  const voted_option_renderer = (option: PollOption) => (
     <div
-      key={index} className="poll-option"
-      onClick={() => on_remove_option(option.poll_index)}
+      key={option.option_number} className="poll-option"
+      onClick={() => on_remove_option(option.option_number)}
     >
-      <p className="no-select index">#{index + 1}</p>
+      <p className="no-select index">#{option.rank}</p>
       <p className="no-select option">{option.description}</p>
     </div>
   )
