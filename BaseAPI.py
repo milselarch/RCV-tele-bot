@@ -231,17 +231,29 @@ class BaseAPI(object):
     ) -> Result[int, MessageBuilder]:
         """
         registers a vote for the poll
-        checks if poll_id is valid, or if the
-        poll_voter_id is valid for the poll
+        checks that:
+        -   poll_id is valid,
+        -   poll_voter_id corresponds to a valid voter for the poll
+        -   all option ranking numbers are actually part of the poll
+        -   option ranking numbers are valid (e.g. no duplicates)
 
         :param poll_id:
         :param rankings:
         :param chat_username: chat username of voter
-        :return: true if vote was registered, false otherwise
         """
         error_message = MessageBuilder()
         if len(rankings) == 0:
             error_message.add('At least one ranking must be provided')
+            return Err(error_message)
+
+        non_last_rankings = rankings[:-1]
+        if (len(non_last_rankings) > 0) and (min(non_last_rankings) < 1):
+            error_message.add(
+                'vote rankings must be positive non-zero numbers'
+            )
+            return Err(error_message)
+        if len(rankings) != len(set(rankings)):
+            error_message.add('vote rankings must be unique')
             return Err(error_message)
 
         # check if voter is part of the poll
@@ -251,6 +263,17 @@ class BaseAPI(object):
         if poll_voter.count() == 0:
             error_message.add(f"You're not a voter of poll {poll_id}")
             return Err(error_message)
+
+        read_poll_result = cls.read_poll_info(poll_id, chat_username)
+        if read_poll_result.is_err():
+            return read_poll_result
+
+        # verify that the input option ranking numbers are part of the poll
+        poll_info: PollInfo = read_poll_result.ok()
+        for option_ranking in rankings:
+            if option_ranking not in poll_info.option_numbers:
+                error_message.add(f"Invalid option ranking: {option_ranking}")
+                return Err(error_message)
 
         try:
             poll = Polls.select().where(Polls.id == poll_id).get()
@@ -273,7 +296,7 @@ class BaseAPI(object):
             assert isinstance(vote_register_result, Err)
             return vote_register_result
 
-        vote_registered = vote_register_result.ok()
+        vote_registered: bool = vote_register_result.ok()
 
         if vote_registered:
             return Ok(poll_id)

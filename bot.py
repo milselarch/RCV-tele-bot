@@ -157,7 +157,6 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def web_app_data(self, update: Update, _):
-        # TODO: refactor this here and on frontend to actually send rankings
         payload = json.loads(update.effective_message.web_app_data.data)
         poll_id = int(payload['poll_id'])
         ranked_option_numbers: List[int] = payload['option_numbers']
@@ -846,9 +845,9 @@ class RankedChoiceBot(BaseAPI):
 
         if pattern_match1:
             raw_arguments = raw_arguments.replace(':', '')
-            seperator_index = raw_arguments.index(' ')
-            raw_poll_id = int(raw_arguments[:seperator_index])
-            raw_votes = raw_arguments[seperator_index:].strip()
+            separator_index = raw_arguments.index(' ')
+            raw_poll_id = int(raw_arguments[:separator_index])
+            raw_votes = raw_arguments[separator_index:].strip()
             rankings = [
                 cls.parse_ranking(ranking)
                 for ranking in raw_votes.split('>')
