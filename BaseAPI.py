@@ -6,10 +6,11 @@ import hashlib
 import textwrap
 import dataclasses
 import telegram
+from typing_extensions import Any
 
 from database import *
 
-from typing import List
+from typing import List, Dict, Optional
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
@@ -254,8 +255,10 @@ class BaseAPI(object):
         checks that:
         -   poll_id is valid,
         -   poll_voter_id corresponds to a valid voter for the poll
+        -   option ranking numbers are unique
+        -   rankings are non-empty
+        checked internally by __unsafe_register_vote:
         -   all option ranking numbers are actually part of the poll
-        -   option ranking numbers are valid (e.g. no duplicates)
 
         :param poll_id:
         :param rankings:
@@ -278,17 +281,6 @@ class BaseAPI(object):
             error_message.add(f"You're not a voter of poll {poll_id}")
             return Err(error_message)
 
-        read_poll_result = cls.read_poll_info(poll_id, chat_username)
-        if read_poll_result.is_err():
-            return read_poll_result
-
-        # verify that the input option ranking numbers are part of the poll
-        poll_info: PollInfo = read_poll_result.ok()
-        for option_ranking in rankings:
-            if option_ranking not in poll_info.option_numbers:
-                error_message.add(f"Invalid option ranking: {option_ranking}")
-                return Err(error_message)
-
         try:
             poll = Polls.select().where(Polls.id == poll_id).get()
         except Polls.DoesNotExist:
@@ -299,7 +291,7 @@ class BaseAPI(object):
             error_message.add('Poll has already been closed')
             return Err(error_message)
 
-        poll_voter_id = poll_voter[0].id
+        poll_voter_id: int = poll_voter[0].id
         # print('POLL_VOTER_ID', poll_voter_id)
         vote_register_result = cls.__unsafe_register_vote(
             poll_id, poll_voter_id=poll_voter_id,
@@ -324,44 +316,55 @@ class BaseAPI(object):
     ) -> Result[bool, MessageBuilder]:
         """
         registers a vote for the poll
-        does not check if poll_id is valid, or if the
-        poll_voter_id is valid for the poll
+        checks that poll option numbers are valid for the current poll
+        does not check if poll_voter_id is valid for poll {poll_id}
+        does not check if poll has already been closed
 
         :param poll_id:
         :param poll_voter_id:
         :param rankings:
-        :return: true if vote was registered, false otherwise
         """
         error_message = MessageBuilder()
         poll_option_rows = Options.select().where(
             Options.poll_id == poll_id
         ).order_by(Options.option_number)
 
-        poll_votes = []
-        for ranking, choice in enumerate(rankings):
-            poll_option_id, special_vote_val = None, None
+        # map poll option ranking numbers to option ids
+        option_rank_to_ids: Dict[int, int] = {}
+        for poll_option_row in poll_option_rows:
+            option_no = poll_option_row.option_number
+            option_rank_to_ids[option_no] = poll_option_row.id
 
-            if choice > 0:
+        poll_votes: List[Dict[str, Any]] = []
+
+        for ranking, option_no in enumerate(rankings):
+            assert isinstance(option_no, int)
+            poll_option_id: Optional[int] = None
+            special_vote_val: Optional[int] = None
+
+            if option_no > 0:
                 try:
+                    poll_option_id = option_rank_to_ids[option_no]
+                except KeyError:
                     # specified vote choice is not in the list
                     # of available choices
-                    poll_option_row = poll_option_rows[choice - 1]
-                except IndexError:
-                    error_message.add(f'invalid vote number: {choice}')
+                    error_message.add(f'invalid vote number: {option_no}')
                     return Err(error_message)
-
-                poll_option_id = poll_option_row.id
             else:
                 # vote is a special value (0 or nil vote)
                 # which gets translated to a negative integer here
                 try:
-                    SpecialVotes(choice)
+                    SpecialVotes(option_no)
                 except ValueError:
-                    error_message.add(f'invalid special vote: {choice}')
+                    error_message.add(f'invalid special vote: {option_no}')
                     return Err(error_message)
 
-                special_vote_val = choice
+                special_vote_val = option_no
 
+            assert (
+                isinstance(poll_option_id, int) or
+                isinstance(special_vote_val, int)
+            )
             poll_vote = cls.kwargify(
                 poll_id=poll_id, poll_voter_id=poll_voter_id,
                 option_id=poll_option_id, special_value=special_vote_val,
