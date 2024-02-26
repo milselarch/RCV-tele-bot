@@ -226,6 +226,26 @@ class BaseAPI(object):
         return pwd
 
     @classmethod
+    def validate_rankings(
+        cls, rankings: List[int]
+    ) -> Result[bool, MessageBuilder]:
+        error_message = MessageBuilder()
+
+        print('rankings =', rankings)
+        if len(rankings) != len(set(rankings)):
+            error_message.add('vote rankings must be unique')
+            return Err(error_message)
+
+        non_last_rankings = rankings[:-1]
+        if (len(non_last_rankings) > 0) and (min(non_last_rankings) < 1):
+            error_message.add(
+                'vote rankings must be positive non-zero numbers'
+            )
+            return Err(error_message)
+
+        return Ok(True)
+
+    @classmethod
     def register_vote(
         cls, poll_id: int, rankings: List[int], chat_username: str
     ) -> Result[int, MessageBuilder]:
@@ -246,15 +266,9 @@ class BaseAPI(object):
             error_message.add('At least one ranking must be provided')
             return Err(error_message)
 
-        non_last_rankings = rankings[:-1]
-        if (len(non_last_rankings) > 0) and (min(non_last_rankings) < 1):
-            error_message.add(
-                'vote rankings must be positive non-zero numbers'
-            )
-            return Err(error_message)
-        if len(rankings) != len(set(rankings)):
-            error_message.add('vote rankings must be unique')
-            return Err(error_message)
+        validate_result = cls.validate_rankings(rankings)
+        if validate_result.is_err():
+            return validate_result
 
         # check if voter is part of the poll
         poll_voter = cls.get_poll_voter(poll_id, chat_username)

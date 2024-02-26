@@ -866,17 +866,9 @@ class RankedChoiceBot(BaseAPI):
             error_message.add('input format is invalid')
             return Err(error_message)
 
-        print('rankings =', rankings)
-        if len(rankings) != len(set(rankings)):
-            error_message.add('vote rankings must be unique')
-            return Err(error_message)
-
-        non_last_rankings = rankings[:-1]
-        if (len(non_last_rankings) > 0) and (min(non_last_rankings) < 1):
-            error_message.add(
-                'vote rankings must be positive non-zero numbers'
-            )
-            return Err(error_message)
+        validate_result = cls.validate_rankings(rankings)
+        if validate_result.is_err():
+            return validate_result
 
         try:
             poll_id = int(raw_poll_id)
