@@ -157,10 +157,16 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def web_app_data(self, update: Update, _):
-        # TODO: refactor this here and on frontend to actually send rankings
         payload = json.loads(update.effective_message.web_app_data.data)
         poll_id = int(payload['poll_id'])
-        ranked_option_numbers: List[int] = payload['option_numbers']
+
+        if 'option_numbers' in payload:
+            ranked_option_numbers: List[int] = payload['option_numbers']
+        else:
+            # TODO: remove this after production frontend has updated
+            ranked_option_numbers: List[int] = [
+                vote_index + 1 for vote_index in payload['rankings']
+            ]
 
         message: Message = update.message
         user: User = message.from_user
@@ -846,9 +852,9 @@ class RankedChoiceBot(BaseAPI):
 
         if pattern_match1:
             raw_arguments = raw_arguments.replace(':', '')
-            seperator_index = raw_arguments.index(' ')
-            raw_poll_id = int(raw_arguments[:seperator_index])
-            raw_votes = raw_arguments[seperator_index:].strip()
+            separator_index = raw_arguments.index(' ')
+            raw_poll_id = int(raw_arguments[:separator_index])
+            raw_votes = raw_arguments[separator_index:].strip()
             rankings = [
                 cls.parse_ranking(ranking)
                 for ranking in raw_votes.split('>')
@@ -867,17 +873,9 @@ class RankedChoiceBot(BaseAPI):
             error_message.add('input format is invalid')
             return Err(error_message)
 
-        print('rankings =', rankings)
-        if len(rankings) != len(set(rankings)):
-            error_message.add('vote rankings must be unique')
-            return Err(error_message)
-
-        non_last_rankings = rankings[:-1]
-        if (len(non_last_rankings) > 0) and (min(non_last_rankings) < 1):
-            error_message.add(
-                'vote rankings must be positive non-zero numbers'
-            )
-            return Err(error_message)
+        validate_result = cls.validate_rankings(rankings)
+        if validate_result.is_err():
+            return validate_result
 
         try:
             poll_id = int(raw_poll_id)
