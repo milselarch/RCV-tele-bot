@@ -159,14 +159,7 @@ class RankedChoiceBot(BaseAPI):
     async def web_app_data(self, update: Update, _):
         payload = json.loads(update.effective_message.web_app_data.data)
         poll_id = int(payload['poll_id'])
-
-        if 'option_numbers' in payload:
-            ranked_option_numbers: List[int] = payload['option_numbers']
-        else:
-            # TODO: remove this after production frontend has updated
-            ranked_option_numbers: List[int] = [
-                vote_index + 1 for vote_index in payload['rankings']
-            ]
+        ranked_option_numbers: List[int] = payload['option_numbers']
 
         message: Message = update.message
         user: User = message.from_user
