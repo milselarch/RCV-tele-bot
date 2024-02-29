@@ -351,7 +351,7 @@ class BaseAPI(object):
                     error_message.add(f'invalid vote number: {option_no}')
                     return Err(error_message)
             else:
-                # vote is a special value (0 or nil vote)
+                # vote is a special value (withhold or abstain vote)
                 # which gets translated to a negative integer here
                 try:
                     SpecialVotes(option_no)

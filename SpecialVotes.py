@@ -3,15 +3,24 @@ from typing import Dict
 
 
 class SpecialVotes(IntEnum):
-    ZERO_VOTE = -1
-    NULL_VOTE = -2
+    # a withhold vote signals a commitment to not vote for any
+    # of the candidates, and that the voter wants none of them to win
+    WITHHOLD_VOTE = -1
+    # an abstain vote signals a commitment to not vote for any
+    # of the candidates, and that the voter is unsure who should win
+    # but still wants there to be a winner in the end of the poll
+    ABSTAIN_VOTE = -2
 
-    __string_map__ = {ZERO_VOTE: '0', NULL_VOTE: 'nil'}
+    __string_map__ = {WITHHOLD_VOTE: 'withhold', ABSTAIN_VOTE: 'abstain'}
     __inv_string_map__ = None
 
     @classmethod
     def get_string_map(cls) -> Dict:
         return getattr(cls, '__string_map__')
+
+    @classmethod
+    def get_str_values(cls):
+        return tuple(cls.get_string_map().values())
 
     @classmethod
     def get_inv_map(cls):

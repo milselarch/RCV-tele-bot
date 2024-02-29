@@ -476,7 +476,7 @@ class RankedChoiceBot(BaseAPI):
             mapping their vote ranking to a vote_value
             Each vote_value is either a poll option_id 
             (which is always a positive number), 
-            or either of the 0 or nil special votes
+            or either of the <abstain> or <withhold> special votes
             (which are represented as negative numbers -1 and -2)
             """
             voter_id: int = vote_row.poll_voter_id.id
@@ -819,13 +819,14 @@ class RankedChoiceBot(BaseAPI):
         ^ -> start of string
         ^[0-9]+:*\s+ -> poll_id, optional colon, and space 
         (\s*[1-9]+0*\s*>)* -> ranking number (>0) then arrow
-        \s*[0-9]+ -> final ranking number
+        \s*([0-9]+|withhold|abstain) -> final ranking number or special vote
         $ -> end of string        
         """
         print('RAW', raw_arguments)
         pattern_match1 = re.match(
-            '^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|nil)$',
-            raw_arguments
+            '^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|{}|{})$'.format(
+                *SpecialVotes.get_str_values()
+            ), raw_arguments
         )
         """
         catches input of format:
@@ -835,12 +836,13 @@ class RankedChoiceBot(BaseAPI):
         ^ -> start of string
         ([0-9]+):*\s* -> poll_id, optional colon
         ([1-9]+0*\s+)* -> ranking number (>0) then space
-        ([0-9]+) -> final ranking number
+        ([0-9]+|withhold|abstain) -> final ranking number or special vote
         $ -> end of string        
         """
         pattern_match2 = re.match(
-            '^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|nil)$',
-            raw_arguments
+            '^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|{}|{})$'.format(
+                *SpecialVotes.get_str_values()
+            ), raw_arguments
         )
 
         if pattern_match1:
@@ -943,9 +945,9 @@ class RankedChoiceBot(BaseAPI):
         /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
         /vote {poll_id} {option_1} {option_2} ... {option_n} 
 
-        Last option can also accept 2 special values, 0 and nil:
-            > Vote 0 if you want to vote for none of the options in the poll
-            > Vote nil if you want to remove yourself from the poll 
+        Last option can also accept 2 special values, withhold and abstain:
+            > Vote withhold if you want to vote for none of the options
+            > Vote abstain if you want to remove yourself from the poll 
 
         - vote for the poll with the specified poll_id
         requires that the user is one of the registered 
