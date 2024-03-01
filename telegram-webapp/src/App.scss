@@ -125,13 +125,6 @@ div.poll-container {
       }
 
       & > div.poll-option {
-        display: flex;
-        border: 2px solid #555;
-
-        &:active {
-          border-color: white;
-        }
-
         &:first-child {
           border-top-left-radius: 0.5rem;
           border-top-right-radius: 0.5rem;
@@ -140,6 +133,15 @@ div.poll-container {
         &:last-child {
           border-bottom-left-radius: 0.5rem;
           border-bottom-right-radius: 0.5rem;
+        }
+      }
+
+      & div.poll-option {
+        display: flex;
+        border: 2px solid #555;
+
+        &:active {
+          border-color: white;
         }
 
         & > p {
@@ -157,6 +159,29 @@ div.poll-container {
           &.option {
             margin-right: 1.5rem;
             text-align: left;
+          }
+        }
+      }
+
+      & > div.special-votes {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        gap: 0.5rem;
+
+        & > div.poll-option {
+          flex-grow: 1;
+
+          &:first-child {
+            border-bottom-left-radius: 0.5rem;
+          }
+          &:last-child {
+            border-bottom-right-radius: 0.5rem;
+          }
+
+          & > p {
+            margin-left: auto;
+            margin-right: auto;
           }
         }
       }

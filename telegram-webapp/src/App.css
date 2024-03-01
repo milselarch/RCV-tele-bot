@@ -106,13 +106,6 @@ div.poll-container > div.poll-selector > div.poll-options {
 div.poll-container > div.poll-selector > div.poll-options:empty {
   display: none;
 }
-div.poll-container > div.poll-selector > div.poll-options > div.poll-option {
-  display: flex;
-  border: 2px solid #555;
-}
-div.poll-container > div.poll-selector > div.poll-options > div.poll-option:active {
-  border-color: white;
-}
 div.poll-container > div.poll-selector > div.poll-options > div.poll-option:first-child {
   border-top-left-radius: 0.5rem;
   border-top-right-radius: 0.5rem;
@@ -121,20 +114,46 @@ div.poll-container > div.poll-selector > div.poll-options > div.poll-option:last
   border-bottom-left-radius: 0.5rem;
   border-bottom-right-radius: 0.5rem;
 }
-div.poll-container > div.poll-selector > div.poll-options > div.poll-option > p {
+div.poll-container > div.poll-selector > div.poll-options div.poll-option {
+  display: flex;
+  border: 2px solid #555;
+}
+div.poll-container > div.poll-selector > div.poll-options div.poll-option:active {
+  border-color: white;
+}
+div.poll-container > div.poll-selector > div.poll-options div.poll-option > p {
   color: #DDD;
   font-family: "Ubuntu Mono", sans-serif;
   font-size: 1rem;
 }
-div.poll-container > div.poll-selector > div.poll-options > div.poll-option > p.index {
+div.poll-container > div.poll-selector > div.poll-options div.poll-option > p.index {
   width: 1.5rem;
   text-align: right;
   margin-right: 1rem;
   flex-shrink: 0;
 }
-div.poll-container > div.poll-selector > div.poll-options > div.poll-option > p.option {
+div.poll-container > div.poll-selector > div.poll-options div.poll-option > p.option {
   margin-right: 1.5rem;
   text-align: left;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.special-votes {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.special-votes > div.poll-option {
+  flex-grow: 1;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.special-votes > div.poll-option:first-child {
+  border-bottom-left-radius: 0.5rem;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.special-votes > div.poll-option:last-child {
+  border-bottom-right-radius: 0.5rem;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.special-votes > div.poll-option > p {
+  margin-left: auto;
+  margin-right: auto;
 }
 div.poll-container > span.mono {
   margin-top: 2rem;

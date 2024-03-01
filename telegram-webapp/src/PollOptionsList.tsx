@@ -89,6 +89,15 @@ export const PollOptionsList = ({
         </div>
         <div className="poll-options">
           {unused_poll_items.map((render_item) => (render_item))}
+
+          <div className="special-votes">
+            <div className="poll-option">
+              <p className="no-select option">withhold</p>
+            </div>
+            <div className="poll-option">
+              <p className="no-select option">abstain</p>
+            </div>
+          </div>
         </div>
       </div>
 
