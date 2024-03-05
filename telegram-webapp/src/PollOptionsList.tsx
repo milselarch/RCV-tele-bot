@@ -8,12 +8,13 @@ interface PollOption {
 
 export const PollOptionsList = ({
   authenticated, poll, vote_rankings,
-  on_add_option, on_remove_option,
+  on_add_option, on_remove_option, withhold_final, abstain_final
 }: {
   authenticated: boolean, poll: Poll | null,
   vote_rankings: Array<number>,
   on_add_option: (option_index: number) => void,
   on_remove_option: (option_index: number) => void,
+  withhold_final: boolean, abstain_final: boolean
 }) => {
   console.log('AUTHENTICATED', authenticated)
   if (!authenticated || (poll === null)) {
@@ -86,7 +87,10 @@ export const PollOptionsList = ({
       <div className="poll-selector">
         <div className="poll-options selected">
           {used_poll_items.map((render_item) => (render_item))}
+          { withhold_final && <div className="poll-option"><p>withhold</p></div> }
+          { abstain_final && <div className="poll-option"><p>abstain</p></div> }
         </div>
+
         <div className="poll-options">
           {unused_poll_items.map((render_item) => (render_item))}
 

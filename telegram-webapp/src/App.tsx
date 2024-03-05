@@ -80,9 +80,12 @@ function App() {
   const [headers, set_headers] = useState('');
   const [has_credential, set_has_credential] = useState(false);
   const [poll, set_poll] = useState<Poll | null>(null)
-  const [vote_rankings, set_vote_rankings] = useState<Array<number>>([])
   const [loading, set_loading] = useState(false)
   const [status, set_status] = useState<string>(null)
+
+  const [vote_rankings, set_vote_rankings] = useState<Array<number>>([])
+  const [withhold_final, set_withhold_final] = useState<boolean>(false);
+  const [abstain_final, set_abstain_final] = useState<boolean>(false);
 
   const remove_ranking = (option_number: number) => {
     set_vote_rankings(vote_rankings.filter(
@@ -162,6 +165,8 @@ function App() {
           vote_rankings={vote_rankings}
           on_add_option={add_ranking}
           on_remove_option={remove_ranking}
+          withhold_final={withhold_final}
+          abstain_final={abstain_final}
         />
         <WebAppProvider>
           <MainButton
