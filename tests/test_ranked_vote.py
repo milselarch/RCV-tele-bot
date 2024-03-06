@@ -56,7 +56,7 @@ class TestRankedChoiceVote(unittest.TestCase):
     def test_zero_vote_end(self):
         # Test that a zero vote ends with no one winning
         votes = [
-            RankedVote([1, SpecialVotes.ZERO_VOTE]),
+            RankedVote([1, SpecialVotes.WITHHOLD_VOTE]),
             RankedVote([2, 1]),
             RankedVote([3, 2]),
             RankedVote([3])
@@ -71,10 +71,10 @@ class TestRankedChoiceVote(unittest.TestCase):
         # Test that having only zero and nil votes ends with no one winning,
         # and also that there are no errors in computing the poll result
         votes = [
-            RankedVote([SpecialVotes.ZERO_VOTE]),
-            RankedVote([SpecialVotes.ZERO_VOTE]),
-            RankedVote([SpecialVotes.ZERO_VOTE]),
-            RankedVote([SpecialVotes.NULL_VOTE])
+            RankedVote([SpecialVotes.WITHHOLD_VOTE]),
+            RankedVote([SpecialVotes.WITHHOLD_VOTE]),
+            RankedVote([SpecialVotes.WITHHOLD_VOTE]),
+            RankedVote([SpecialVotes.ABSTAIN_VOTE])
         ]
         result = ranked_choice_vote(votes, verbose=self.verbose)
         self.assertEqual(
@@ -85,7 +85,7 @@ class TestRankedChoiceVote(unittest.TestCase):
     def test_null_vote_end(self):
         # Test that a null vote ends with someone winning
         votes = [
-            RankedVote([1, SpecialVotes.NULL_VOTE]),
+            RankedVote([1, SpecialVotes.ABSTAIN_VOTE]),
             RankedVote([2, 1]),
             RankedVote([3, 2]),
             RankedVote([3])

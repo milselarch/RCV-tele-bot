@@ -106,7 +106,7 @@ class RankedChoiceBot(BaseAPI):
             self.handle_unknown_command
         ))
         self.app.add_handler(MessageHandler(
-            filters.StatusUpdate.WEB_APP_DATA, self.web_app_data
+            filters.StatusUpdate.WEB_APP_DATA, self.web_app_handler
         ))
 
         self.app.run_polling(allowed_updates=Update.ALL_TYPES)
@@ -156,7 +156,7 @@ class RankedChoiceBot(BaseAPI):
         await message.reply_text(poll_message, reply_markup=reply_markup)
 
     @track_errors
-    async def web_app_data(self, update: Update, _):
+    async def web_app_handler(self, update: Update, _):
         payload = json.loads(update.effective_message.web_app_data.data)
         poll_id = int(payload['poll_id'])
         ranked_option_numbers: List[int] = payload['option_numbers']
@@ -166,7 +166,7 @@ class RankedChoiceBot(BaseAPI):
         chat_username: str = user.username
 
         formatted_rankings = ' > '.join([
-            str(rank) for rank in ranked_option_numbers
+            self.stringify_ranking(rank) for rank in ranked_option_numbers
         ])
         await message.reply_text(textwrap.dedent(f"""
             Your rankings are:
@@ -476,7 +476,7 @@ class RankedChoiceBot(BaseAPI):
             mapping their vote ranking to a vote_value
             Each vote_value is either a poll option_id 
             (which is always a positive number), 
-            or either of the 0 or nil special votes
+            or either of the <abstain> or <withhold> special votes
             (which are represented as negative numbers -1 and -2)
             """
             voter_id: int = vote_row.poll_voter_id.id
@@ -485,14 +485,13 @@ class RankedChoiceBot(BaseAPI):
             if voter_id not in vote_sequence_map:
                 vote_sequence_map[voter_id] = {}
 
-            option_id: int = vote_row.option_id.id
-            assert isinstance(option_id, int)
+            option_id_row = vote_row.option_id
 
-            if option_id is None:
+            if option_id_row is None:
                 vote_value = vote_row.special_value
                 assert vote_value < 0
             else:
-                vote_value = option_id
+                vote_value = option_id_row.id
                 assert vote_value > 0
 
             ranking = int(vote_row.ranking)
@@ -786,7 +785,7 @@ class RankedChoiceBot(BaseAPI):
         )
 
     @staticmethod
-    def parse_ranking(raw_ranking) -> int:
+    def parse_ranking(raw_ranking: str) -> int:
         raw_ranking = raw_ranking.strip()
 
         try:
@@ -797,6 +796,13 @@ class RankedChoiceBot(BaseAPI):
             ranking = int(raw_ranking)
             assert ranking > 0
             return ranking
+
+    @staticmethod
+    def stringify_ranking(ranking_no: int) -> str:
+        if ranking_no > 0:
+            return str(ranking_no)
+        else:
+            return SpecialVotes(ranking_no).to_string()
 
     @classmethod
     def unpack_rankings_and_poll_id(
@@ -819,13 +825,14 @@ class RankedChoiceBot(BaseAPI):
         ^ -> start of string
         ^[0-9]+:*\s+ -> poll_id, optional colon, and space 
         (\s*[1-9]+0*\s*>)* -> ranking number (>0) then arrow
-        \s*[0-9]+ -> final ranking number
+        \s*([0-9]+|withhold|abstain) -> final ranking number or special vote
         $ -> end of string        
         """
         print('RAW', raw_arguments)
         pattern_match1 = re.match(
-            '^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|nil)$',
-            raw_arguments
+            '^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|{}|{})$'.format(
+                *SpecialVotes.get_str_values()
+            ), raw_arguments
         )
         """
         catches input of format:
@@ -835,12 +842,13 @@ class RankedChoiceBot(BaseAPI):
         ^ -> start of string
         ([0-9]+):*\s* -> poll_id, optional colon
         ([1-9]+0*\s+)* -> ranking number (>0) then space
-        ([0-9]+) -> final ranking number
+        ([0-9]+|withhold|abstain) -> final ranking number or special vote
         $ -> end of string        
         """
         pattern_match2 = re.match(
-            '^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|nil)$',
-            raw_arguments
+            '^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|{}|{})$'.format(
+                *SpecialVotes.get_str_values()
+            ), raw_arguments
         )
 
         if pattern_match1:
@@ -943,9 +951,9 @@ class RankedChoiceBot(BaseAPI):
         /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
         /vote {poll_id} {option_1} {option_2} ... {option_n} 
 
-        Last option can also accept 2 special values, 0 and nil:
-            > Vote 0 if you want to vote for none of the options in the poll
-            > Vote nil if you want to remove yourself from the poll 
+        Last option can also accept 2 special values, withhold and abstain:
+            > Vote withhold if you want to vote for none of the options
+            > Vote abstain if you want to remove yourself from the poll 
 
         - vote for the poll with the specified poll_id
         requires that the user is one of the registered 

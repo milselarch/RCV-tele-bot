@@ -8,12 +8,15 @@ interface PollOption {
 
 export const PollOptionsList = ({
   authenticated, poll, vote_rankings,
-  on_add_option, on_remove_option,
+  on_add_option, on_remove_option, withhold_final, abstain_final,
+  set_special_vote_status
 }: {
   authenticated: boolean, poll: Poll | null,
   vote_rankings: Array<number>,
   on_add_option: (option_index: number) => void,
   on_remove_option: (option_index: number) => void,
+  withhold_final: boolean, abstain_final: boolean,
+  set_special_vote_status: (withhold: boolean, abstain: boolean) => any
 }) => {
   console.log('AUTHENTICATED', authenticated)
   if (!authenticated || (poll === null)) {
@@ -85,10 +88,38 @@ export const PollOptionsList = ({
 
       <div className="poll-selector">
         <div className="poll-options selected">
-          {used_poll_items.map((render_item) => (render_item))}
+          { used_poll_items.map((render_item) => (render_item)) }
+
+          {
+            (withhold_final || abstain_final) &&
+            <div className="special-votes">
+            { withhold_final &&
+              <div className="poll-option" onClick={() => set_special_vote_status(false, false)}>
+                <p className="no-select option">&lt;&lt;&lt; withhold vote &gt;&gt;&gt;</p>
+              </div>
+            } { abstain_final &&
+              <div className="poll-option" onClick={() => set_special_vote_status(false, false)}>
+                <p className="no-select option">&lt;&lt;&lt; abstain vote &gt;&gt;&gt;</p>
+              </div>
+            }
+            </div>
+          }
         </div>
+
         <div className="poll-options">
-          {unused_poll_items.map((render_item) => (render_item))}
+          {unused_poll_items.map((render_item) => (render_item)) }
+
+          {
+            (!withhold_final && !abstain_final) &&
+            <div className="special-votes">
+              <div className="poll-option" onClick={() => set_special_vote_status(true, false)}>
+                <p className="no-select option">withhold</p>
+              </div>
+              <div className="poll-option" onClick={() => set_special_vote_status(false, true)}>
+                <p className="no-select option">abstain</p>
+              </div>
+            </div>
+          }
         </div>
       </div>
 

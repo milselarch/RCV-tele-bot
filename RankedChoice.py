@@ -194,10 +194,10 @@ def ranked_choice_vote(
             unique_candidates.add(candidate)
 
     # remove 0 and None votes from unique candidates
-    if SpecialVotes.ZERO_VOTE in unique_candidates:
-        unique_candidates.remove(SpecialVotes.ZERO_VOTE)
-    if SpecialVotes.NULL_VOTE in unique_candidates:
-        unique_candidates.remove(SpecialVotes.NULL_VOTE)
+    if SpecialVotes.WITHHOLD_VOTE in unique_candidates:
+        unique_candidates.remove(SpecialVotes.WITHHOLD_VOTE)
+    if SpecialVotes.ABSTAIN_VOTE in unique_candidates:
+        unique_candidates.remove(SpecialVotes.ABSTAIN_VOTE)
 
     candidate_votes_map = {
         candidate: 0 for candidate in unique_candidates
@@ -209,11 +209,11 @@ def ranked_choice_vote(
     for ranked_vote in ranked_votes:
         top_choice = ranked_vote.top_choice
 
-        if top_choice == SpecialVotes.ZERO_VOTE:
-            # 0 means voter has chosen to vote for no one
+        if top_choice == SpecialVotes.WITHHOLD_VOTE:
+            # withold means voter has chosen to vote for no one
             pass
-        elif top_choice == SpecialVotes.NULL_VOTE:
-            # None means the voter has chosen to remove
+        elif top_choice == SpecialVotes.ABSTAIN_VOTE:
+            # abstain means the voter has chosen to remove
             # himself from the poll
             effective_num_voters -= 1
         else:
@@ -294,9 +294,9 @@ def ranked_choice_vote(
                 # get next choice that the voter wants
                 next_choice = ranked_vote.top_choice
 
-                if next_choice == SpecialVotes.ZERO_VOTE:
+                if next_choice == SpecialVotes.WITHHOLD_VOTE:
                     candidate_votes_map[top_choice] -= 1
-                elif next_choice == SpecialVotes.NULL_VOTE:
+                elif next_choice == SpecialVotes.ABSTAIN_VOTE:
                     candidate_votes_map[top_choice] -= 1
                     effective_num_voters -= 1
                 else:

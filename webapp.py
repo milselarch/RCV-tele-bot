@@ -111,9 +111,6 @@ class VotingWebApp(BaseAPI):
         self.router.add_api_route(
             '/fetch_poll', self.fetch_poll, methods=['POST']
         )
-        self.router.add_api_route(
-            '/vote', self.cast_vote, methods=['POST']
-        )
 
     def fetch_poll(self, request: Request, payload: FetchPollPayload):
         telegram_data_header = request.headers.get(TELEGRAM_DATA_HEADER)
@@ -134,9 +131,6 @@ class VotingWebApp(BaseAPI):
 
         poll_info = read_poll_result.ok()
         return dataclasses.asdict(poll_info)
-
-    def cast_vote(self, payload: VoteRequestPayload):
-        raise NotImplementedError
 
 
 app = FastAPI()
