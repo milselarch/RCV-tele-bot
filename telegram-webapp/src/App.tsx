@@ -8,8 +8,12 @@ import ReactLoading from 'react-loading';
 
 import {PollOptionsList} from "./PollOptionsList";
 import {Poll} from "./poll";
+import * as assert from "assert";
 
 // import { MainButton, useShowPopup } from '@vkruglikov/react-telegram-web-app';
+
+const WITHHOLD_VOTE_VALUE = -1
+const ABSTAIN_VOTE_VALUE = -2
 
 const load_tele_headers = () => {
   let headers = window?.Telegram?.WebApp?.initData ?? '';
@@ -96,9 +100,37 @@ function App() {
     set_vote_rankings([...vote_rankings, option_number])
   }
 
+  const set_special_vote_status = (
+    cast_withhold: boolean, cast_abstain: boolean
+  ) => {
+    console.assert(!(cast_abstain && cast_withhold))
+    // console.log('CAST', cast_withhold, cast_abstain)
+
+    if (!withhold_final && !abstain_final) {
+      // neither special vote has been cast
+      set_withhold_final(cast_withhold)
+      set_abstain_final(cast_abstain)
+      return true
+    } else {
+      // unset both special votes
+      set_withhold_final(false)
+      set_abstain_final(false)
+      return false
+    }
+  }
+
   const submit_vote_handler = () => {
+    const final_vote_rankings = [...vote_rankings]
+    console.assert(!(withhold_final && abstain_final))
+
+    if (withhold_final) {
+      final_vote_rankings.push(WITHHOLD_VOTE_VALUE)
+    } else if (abstain_final) {
+      final_vote_rankings.push(ABSTAIN_VOTE_VALUE)
+    }
+
     window.Telegram.WebApp.sendData(JSON.stringify({
-      'poll_id': poll.poll_id, 'option_numbers': vote_rankings
+      'poll_id': poll.poll_id, 'option_numbers': final_vote_rankings
     }));
   }
 
@@ -167,6 +199,7 @@ function App() {
           on_remove_option={remove_ranking}
           withhold_final={withhold_final}
           abstain_final={abstain_final}
+          set_special_vote_status={set_special_vote_status}
         />
         <WebAppProvider>
           <MainButton
