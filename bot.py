@@ -106,7 +106,7 @@ class RankedChoiceBot(BaseAPI):
             self.handle_unknown_command
         ))
         self.app.add_handler(MessageHandler(
-            filters.StatusUpdate.WEB_APP_DATA, self.web_app_data
+            filters.StatusUpdate.WEB_APP_DATA, self.web_app_handler
         ))
 
         self.app.run_polling(allowed_updates=Update.ALL_TYPES)
@@ -156,7 +156,7 @@ class RankedChoiceBot(BaseAPI):
         await message.reply_text(poll_message, reply_markup=reply_markup)
 
     @track_errors
-    async def web_app_data(self, update: Update, _):
+    async def web_app_handler(self, update: Update, _):
         payload = json.loads(update.effective_message.web_app_data.data)
         poll_id = int(payload['poll_id'])
         ranked_option_numbers: List[int] = payload['option_numbers']
@@ -166,7 +166,7 @@ class RankedChoiceBot(BaseAPI):
         chat_username: str = user.username
 
         formatted_rankings = ' > '.join([
-            str(rank) for rank in ranked_option_numbers
+            self.stringify_ranking(rank) for rank in ranked_option_numbers
         ])
         await message.reply_text(textwrap.dedent(f"""
             Your rankings are:
@@ -485,14 +485,13 @@ class RankedChoiceBot(BaseAPI):
             if voter_id not in vote_sequence_map:
                 vote_sequence_map[voter_id] = {}
 
-            option_id: int = vote_row.option_id.id
-            assert isinstance(option_id, int)
+            option_id_row = vote_row.option_id
 
-            if option_id is None:
+            if option_id_row is None:
                 vote_value = vote_row.special_value
                 assert vote_value < 0
             else:
-                vote_value = option_id
+                vote_value = option_id_row.id
                 assert vote_value > 0
 
             ranking = int(vote_row.ranking)
@@ -786,7 +785,7 @@ class RankedChoiceBot(BaseAPI):
         )
 
     @staticmethod
-    def parse_ranking(raw_ranking) -> int:
+    def parse_ranking(raw_ranking: str) -> int:
         raw_ranking = raw_ranking.strip()
 
         try:
@@ -797,6 +796,13 @@ class RankedChoiceBot(BaseAPI):
             ranking = int(raw_ranking)
             assert ranking > 0
             return ranking
+
+    @staticmethod
+    def stringify_ranking(ranking_no: int) -> str:
+        if ranking_no > 0:
+            return str(ranking_no)
+        else:
+            return SpecialVotes(ranking_no).to_string()
 
     @classmethod
     def unpack_rankings_and_poll_id(
