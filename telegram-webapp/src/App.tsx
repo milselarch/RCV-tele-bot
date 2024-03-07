@@ -8,7 +8,6 @@ import ReactLoading from 'react-loading';
 
 import {PollOptionsList} from "./PollOptionsList";
 import {Poll} from "./poll";
-import * as assert from "assert";
 
 // import { MainButton, useShowPopup } from '@vkruglikov/react-telegram-web-app';
 
@@ -81,7 +80,7 @@ function App() {
   });
   */
 
-  const [headers, set_headers] = useState('');
+  // const [headers, set_headers] = useState('');
   const [has_credential, set_has_credential] = useState(false);
   const [poll, set_poll] = useState<Poll | null>(null)
   const [loading, set_loading] = useState(false)
@@ -139,7 +138,7 @@ function App() {
     const has_credential = headers !== ''
 
     set_has_credential(has_credential);
-    set_headers(headers);
+    // set_headers(headers);
 
     if (has_credential) {
       axios.defaults.headers.common['telegram-data'] = headers;

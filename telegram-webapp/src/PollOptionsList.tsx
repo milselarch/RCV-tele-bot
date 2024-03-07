@@ -1,9 +1,9 @@
 import {Poll} from "./poll";
 
 interface PollOption {
-  rank: number; // display rank number
-  option_number: number; // sort ID of option
-  description: string;
+  readonly rank: number; // display rank number
+  readonly option_number: number; // sort ID of option
+  readonly description: string;
 }
 
 export const PollOptionsList = ({
@@ -16,7 +16,7 @@ export const PollOptionsList = ({
   on_add_option: (option_index: number) => void,
   on_remove_option: (option_index: number) => void,
   withhold_final: boolean, abstain_final: boolean,
-  set_special_vote_status: (withhold: boolean, abstain: boolean) => any
+  set_special_vote_status: (withhold: boolean, abstain: boolean) => boolean
 }) => {
   console.log('AUTHENTICATED', authenticated)
   if (!authenticated || (poll === null)) {
@@ -53,7 +53,7 @@ export const PollOptionsList = ({
     }
   })
 
-  console.log('POLL', poll)
+  // console.log('POLL', poll)
   const poll_option_renderer = (option: PollOption) => (
     <div
       key={option.option_number} className="poll-option"

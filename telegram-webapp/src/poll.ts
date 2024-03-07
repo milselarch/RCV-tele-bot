@@ -1,6 +1,6 @@
 export interface Poll {
-  poll_options: Array<string>,
-  poll_question: string,
-  option_numbers: Array<number>,
-  poll_id: number
+  readonly poll_options: Array<string>,
+  readonly poll_question: string,
+  readonly option_numbers: Array<number>,
+  readonly poll_id: number
 }

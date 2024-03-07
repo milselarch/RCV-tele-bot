@@ -142,6 +142,12 @@ div.poll-container > div.poll-selector > div.poll-options > div.special-votes {
   justify-content: space-between;
   gap: 0.5rem;
 }
+div.poll-container > div.poll-selector > div.poll-options > div.special-votes:first-child > div.poll-option:first-child {
+  border-top-left-radius: 0.5rem;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.special-votes:first-child > div.poll-option:last-child {
+  border-top-right-radius: 0.5rem;
+}
 div.poll-container > div.poll-selector > div.poll-options > div.special-votes > div.poll-option {
   flex-grow: 1;
 }
