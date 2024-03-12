@@ -67,6 +67,7 @@ def track_errors(func):
 
 class RankedChoiceBot(BaseAPI):
     def __init__(self, config_path='config.yml'):
+        super().__init__()
         self.config_path = config_path
         self.bot = None
         self.app = None
@@ -431,17 +432,10 @@ class RankedChoiceBot(BaseAPI):
         assert isinstance(chat_username, str)
         # check if voter is part of the poll
 
-        try:
-            poll = Polls.select().where(Polls.id == poll_id).get()
-        except Polls.DoesNotExist:
-            await message.reply_text(f'poll {poll_id} does not exist')
-            return False
-
-        if not poll.closed:
-            await message.reply_text(
-                'poll votes can only be viewed after closing'
-            )
-            return False
+        get_poll_closed_result = self.get_poll_closed(poll_id)
+        if get_poll_closed_result.is_err():
+            error_message = get_poll_closed_result.err()
+            await error_message.call(message.reply_text)
 
         has_poll_access = self.has_poll_access(poll_id, chat_username)
         if not has_poll_access:
@@ -886,42 +880,6 @@ class RankedChoiceBot(BaseAPI):
 
         return Ok((poll_id, rankings))
 
-    @staticmethod
-    def get_poll_winner(poll_id):
-        num_poll_voters = PollVoters.select().where(
-            PollVoters.poll_id == poll_id
-        ).count()
-
-        # get votes for the poll sorted from
-        # the low ranking option (most favored)
-        # to the highest ranking option (least favored)
-        votes = Votes.select().where(
-            Votes.poll_id == poll_id
-        ).order_by(Votes.ranking.asc())
-
-        vote_map = {}
-        for vote in votes:
-            voter = vote.poll_voter_id
-            if voter not in vote_map:
-                vote_map[voter] = RankedVote()
-
-            option_row = vote.option_id
-            if option_row is None:
-                vote_value = vote.special_value
-            else:
-                vote_value = option_row.id
-
-            # print('VOTE_VAL', vote_value, int(vote_value))
-            vote_map[voter].add_next_choice(vote_value)
-
-        vote_flat_map = list(vote_map.values())
-        print('FLAT_MAP', vote_flat_map)
-
-        winning_option_id = RankedChoice.ranked_choice_vote(
-            vote_flat_map, num_voters=num_poll_voters
-        )
-        return winning_option_id
-
     @track_errors
     async def show_about(self, update: Update, *args, **kwargs):
         message: Message = update.message
@@ -1059,6 +1017,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'You have no access to poll {poll_id}')
             return False
 
+        # TODO: only allow poll results to be seen if everyone voted
         winning_option_id = self.get_poll_winner(poll_id)
 
         if winning_option_id is None:

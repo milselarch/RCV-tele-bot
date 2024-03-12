@@ -1,3 +1,4 @@
+import ast
 import hmac
 import secrets
 import string
@@ -5,9 +6,12 @@ import time
 import hashlib
 import textwrap
 import dataclasses
+import RankedChoice
 import telegram
-from typing_extensions import Any
+import redis
 
+from typing_extensions import Any
+from RankedVote import RankedVote
 from database import *
 
 from typing import List, Dict, Optional
@@ -29,6 +33,90 @@ class PollInfo(object):
 
 
 class BaseAPI(object):
+    POLL_KEY = "POLL"
+
+    def __init__(self):
+        self.redis_cache = redis.Redis()
+
+    @staticmethod
+    def build_cache_key(header: str, key: str):
+        return f"{header}:{key}"
+
+    @staticmethod
+    def get_poll_closed(poll_id: int) -> Result[int, MessageBuilder]:
+        error_message = MessageBuilder()
+
+        try:
+            poll = Polls.select().where(Polls.id == poll_id).get()
+        except Polls.DoesNotExist:
+            error_message.add(f'poll {poll_id} does not exist')
+            return Err(error_message)
+
+        if not poll.closed:
+            error_message.add(
+                'poll votes can only be viewed after closing'
+            )
+            return Err(error_message)
+
+        return Ok(poll_id)
+
+    def get_poll_winner(
+        self, poll_id: int, cache=False
+    ) -> Optional[int]:
+        assert isinstance(poll_id, int)
+        cache_key = self.build_cache_key(
+            self.__class__.POLL_KEY, str(poll_id)
+        )
+
+        raw_cache_value: Optional[bytes] = self.redis_cache.get(cache_key)
+        if raw_cache_value is not None:
+            poll_winner = ast.literal_eval(raw_cache_value.decode())
+            print('CACHE_HIT', poll_id, [poll_winner])
+            return poll_winner
+
+        poll_winner = self._get_poll_winner(poll_id)
+        if cache:
+            self.redis_cache.set(cache_key, str(poll_winner))
+            print('CACHE_SET', poll_id, [poll_winner])
+
+        return poll_winner
+
+    @staticmethod
+    def _get_poll_winner(poll_id: int) -> Optional[int]:
+        num_poll_voters = PollVoters.select().where(
+            PollVoters.poll_id == poll_id
+        ).count()
+
+        # get votes for the poll sorted from
+        # the low ranking option (most favored)
+        # to the highest ranking option (least favored)
+        votes = Votes.select().where(
+            Votes.poll_id == poll_id
+        ).order_by(Votes.ranking.asc())
+
+        vote_map = {}
+        for vote in votes:
+            voter = vote.poll_voter_id
+            if voter not in vote_map:
+                vote_map[voter] = RankedVote()
+
+            option_row = vote.option_id
+            if option_row is None:
+                vote_value = vote.special_value
+            else:
+                vote_value = option_row.id
+
+            # print('VOTE_VAL', vote_value, int(vote_value))
+            vote_map[voter].add_next_choice(vote_value)
+
+        vote_flat_map = list(vote_map.values())
+        print('FLAT_MAP', vote_flat_map)
+        winning_option_id: Optional[int] = RankedChoice.ranked_choice_vote(
+            vote_flat_map, num_voters=num_poll_voters
+        )
+
+        return winning_option_id
+
     @staticmethod
     def get_poll_voter(poll_id: int, chat_username: str):
         # check if voter is part of the poll

@@ -160,7 +160,7 @@ def get_majoritarian_weakest(
 def ranked_choice_vote(
     ranked_votes: List[RankedVote], num_voters: int = None,
     verbose: bool = False
-):
+) -> Optional[int]:
     """
     :param num_voters:
     total number of voters in the poll
