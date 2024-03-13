@@ -40,7 +40,8 @@ logger = logging.getLogger(__name__)
 to do:
 / create poll
 / view poll options / votes
-/ vote on a poll
+/ vote on a poll        # TODO: only allow poll results to be seen if everyone voted
+
 / fetch poll results 
 automatically calculate + broadcast poll results
 """
@@ -545,9 +546,14 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = extract_result.ok()
-        Polls.update({Polls.closed: closed}).where(
-            Polls.id == poll_id
-        ).execute()
+        cache_key = self._build_poll_cache_key(poll_id)
+
+        with db.atomic():
+            # remove cached result for poll winner
+            self.redis_cache.delete(cache_key)
+            Polls.update({Polls.closed: closed}).where(
+                Polls.id == poll_id
+            ).execute()
 
         await message.reply_text(f'poll {poll_id} has been unclosed')
 
@@ -1017,11 +1023,15 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'You have no access to poll {poll_id}')
             return False
 
-        # TODO: only allow poll results to be seen if everyone voted
+        get_poll_closed_result = self.get_poll_closed(poll_id)
+        if get_poll_closed_result.is_err():
+            error_message = get_poll_closed_result.err()
+            await error_message.call(message.reply_text)
+
         winning_option_id = self.get_poll_winner(poll_id)
 
         if winning_option_id is None:
-            await message.reply_text('no poll winner so far')
+            await message.reply_text('no poll winner')
             return False
         else:
             winning_options = Options.select().where(

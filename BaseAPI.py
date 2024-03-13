@@ -39,8 +39,14 @@ class BaseAPI(object):
         self.redis_cache = redis.Redis()
 
     @staticmethod
-    def build_cache_key(header: str, key: str):
+    def _build_cache_key(header: str, key: str):
         return f"{header}:{key}"
+
+    def _build_poll_cache_key(self, poll_id: int) -> str:
+        assert isinstance(poll_id, int)
+        return self._build_cache_key(
+            self.__class__.POLL_KEY, str(poll_id)
+        )
 
     @staticmethod
     def get_poll_closed(poll_id: int) -> Result[int, MessageBuilder]:
@@ -64,9 +70,7 @@ class BaseAPI(object):
         self, poll_id: int, cache=False
     ) -> Optional[int]:
         assert isinstance(poll_id, int)
-        cache_key = self.build_cache_key(
-            self.__class__.POLL_KEY, str(poll_id)
-        )
+        cache_key = self._build_poll_cache_key(poll_id)
 
         raw_cache_value: Optional[bytes] = self.redis_cache.get(cache_key)
         if raw_cache_value is not None:
