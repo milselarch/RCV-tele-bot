@@ -546,7 +546,7 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = extract_result.ok()
-        cache_key = self._build_poll_cache_key(poll_id)
+        cache_key = self._build_poll_winner_cache_key(poll_id)
 
         with db.atomic():
             # remove cached result for poll winner

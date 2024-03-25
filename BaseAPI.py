@@ -8,6 +8,7 @@ import textwrap
 import dataclasses
 import RankedChoice
 import telegram
+import asyncio
 import redis
 
 from typing_extensions import Any
@@ -33,19 +34,20 @@ class PollInfo(object):
 
 
 class BaseAPI(object):
-    POLL_KEY = "POLL"
+    POLL_WINNER_KEY = "POLL_WINNER"
 
     def __init__(self):
         self.redis_cache = redis.Redis()
+        self.cache_lock = asyncio.Lock()
 
     @staticmethod
     def _build_cache_key(header: str, key: str):
         return f"{header}:{key}"
 
-    def _build_poll_cache_key(self, poll_id: int) -> str:
+    def _build_poll_winner_cache_key(self, poll_id: int) -> str:
         assert isinstance(poll_id, int)
         return self._build_cache_key(
-            self.__class__.POLL_KEY, str(poll_id)
+            self.__class__.POLL_WINNER_KEY, str(poll_id)
         )
 
     @staticmethod
@@ -66,24 +68,40 @@ class BaseAPI(object):
 
         return Ok(poll_id)
 
-    def get_poll_winner(
-        self, poll_id: int, cache=False
-    ) -> Optional[int]:
+    def get_poll_winner(self, poll_id: int) -> Optional[int]:
         assert isinstance(poll_id, int)
-        cache_key = self._build_poll_cache_key(poll_id)
+        cache_key = self._build_poll_winner_cache_key(poll_id)
 
-        raw_cache_value: Optional[bytes] = self.redis_cache.get(cache_key)
-        if raw_cache_value is not None:
-            poll_winner = ast.literal_eval(raw_cache_value.decode())
-            print('CACHE_HIT', poll_id, [poll_winner])
-            return poll_winner
+        def read_cache_value() -> Result[Optional[int], bool]:
+            raw_cache_value: Optional[bytes] = self.redis_cache.get(cache_key)
+            if raw_cache_value is not None:
+                _poll_winner = ast.literal_eval(raw_cache_value.decode())
+                print('CACHE_HIT', poll_id, [_poll_winner])
+                return Ok(_poll_winner)
 
-        poll_winner = self._get_poll_winner(poll_id)
-        if cache:
+            return Err(False)
+
+        cache_value = read_cache_value()
+        if cache_value.is_ok():
+            return cache_value.ok()
+
+        with self.cache_lock:
+            """
+            There is a small chance that multiple coroutines
+            try to hold onto the cache lock at the same time,
+            which will result in a later coroutine writing the cache
+            value again after the earlier coroutine has finished.
+            To prevent this, we check the cache again when the lock
+            is held to guarantee that the cache value is only written once
+            """
+            cache_value = read_cache_value()
+            if cache_value.is_ok():
+                return cache_value.ok()
+
+            poll_winner = self._get_poll_winner(poll_id)
             self.redis_cache.set(cache_key, str(poll_winner))
             print('CACHE_SET', poll_id, [poll_winner])
-
-        return poll_winner
+            return poll_winner
 
     @staticmethod
     def _get_poll_winner(poll_id: int) -> Optional[int]:
