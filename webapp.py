@@ -107,6 +107,7 @@ class VerifyMiddleware(BaseHTTPMiddleware):
 
 class VotingWebApp(BaseAPI):
     def __init__(self):
+        super().__init__()
         self.router = APIRouter()
         self.router.add_api_route(
             '/fetch_poll', self.fetch_poll, methods=['POST']
