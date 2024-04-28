@@ -46,6 +46,15 @@ class PollVoters(BaseModel):
     id = AutoField(primary_key=True)
     poll_id = ForeignKeyField(Polls, to_field='id')
     username = CharField(max_length=255)
+    user_id = IntegerField(null=True)
+
+    class Meta:
+        database = db
+        # Define multi-key index
+        indexes = (
+            # Unique multi-column index
+            (('poll_id', 'username'), True),
+        )
 
 
 class Options(BaseModel):

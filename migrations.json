@@ -1,0 +1,12 @@
+{
+  "prerun": "# some code here",
+  "directory": "migrations",
+  "history": "migratehistory",
+  "models": [
+    "database.Chats",
+    "database.PollVoters",
+    "database.Options",
+    "database.Votes",
+    "database.Polls"
+  ]
+}
