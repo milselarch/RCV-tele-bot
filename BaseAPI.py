@@ -68,7 +68,7 @@ class BaseAPI(object):
 
         return Ok(poll_id)
 
-    def get_poll_winner(self, poll_id: int) -> Optional[int]:
+    async def get_poll_winner(self, poll_id: int) -> Optional[int]:
         assert isinstance(poll_id, int)
         cache_key = self._build_poll_winner_cache_key(poll_id)
 
@@ -85,7 +85,7 @@ class BaseAPI(object):
         if cache_value.is_ok():
             return cache_value.unwrap()
 
-        with self.cache_lock:
+        async with self.cache_lock:
             """
             There is a small chance that multiple coroutines
             try to hold onto the cache lock at the same time,
@@ -99,8 +99,8 @@ class BaseAPI(object):
                 return cache_value.unwrap()
 
             poll_winner = self._get_poll_winner(poll_id)
-            self.redis_cache.set(cache_key, str(poll_winner))
-            print('CACHE_SET', poll_id, [poll_winner])
+            success = self.redis_cache.set(cache_key, str(poll_winner))
+            print('CACHE_SET', poll_id, [poll_winner], success)
             return poll_winner
 
     @staticmethod

@@ -185,7 +185,9 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        await self.do_post_vote_actions(poll_id=poll_id, message=message)
+        await message.reply_text(textwrap.dedent(f"""
+            vote has been registered
+        """))
 
     @track_errors
     async def handle_unknown_command(self, update: Update, _):
@@ -609,43 +611,10 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = vote_result.unwrap()
-        await self.do_post_vote_actions(poll_id=poll_id, message=message)
-
-    async def do_post_vote_actions(self, poll_id: int, message: Message):
-        winning_option_id = self.get_poll_winner(poll_id)
-
-        # count number of eligible voters
-        num_poll_voters = PollVoters.select().where(
-            PollVoters.poll_id == poll_id
-        ).count()
-
-        # count number of people who voted
-        num_poll_voted = self.get_voted_voters(poll_id).count()
-        everyone_voted = num_poll_voters == num_poll_voted
-
-        if everyone_voted:
-            if winning_option_id is not None:
-                winning_options = Options.select().where(
-                    Options.id == winning_option_id
-                )
-
-                option_name = winning_options[0].option_name
-                await message.reply_text(textwrap.dedent(f"""
-                    all members voted
-                    poll winner is:
-                    {option_name}
-                """))
-            else:
-                await message.reply_text(textwrap.dedent(f"""
-                    all members voted
-                    poll has no winner
-                """))
-        else:
-            await message.reply_text(textwrap.dedent(f"""
-                vote has been registered
-                vote count: {num_poll_voted}/{num_poll_voters} 
-            """))
+        # poll_id = vote_result.unwrap()
+        await message.reply_text(textwrap.dedent(f"""
+            vote has been registered
+        """))
 
     @staticmethod
     def get_voted_voters(poll_id: int):
@@ -687,7 +656,23 @@ class RankedChoiceBot(BaseAPI):
             Polls.id == poll.id
         ).execute()
 
-        await message.reply_text('poll closed')
+        winning_option_id = await self.get_poll_winner(poll_id)
+        if winning_option_id is not None:
+            winning_options = Options.select().where(
+                Options.id == winning_option_id
+            )
+
+            option_name = winning_options[0].option_name
+            await message.reply_text(textwrap.dedent(f"""
+                Poll closed
+                Poll winner is:
+                {option_name}
+            """))
+        else:
+            await message.reply_text(textwrap.dedent(f"""
+                Poll closed
+                Poll has no winner
+            """))
 
     @track_errors
     async def vote_for_poll_admin(self, update: Update, *args, **kwargs):
@@ -1028,7 +1013,7 @@ class RankedChoiceBot(BaseAPI):
             error_message = get_poll_closed_result.err()
             await error_message.call(message.reply_text)
 
-        winning_option_id = self.get_poll_winner(poll_id)
+        winning_option_id = await self.get_poll_winner(poll_id)
 
         if winning_option_id is None:
             await message.reply_text('no poll winner')
