@@ -150,7 +150,7 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_message = view_poll_result.ok()
+        poll_message = view_poll_result.unwrap()
         reply_markup = ReplyKeyboardMarkup(self.build_vote_markup(
             poll_id=poll_id, user=user
         ))
@@ -255,7 +255,7 @@ class RankedChoiceBot(BaseAPI):
         if extract_poll_id_result.is_err():
             return False
 
-        poll_id: int = extract_poll_id_result.ok()
+        poll_id = extract_poll_id_result.unwrap()
         is_voter = self.is_poll_voter(
             poll_id=poll_id, chat_username=chat_username
         )
@@ -427,7 +427,7 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id: int = extract_result.ok()
+        poll_id = extract_result.unwrap()
         user: User = update.message.from_user
         chat_username: str = user.username
         assert isinstance(chat_username, str)
@@ -545,7 +545,7 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = extract_result.ok()
+        poll_id = extract_result.unwrap()
         cache_key = self._build_poll_winner_cache_key(poll_id)
 
         with db.atomic():
@@ -573,7 +573,7 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = extract_result.ok()
+        poll_id = extract_result.unwrap()
         view_poll_result = self._view_poll(
             poll_id=poll_id, chat_username=chat_username,
             bot_username=context.bot.username
@@ -593,7 +593,7 @@ class RankedChoiceBot(BaseAPI):
                 poll_id=poll_id, user=user
             ))
 
-        poll_message = view_poll_result.ok()
+        poll_message = view_poll_result.unwrap()
         await message.reply_text(poll_message, reply_markup=reply_markup)
         return True
 
@@ -609,7 +609,7 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id: int = vote_result.ok()
+        poll_id = vote_result.unwrap()
         await self.do_post_vote_actions(poll_id=poll_id, message=message)
 
     async def do_post_vote_actions(self, poll_id: int, message: Message):
@@ -667,7 +667,7 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = extract_result.ok()
+        poll_id = extract_result.unwrap()
         user = message.from_user
         chat_username = user['username']
 
@@ -775,7 +775,7 @@ class RankedChoiceBot(BaseAPI):
             assert isinstance(unpack_result, Err)
             return unpack_result
 
-        unpacked_result = unpack_result.ok()
+        unpacked_result = unpack_result.unwrap()
         poll_id: int = unpacked_result[0]
         rankings: List[int] = unpacked_result[1]
 
@@ -964,7 +964,7 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = extract_result.ok()
+        poll_id = extract_result.unwrap()
         user: User = message.from_user
         chat_username = user['username']
         # check if voter is part of the poll
@@ -1013,7 +1013,7 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = extract_result.ok()
+        poll_id = extract_result.unwrap()
         user = update.message.from_user
         chat_username = user['username']
         # check if voter is part of the poll

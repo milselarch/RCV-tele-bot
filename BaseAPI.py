@@ -83,7 +83,7 @@ class BaseAPI(object):
 
         cache_value = read_cache_value()
         if cache_value.is_ok():
-            return cache_value.ok()
+            return cache_value.unwrap()
 
         with self.cache_lock:
             """
@@ -96,7 +96,7 @@ class BaseAPI(object):
             """
             cache_value = read_cache_value()
             if cache_value.is_ok():
-                return cache_value.ok()
+                return cache_value.unwrap()
 
             poll_winner = self._get_poll_winner(poll_id)
             self.redis_cache.set(cache_key, str(poll_winner))
@@ -185,7 +185,7 @@ class BaseAPI(object):
         if read_poll_result.is_err():
             return read_poll_result
 
-        poll_info = read_poll_result.ok()
+        poll_info = read_poll_result.unwrap()
         poll_message = cls.generate_poll_info(
             poll_info.poll_id, poll_info.poll_question,
             poll_info.poll_options,
@@ -412,7 +412,7 @@ class BaseAPI(object):
             assert isinstance(vote_register_result, Err)
             return vote_register_result
 
-        vote_registered: bool = vote_register_result.ok()
+        vote_registered = vote_register_result.unwrap()
 
         if vote_registered:
             return Ok(poll_id)
