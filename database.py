@@ -50,10 +50,12 @@ class PollVoters(BaseModel):
 
     class Meta:
         database = db
-        # Define multi-key index
         indexes = (
-            # Unique multi-column index
+            # Unique multi-column index for poll_id-username pairs
             (('poll_id', 'username'), True),
+            # Non-unique multi-column index for poll_id-user_id pairs
+            # (technically it should only be non-unique when user_id is None)
+            (('poll_id', 'user_id'), False),
         )
 
 
