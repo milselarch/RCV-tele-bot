@@ -223,9 +223,9 @@ class BaseAPI(object):
             error_message.add(f'You have no access to poll {poll_id}')
             return Err(error_message)
 
-        poll_option_rows = Options.select().where(
-            Options.poll_id == poll.id
-        ).order_by(Options.option_number)
+        poll_option_rows = PollOptions.select().where(
+            PollOptions.poll_id == poll.id
+        ).order_by(PollOptions.option_number)
 
         poll_options = [
             poll_option.option_name for poll_option in poll_option_rows
@@ -450,9 +450,9 @@ class BaseAPI(object):
         :param rankings:
         """
         error_message = MessageBuilder()
-        poll_option_rows = Options.select().where(
-            Options.poll_id == poll_id
-        ).order_by(Options.option_number)
+        poll_option_rows = PollOptions.select().where(
+            PollOptions.poll_id == poll_id
+        ).order_by(PollOptions.option_number)
 
         # map poll option ranking numbers to option ids
         option_rank_to_ids: Dict[int, int] = {}
