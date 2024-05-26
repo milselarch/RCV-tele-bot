@@ -69,6 +69,14 @@ class BaseAPI(object):
         return Ok(poll_id)
 
     async def get_poll_winner(self, poll_id: int) -> Optional[int]:
+        """
+        Returns poll winner for specified poll
+        Attempts to get poll winner from cache if it exists,
+        otherwise will run the ranked choice voting computation
+        and write to the redis cache before returning
+        :param poll_id:
+        :return:
+        """
         assert isinstance(poll_id, int)
         cache_key = self._build_poll_winner_cache_key(poll_id)
 
@@ -98,13 +106,20 @@ class BaseAPI(object):
             if cache_value.is_ok():
                 return cache_value.unwrap()
 
-            poll_winner = self._get_poll_winner(poll_id)
+            poll_winner = self._determine_poll_winner(poll_id)
             success = self.redis_cache.set(cache_key, str(poll_winner))
             print('CACHE_SET', poll_id, [poll_winner], success)
             return poll_winner
 
     @staticmethod
-    def _get_poll_winner(poll_id: int) -> Optional[int]:
+    def _determine_poll_winner(poll_id: int) -> Optional[int]:
+        """
+        Runs the ranked choice voting algorithm to determine
+        the winner of the poll
+        :param poll_id:
+        :return:
+        ID of winning option, or None if there's no winner
+        """
         num_poll_voters = PollVoters.select().where(
             PollVoters.poll_id == poll_id
         ).count()
@@ -208,9 +223,9 @@ class BaseAPI(object):
             error_message.add(f'You have no access to poll {poll_id}')
             return Err(error_message)
 
-        poll_option_rows = Options.select().where(
-            Options.poll_id == poll.id
-        ).order_by(Options.option_number)
+        poll_option_rows = PollOptions.select().where(
+            PollOptions.poll_id == poll.id
+        ).order_by(PollOptions.option_number)
 
         poll_options = [
             poll_option.option_name for poll_option in poll_option_rows
@@ -435,9 +450,9 @@ class BaseAPI(object):
         :param rankings:
         """
         error_message = MessageBuilder()
-        poll_option_rows = Options.select().where(
-            Options.poll_id == poll_id
-        ).order_by(Options.option_number)
+        poll_option_rows = PollOptions.select().where(
+            PollOptions.poll_id == poll_id
+        ).order_by(PollOptions.option_number)
 
         # map poll option ranking numbers to option ids
         option_rank_to_ids: Dict[int, int] = {}

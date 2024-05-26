@@ -387,16 +387,9 @@ class RankedChoiceBot(BaseAPI):
                 poll_id=new_poll_id, username=poll_user
             ))
 
-        group_id = update.message.chat_id
-        chat = Chats.create(
-            poll_id=new_poll_id, tele_id=group_id,
-            broadcasted=False
-        )
-
         with db.atomic():
-            Options.insert_many(poll_option_rows).execute()
+            PollOptions.insert_many(poll_option_rows).execute()
             PollVoters.insert_many(poll_user_rows).execute()
-            chat.save()
 
         bot_username = context.bot.username
         poll_message = self.generate_poll_info(
@@ -448,9 +441,9 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         # get poll options in ascending order
-        poll_option_rows = Options.select().where(
-            Options.poll_id == poll_id
-        ).order_by(Options.option_number)
+        poll_option_rows = PollOptions.select().where(
+            PollOptions.poll_id == poll_id
+        ).order_by(PollOptions.option_number)
 
         # map poll option ids to their option ranking numbers
         # (option number is the position of the option in the poll)
@@ -658,8 +651,8 @@ class RankedChoiceBot(BaseAPI):
 
         winning_option_id = await self.get_poll_winner(poll_id)
         if winning_option_id is not None:
-            winning_options = Options.select().where(
-                Options.id == winning_option_id
+            winning_options = PollOptions.select().where(
+                PollOptions.id == winning_option_id
             )
 
             option_name = winning_options[0].option_name
@@ -1019,8 +1012,8 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text('no poll winner')
             return False
         else:
-            winning_options = Options.select().where(
-                Options.id == winning_option_id
+            winning_options = PollOptions.select().where(
+                PollOptions.id == winning_option_id
             )
 
             option_name = winning_options[0].option_name
