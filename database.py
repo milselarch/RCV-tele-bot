@@ -1,14 +1,11 @@
 import yaml
 import datetime
 
-from peewee import *
 from playhouse.shortcuts import ReconnectMixin
+from peewee import *
 
 with open('config.yml', 'r') as config_file:
-    yaml_data = yaml.safe_load(config_file)
-
-username = yaml_data['database']['user']
-password = yaml_data['database']['password']
+    YAML_CONFIGS = yaml.safe_load(config_file)
 
 
 class DB(ReconnectMixin, MySQLDatabase):
@@ -16,8 +13,9 @@ class DB(ReconnectMixin, MySQLDatabase):
 
 
 db = DB(
-    database='ranked_choice_voting', user=username,
-    password=password
+    database='ranked_choice_voting',
+    user=YAML_CONFIGS['database']['user'],
+    password=YAML_CONFIGS['database']['password']
 )
 
 
@@ -26,11 +24,11 @@ class BaseModel(Model):
         database = db
 
 
-# maps telegram user ids to thier usernames
+# maps telegram user ids to their usernames
 class Users(BaseModel):
     # telegram user id
     id = IntegerField(primary_key=True)
-    username = CharField(max_length=255, default=None)
+    username = CharField(max_length=255, default=None, null=True)
 
     class Meta:
         database = db
@@ -51,9 +49,11 @@ class Polls(BaseModel):
     open_time = TimestampField(default=datetime.datetime.now)
     closed = BooleanField(default=False)
 
-    # creator = CharField(max_length=255, default=None)
+    # whether users are allowed to self register for the poll
+    open_registration = BooleanField(default=False)
+
     # telegram user id of poll creator
-    creator_id = IntegerField()
+    creator_id = ForeignKeyField(Users, to_field='id')
     # number of registered voters in the poll
     num_voters = IntegerField()
     # number of registered votes in the poll
@@ -90,7 +90,9 @@ class PollVoters(BaseModel):
 # assigns their user_id to the corresponding username
 # when they cast a vote (used to check for duplicate votes later)
 class UsernameWhitelist(BaseModel):
-    username = CharField()
+    id = AutoField(primary_key=True)
+    # username of whitelisted telegram user
+    username = CharField(max_length=255)
     # poll that voter is eligible to vote for
     poll_id = ForeignKeyField(Polls, to_field='id')
     # telegram user id of voter

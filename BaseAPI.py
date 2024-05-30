@@ -13,12 +13,15 @@ import redis
 
 from typing_extensions import Any
 from RankedVote import RankedVote
-from database import *
 
 from typing import List, Dict, Optional
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
+from database import (
+    Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
+    PollOptions, Votes, db
+)
 
 
 @dataclasses.dataclass
@@ -155,21 +158,70 @@ class BaseAPI(object):
         return winning_option_id
 
     @staticmethod
-    def get_poll_voter(poll_id: int, chat_username: str):
+    def get_poll_voter(poll_id: int, user_id: int):
         # check if voter is part of the poll
         return PollVoters.select().where(
             (PollVoters.poll_id == poll_id) &
-            (PollVoters.username == chat_username)
+            (PollVoters.user_id == user_id)
         )
 
+    @classmethod
+    def verify_voter(
+        cls, poll_id: int, user_id: int, username: Optional[str] = None
+    ) -> Result[int, MessageBuilder]:
+        """
+        Checks if the user is a member of the poll
+        Attempts to auto enroll user if their username is whitelisted
+        """
+        query = cls.get_poll_voter(poll_id, user_id)
+        if len(query) > 0:
+            # user_id is registered for poll
+            poll_voter = query.get()
+            return Ok(poll_voter.id)
+
+        error_message = MessageBuilder()
+        if not isinstance(username, str):
+            error_message.add(f"You're not a voter of poll {poll_id}")
+            return Err(error_message)
+
+        username_str = username
+        assert isinstance(username_str, str)
+
+        with db.atomic():
+            query = UsernameWhitelist.select().where(
+                (UsernameWhitelist.username == username_str) &
+                (UsernameWhitelist.poll_id == poll_id)
+            )
+
+            if not query.exists():
+                error_message.add(f"You're not a voter of poll {poll_id}")
+                return Err(error_message)
+
+            whitelisted_user = query.get()
+            if whitelisted_user.user_id is not None:
+                return Err(error_message.add(
+                    "Another user has already registered for the "
+                    "poll with the same username"
+                ))
+
+            assert whitelisted_user.user_id is None
+            whitelisted_user.user_id = user_id
+            whitelisted_user.save()
+
+            poll_voter = PollVoters.get_or_create(
+                poll_id=poll_id, user_id=user_id
+            )
+            # return poll voter id of newly created poll voter
+            return Ok(poll_voter.id)
+
     @staticmethod
-    def check_has_voted(poll_id: int, chat_username: str) -> bool:
+    def check_has_voted(poll_id: int, user_id: int) -> bool:
         # check if the user has voted for poll {poll_id}
         with db.atomic():
             # Perform selection operation first
             poll_voter_ids = PollVoters.select(
                 PollVoters.id
-            ).where(PollVoters.username == chat_username)
+            ).where(PollVoters.user_id == user_id)
 
             # Use the selected poll_voter_ids to filter Votes table
             has_voted = bool(Votes.select().where(
@@ -180,21 +232,23 @@ class BaseAPI(object):
             return has_voted
 
     @classmethod
-    def is_poll_voter(cls, *args, **kwargs):
-        return cls.get_poll_voter(*args, **kwargs).count() > 0
+    def is_poll_voter(cls, poll_id: int, user_id: int):
+        return cls.get_poll_voter(
+            poll_id=poll_id, user_id=user_id
+        ).count() > 0
 
     @classmethod
     def _view_poll(
-        cls, poll_id: int, chat_username: str, bot_username: str
+        cls, poll_id: int, user_id: int, bot_username: str
     ) -> Result[str, MessageBuilder]:
-        has_poll_access = cls.has_poll_access(poll_id, chat_username)
+        has_poll_access = cls.has_poll_access(poll_id, user_id)
         if not has_poll_access:
             error_message = MessageBuilder()
             error_message.add(f'You have no access to poll {poll_id}')
             return Err(error_message)
 
         read_poll_result = cls.read_poll_info(
-            poll_id=poll_id, chat_username=chat_username
+            poll_id=poll_id, user_id=user_id
         )
 
         if read_poll_result.is_err():
@@ -213,12 +267,12 @@ class BaseAPI(object):
 
     @classmethod
     def read_poll_info(
-        cls, poll_id: int, chat_username: str
+        cls, poll_id: int, user_id: int
     ) -> Result[PollInfo, MessageBuilder]:
         error_message = MessageBuilder()
 
         poll = Polls.select().where(Polls.id == poll_id).get()
-        has_poll_access = cls.has_poll_access(poll_id, chat_username)
+        has_poll_access = cls.has_poll_access(poll_id, user_id)
         if not has_poll_access:
             error_message.add(f'You have no access to poll {poll_id}')
             return Err(error_message)
@@ -252,14 +306,14 @@ class BaseAPI(object):
         ))
 
     @classmethod
-    def has_poll_access(cls, poll_id, chat_username):
+    def has_poll_access(cls, poll_id: int, user_id: int):
         try:
             poll = Polls.select().where(Polls.id == poll_id).get()
         except Polls.DoesNotExist:
             return False
 
-        voter_in_poll = cls.is_poll_voter(poll_id, chat_username)
-        return voter_in_poll or (poll.creator == chat_username)
+        voter_in_poll = cls.is_poll_voter(poll_id, user_id)
+        return voter_in_poll or (poll.creator == user_id)
 
     @staticmethod
     def extract_poll_id(
@@ -373,7 +427,8 @@ class BaseAPI(object):
 
     @classmethod
     def register_vote(
-        cls, poll_id: int, rankings: List[int], chat_username: str
+        cls, poll_id: int, rankings: List[int], user_id: int,
+        username: Optional[str]
     ) -> Result[int, MessageBuilder]:
         """
         registers a vote for the poll
@@ -387,7 +442,9 @@ class BaseAPI(object):
 
         :param poll_id:
         :param rankings:
-        :param chat_username: chat username of voter
+        :param user_id: voter's telegram user id
+        :param username: voter's telegram username
+        :return:
         """
         error_message = MessageBuilder()
         if len(rankings) == 0:
@@ -397,14 +454,6 @@ class BaseAPI(object):
         validate_result = cls.validate_rankings(rankings)
         if validate_result.is_err():
             return validate_result
-
-        # check if voter is part of the poll
-        poll_voter = cls.get_poll_voter(poll_id, chat_username)
-        print('CC', poll_voter.count(), [chat_username, poll_id])
-
-        if poll_voter.count() == 0:
-            error_message.add(f"You're not a voter of poll {poll_id}")
-            return Err(error_message)
 
         try:
             poll = Polls.select().where(Polls.id == poll_id).get()
@@ -416,7 +465,13 @@ class BaseAPI(object):
             error_message.add('Poll has already been closed')
             return Err(error_message)
 
-        poll_voter_id: int = poll_voter[0].id
+        # verify that the user can vote for the poll
+        verify_result = cls.verify_voter(poll_id, user_id, username)
+        if verify_result.is_err():
+            error_message.add(f"You're not a voter of poll {poll_id}")
+            return Err(error_message)
+
+        poll_voter_id: int = verify_result.unwrap()
         # print('POLL_VOTER_ID', poll_voter_id)
         vote_register_result = cls.__unsafe_register_vote(
             poll_id, poll_voter_id=poll_voter_id,

@@ -1,15 +1,16 @@
 / Add a users table to map user ids to their usernames   
-- < Check if telegram username can fit char field length  
-- < update users table whenever any command is received by bot
+- / Check if telegram username can fit char field length  
+- / update users table whenever any command is received by bot
 / PollVoters table should remove username 
-- < update code accordingly
+- / update code accordingly
+- / add ability to add users by telegram id
 / PollVoters table should map telegram user ids to option ids
-- < update code according;y
+- / update code accordingly
 
 / There should be a UsernameWhitelist table  
 - / maps username to poll id, as well as user_id (or none)
-- < when a user casts a vote check if username matches and user ID matches
-- < only cast if user ID is none or matching for row with same username
+- / when a user casts a vote check if username matches and user ID matches
+- / only cast if user ID is registered or username can map to user ID
 
 / There should be a ChatWhitelist table
 - / maps tele group chat IDs to poll ids
@@ -20,6 +21,8 @@
 - < find a way to auto update voter count after registration    
 / There should be a column to keep track of number of votes in poll  
 - < find a way to auto update votes count after registration
+
+< Add group poll creation command
 
 < update schema diagram  
 < update schema SQL file  

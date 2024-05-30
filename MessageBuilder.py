@@ -10,6 +10,7 @@ class MessageBuilder(object):
             raise ValueError('TEXT TOO LONG')
 
         self.lines.append(text)
+        return self
 
     def get_content(self) -> str:
         str_lines = []

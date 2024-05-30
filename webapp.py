@@ -119,9 +119,9 @@ class VotingWebApp(BaseAPI):
         user_json_str = unquote(parsed_query['user'][0])
         user_info = json.loads(user_json_str)
 
-        chat_username = user_info['username']
+        user_id = int(user_info['id'])
         read_poll_result = self.read_poll_info(
-            poll_id=payload.poll_id, chat_username=chat_username
+            poll_id=payload.poll_id, user_id=user_id
         )
 
         if read_poll_result.is_err():
