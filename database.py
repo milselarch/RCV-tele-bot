@@ -27,8 +27,10 @@ class BaseModel(Model):
 # maps telegram user ids to their usernames
 class Users(BaseModel):
     # telegram user id
-    id = IntegerField(primary_key=True)
+    id = BigIntegerField(primary_key=True)
     username = CharField(max_length=255, default=None, null=True)
+    membership_tier = IntegerField(default=0)
+    credits = IntegerField(default=0)
 
     class Meta:
         database = db
@@ -45,44 +47,52 @@ class Users(BaseModel):
 class Polls(BaseModel):
     id = AutoField(primary_key=True)
     desc = TextField(default="")
-    close_time = TimestampField(default=None)
-    open_time = TimestampField(default=datetime.datetime.now)
+    close_time = DateTimeField(default=None)
+    open_time = DateTimeField(default=datetime.datetime.now)
     closed = BooleanField(default=False)
 
     # whether users are allowed to self register for the poll
     open_registration = BooleanField(default=False)
+    auto_refill = BooleanField(default=False)
 
     # telegram user id of poll creator
-    creator_id = ForeignKeyField(Users, to_field='id')
+    creator_id = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
+    max_voters = IntegerField(default=10)
     # number of registered voters in the poll
-    num_voters = IntegerField()
+    num_voters = IntegerField(default=0)
     # number of registered votes in the poll
-    num_votes = IntegerField()
+    num_votes = IntegerField(default=0)
 
 
 # whitelisted group chats from which users are
 # allowed to register as voters for a poll
 class ChatWhitelist(BaseModel):
     id = AutoField(primary_key=True)
-    poll_id = ForeignKeyField(Polls, to_field='id')
-    tele_id = IntegerField()
+    poll_id = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
+    chat_id = BigIntegerField()  # telegram chat ID
     broadcasted = BooleanField(default=False)
+
+    class Meta:
+        database = db
+        indexes = (
+            # Unique multi-column index for poll_id-chat_id pairs
+            (('poll_id', 'chat_id'), True),
+        )
 
 
 class PollVoters(BaseModel):
     id = AutoField(primary_key=True)
     # poll that voter is eligible to vote for
-    poll_id = ForeignKeyField(Polls, to_field='id')
+    poll_id = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     # telegram user id of voter
-    user_id = ForeignKeyField(Users, to_field='id')
+    user_id = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
     voted = BooleanField(default=False)
 
     class Meta:
         database = db
         indexes = (
-            # Non-unique multi-column index for poll_id-user_id pairs
-            # (technically it should only be non-unique when user_id is None)
-            (('poll_id', 'user_id'), False),
+            # Unique multi-column index for poll_id-user_id pairs
+            (('poll_id', 'user_id'), True),
         )
 
 
@@ -94,9 +104,11 @@ class UsernameWhitelist(BaseModel):
     # username of whitelisted telegram user
     username = CharField(max_length=255)
     # poll that voter is eligible to vote for
-    poll_id = ForeignKeyField(Polls, to_field='id')
+    poll_id = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     # telegram user id of voter
-    user_id = ForeignKeyField(Users, to_field='id', null=True)
+    user_id = ForeignKeyField(
+        Users, to_field='id', null=True, on_delete='CASCADE'
+    )
 
     class Meta:
         database = db
@@ -108,17 +120,20 @@ class UsernameWhitelist(BaseModel):
 
 class PollOptions(BaseModel):
     id = AutoField(primary_key=True)
-    poll_id = ForeignKeyField(Polls, to_field='id')
+    poll_id = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     option_name = CharField(max_length=255)
     option_number = IntegerField()
 
 
-class Votes(BaseModel):
+class VoteRankings(BaseModel):
     id = AutoField(primary_key=True)
-    poll_id = ForeignKeyField(Polls, to_field='id')
-    poll_voter_id = ForeignKeyField(PollVoters, to_field='id')
+    poll_voter_id = ForeignKeyField(
+        PollVoters, to_field='id', on_delete='CASCADE'
+    )
     # ID of the corresponding poll option for the vote
-    option_id = ForeignKeyField(PollOptions, to_field='id', null=True)
+    option_id = ForeignKeyField(
+        PollOptions, to_field='id', null=True, on_delete='CASCADE'
+    )
     # special vote value that doesn't map to any of the poll options
     # currently the special votes are 0 and nil votes
     special_value = IntegerField(
@@ -130,6 +145,7 @@ class Votes(BaseModel):
 # Create tables (if they don't exist)
 db.connect()
 db.create_tables([
-    Polls, ChatWhitelist, PollVoters, PollOptions, Votes
+    Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
+    PollOptions, VoteRankings
 ], safe=True)
 
