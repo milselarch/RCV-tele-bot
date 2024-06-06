@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -8,21 +9,23 @@ import textwrap
 import re
 
 from load_config import *
-from BaseAPI import BaseAPI, UserRegistrationStatus
 from json import JSONDecodeError
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
 from RankedChoice import SpecialVotes
 from typing import List, Tuple, Dict, Optional, Sequence
+
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
     PollOptions, VoteRankings, db, ChatWhitelist
 )
-
+from BaseAPI import (
+    BaseAPI, UserRegistrationStatus, REGISTER_CALLBACK_CMD
+)
 from telegram import (
     Update, Message, WebAppInfo, ReplyKeyboardMarkup,
-    KeyboardButton, User, InlineKeyboardMarkup, InlineKeyboardButton
+    KeyboardButton, User, InlineKeyboardMarkup
 )
 from telegram.ext import (
     CommandHandler, ApplicationBuilder, ContextTypes,
@@ -31,7 +34,6 @@ from telegram.ext import (
 
 
 ID_PATTERN = re.compile(r"^[1-9]\d*$")
-REGISTER_CALLBACK_CMD = "REGISTER"
 MAX_DISPLAY_VOTE_COUNT = 30
 
 logging.basicConfig(
@@ -130,7 +132,7 @@ class RankedChoiceBot(BaseAPI):
             about=self.show_about,
             help=self.show_help,
 
-            vote_admin=self.vote_for_poll_admin,
+            vote_admin=self.admin_vote_for_poll,
             unclose_poll_admin=self.unclose_poll_admin,
             close_poll_admin=self.close_poll_admin
         )
@@ -180,7 +182,7 @@ class RankedChoiceBot(BaseAPI):
         user: User = update.message.from_user
         user_id = user.id
 
-        view_poll_result = self._view_poll(
+        view_poll_result = self.get_poll_message(
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
             username=user.username
@@ -276,26 +278,16 @@ class RankedChoiceBot(BaseAPI):
 
         return markup_layout
 
-    def build_group_vote_markup(
-        self, poll_id: int
-    ) -> List[List[InlineKeyboardButton]]:
-        callback_data = json.dumps(self.kwargify(
-            poll_id=poll_id, command=REGISTER_CALLBACK_CMD
-        ))
-        markup_layout = [[InlineKeyboardButton(
-            text=f'Register for poll', callback_data=callback_data
-        )]]
-        return markup_layout
-
     @track_errors
     async def inline_keyboard_handler(
-        self, update: Update, _: CallbackContext
+        self, update: Update, context: CallbackContext
     ):
         """
         callback method for buttons in chat group messages
         """
         query = update.callback_query
         chat_id = query.message.chat_id
+        message_id = query.message.message_id
         raw_callback_data = query.data
         user = query.from_user
 
@@ -315,26 +307,42 @@ class RankedChoiceBot(BaseAPI):
         if 'command' not in callback_data:
             await query.answer("Callback command unknown")
             return False
+
         elif callback_data['command'] == REGISTER_CALLBACK_CMD:
             poll_id = callback_data['poll_id']
             if not self.is_whitelisted_chat(poll_id=poll_id, chat_id=chat_id):
                 await query.answer("Not allowed to register from this chat")
                 return False
 
+            registered = False
             registration_status = self._register_voter(
                 poll_id=poll_id, user_id=user.id, username=user.username
             )
 
             match registration_status:
                 case UserRegistrationStatus.REGISTERED:
-                    await query.answer("Registered for poll")
-                    return True
+                    registered = True
                 case UserRegistrationStatus.ALREADY_REGISTERED:
                     await query.answer("Already registered for poll")
-                    return False
                 case UserRegistrationStatus.FAILED:
                     await query.answer("Registration failed")
-                    return False
+                case _:
+                    await query.answer("Unknown registration error")
+
+            if registered:
+                notification = query.answer("Registered for poll")
+                poll_display_message = self._get_poll_message(
+                    poll_id=poll_id, bot_username=context.bot.username,
+                )
+                # TODO: asyncio lock?
+                message_edit = context.bot.edit_message_text(
+                    chat_id=chat_id, message_id=message_id,
+                    text=poll_display_message.text,
+                    reply_markup=poll_display_message.reply_markup
+                )
+                await asyncio.gather(notification, message_edit)
+
+            return registered
         else:
             await query.answer("unknown callback command")
             return False
@@ -671,7 +679,7 @@ class RankedChoiceBot(BaseAPI):
             error_message = get_poll_closed_result.err()
             await error_message.call(message.reply_text)
 
-        has_poll_access = self.has_poll_access(
+        has_poll_access = self.has_access_to_poll_id(
             poll_id, user_id, username=user.username
         )
         if not has_poll_access:
@@ -809,7 +817,7 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = extract_result.unwrap()
-        view_poll_result = self._view_poll(
+        view_poll_result = self.get_poll_message(
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
             username=user.username
@@ -820,6 +828,13 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
+        fetch_poll_result = self.fetch_poll(poll_id)
+        if fetch_poll_result.is_err():
+            error_message = fetch_poll_result.err()
+            await error_message.call(message.reply)
+            return False
+
+        poll = fetch_poll_result.unwrap()
         chat_type = update.message.chat.type
         reply_markup = None
 
@@ -829,6 +844,11 @@ class RankedChoiceBot(BaseAPI):
                 poll_id=poll_id, user=user
             )
             reply_markup = ReplyKeyboardMarkup(vote_markup_data)
+        elif poll.open_registration:
+            vote_markup_data = self.build_group_vote_markup(
+                poll_id=poll_id
+            )
+            reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
         poll_message = view_poll_result.unwrap()
         await message.reply_text(poll_message, reply_markup=reply_markup)
@@ -912,7 +932,7 @@ class RankedChoiceBot(BaseAPI):
                 Poll has no winner
             """))
 
-    async def vote_for_poll_admin(self, update: Update, *_, **__):
+    async def admin_vote_for_poll(self, update: Update, *_, **__):
         """
         telegram command formats:
         /vote_admin {username} {poll_id}: {option_1} > ... > {option_n}
@@ -1238,7 +1258,7 @@ class RankedChoiceBot(BaseAPI):
         user_id = user.id
         # check if voter is part of the poll
 
-        has_poll_access = self.has_poll_access(
+        has_poll_access = self.has_access_to_poll_id(
             poll_id, user_id, username=user.username
         )
         if not has_poll_access:
@@ -1270,6 +1290,7 @@ class RankedChoiceBot(BaseAPI):
 
         for voter in poll_voters:
             # print('VOTER', voter.dicts())
+            # TODO: fix AttributeError here
             username: str = voter.username
             user_id: int = voter.user_id.id
             recorded_user_ids.add(user_id)
@@ -1322,7 +1343,7 @@ class RankedChoiceBot(BaseAPI):
         user_id = user.id
 
         # check if voter is part of the poll
-        has_poll_access = self.has_poll_access(
+        has_poll_access = self.has_access_to_poll_id(
             poll_id, user_id, username=user.username
         )
         if not has_poll_access:

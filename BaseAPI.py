@@ -1,11 +1,14 @@
 import ast
 import hmac
+import json
 import secrets
 import string
 import time
 import hashlib
 import textwrap
 import dataclasses
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import RankedChoice
 import telegram
@@ -25,12 +28,20 @@ from database import (
     PollOptions, VoteRankings, db, Users
 )
 
+REGISTER_CALLBACK_CMD = "REGISTER"
+
 
 class UserRegistrationStatus(StrEnum):
     REGISTERED = 'REGISTERED'
     ALREADY_REGISTERED = 'ALREADY_REGISTERED'
     USER_NOT_FOUND = 'USER_NOT_FOUND'
     FAILED = 'FAILED'
+
+
+@dataclasses.dataclass
+class PollMessage(object):
+    text: str
+    reply_markup: Optional[InlineKeyboardMarkup]
 
 
 @dataclasses.dataclass
@@ -43,6 +54,7 @@ class PollInfo(object):
     num_poll_votes: int
     # numerical ranking of each option within the poll
     option_numbers: List[int]
+    open_registration: bool
 
 
 class BaseAPI(object):
@@ -81,7 +93,7 @@ class BaseAPI(object):
         return Ok(poll_id)
 
     @staticmethod
-    def fetch_poll(poll_id: int) -> Result[Any, MessageBuilder]:
+    def fetch_poll(poll_id: int) -> Result[Polls, MessageBuilder]:
         error_message = MessageBuilder()
 
         try:
@@ -238,7 +250,7 @@ class BaseAPI(object):
             (whitelisted_user.user_id == user_id)
         )
 
-        register_result = cls.__register_voter_from_whitelist(
+        register_result = cls._register_voter_from_whitelist(
             poll_id=poll_id, user_id=user_id,
             ignore_voter_limit=False, username=username_str
         )
@@ -250,7 +262,7 @@ class BaseAPI(object):
             return Ok(poll_voter.id)
 
     @classmethod
-    def __register_voter_from_whitelist(
+    def _register_voter_from_whitelist(
         cls, poll_id: int, user_id: int, ignore_voter_limit: bool,
         username: str
     ) -> Result[bool, MessageBuilder]:
@@ -296,7 +308,7 @@ class BaseAPI(object):
                 whitelisted_user.save()
 
             assert whitelisted_user.user_id == user_id
-            register_result = cls.__register_user_id(
+            register_result = cls._register_user_id(
                 poll_id=poll_id, user_id=user_id,
                 ignore_voter_limit=ignore_voter_limit,
                 from_whitelist=True
@@ -309,7 +321,7 @@ class BaseAPI(object):
         return Ok(True)
 
     @staticmethod
-    def __register_user_id(
+    def _register_user_id(
         poll_id: int, user_id: int, ignore_voter_limit: bool,
         from_whitelist: bool = False
     ) -> Result[PollVoters, MessageBuilder]:
@@ -420,7 +432,7 @@ class BaseAPI(object):
                     if whitelisted_user.user_id == user_id:
                         return UserRegistrationStatus.ALREADY_REGISTERED
                     elif whitelisted_user.user_id is None:
-                        register_result = cls.__register_voter_from_whitelist(
+                        register_result = cls._register_voter_from_whitelist(
                             poll_id=poll_id, user_id=user_id,
                             ignore_voter_limit=ignore_voter_limit,
                             username=username_str
@@ -439,7 +451,7 @@ class BaseAPI(object):
             Register by adding user to PollVoters directly if and only if
             registration via username whitelist didn't happen
             """
-            register_result = cls.__register_user_id(
+            register_result = cls._register_user_id(
                 poll_id=poll_id, user_id=user_id,
                 ignore_voter_limit=ignore_voter_limit
             )
@@ -467,26 +479,26 @@ class BaseAPI(object):
             return False
 
     @classmethod
-    def _view_poll(
+    def get_poll_message(
         cls, poll_id: int, user_id: int, bot_username: str,
         username: Optional[str]
-    ) -> Result[str, MessageBuilder]:
-        has_poll_access = cls.has_poll_access(
-            poll_id, user_id, username=username
-        )
-        if not has_poll_access:
-            error_message = MessageBuilder()
-            error_message.add(f'You have no access to poll {poll_id}')
-            return Err(error_message)
-
-        read_poll_result = cls.read_poll_info(
+    ) -> Result[PollMessage, MessageBuilder]:
+        if not cls.has_access_to_poll_id(
             poll_id=poll_id, user_id=user_id, username=username
-        )
+        ):
+            return Err(MessageBuilder().add(
+                f'You have no access to poll {poll_id}'
+            ))
 
-        if read_poll_result.is_err():
-            return read_poll_result
+        return Ok(cls._get_poll_message(
+            poll_id=poll_id, bot_username=bot_username
+        ))
 
-        poll_info = read_poll_result.unwrap()
+    @classmethod
+    def _get_poll_message(
+        cls, poll_id: int, bot_username: str
+    ) -> PollMessage:
+        poll_info = cls._read_poll_info(poll_id=poll_id)
         poll_message = cls.generate_poll_info(
             poll_info.poll_id, poll_info.poll_question,
             poll_info.poll_options,
@@ -495,22 +507,46 @@ class BaseAPI(object):
             num_votes=poll_info.num_poll_votes
         )
 
-        return Ok(poll_message)
+        reply_markup = None
+        if poll_info.open_registration:
+            vote_markup_data = cls.build_group_vote_markup(
+                poll_id=poll_info.poll_id
+            )
+            reply_markup = InlineKeyboardMarkup(vote_markup_data)
+
+        return PollMessage(
+            text=poll_message, reply_markup=reply_markup
+        )
+
+    @classmethod
+    def build_group_vote_markup(
+        cls, poll_id: int
+    ) -> List[List[InlineKeyboardButton]]:
+        callback_data = json.dumps(cls.kwargify(
+            poll_id=poll_id, command=REGISTER_CALLBACK_CMD
+        ))
+        markup_layout = [[InlineKeyboardButton(
+            text=f'Register for poll', callback_data=callback_data
+        )]]
+        return markup_layout
 
     @classmethod
     def read_poll_info(
         cls, poll_id: int, user_id: int, username: Optional[str]
     ) -> Result[PollInfo, MessageBuilder]:
         error_message = MessageBuilder()
-
-        poll = Polls.select().where(Polls.id == poll_id).get()
-        has_poll_access = cls.has_poll_access(
+        has_poll_access = cls.has_access_to_poll_id(
             poll_id, user_id, username=username
         )
         if not has_poll_access:
             error_message.add(f'You have no access to poll {poll_id}')
             return Err(error_message)
 
+        return Ok(cls._read_poll_info(poll_id=poll_id))
+
+    @classmethod
+    def _read_poll_info(cls, poll_id: int) -> PollInfo:
+        poll = Polls.select().where(Polls.id == poll_id).get()
         poll_option_rows = PollOptions.select().where(
             PollOptions.poll_id == poll.id
         ).order_by(PollOptions.option_number)
@@ -522,15 +558,16 @@ class BaseAPI(object):
             poll_option.option_number for poll_option in poll_option_rows
         ]
 
-        return Ok(PollInfo(
+        return PollInfo(
             poll_id=poll_id, poll_question=poll.desc,
             poll_options=poll_options, num_poll_voters=poll.num_voters,
             num_poll_votes=poll.num_votes,
-            option_numbers=poll_option_rankings
-        ))
+            option_numbers=poll_option_rankings,
+            open_registration=poll.open_registration
+        )
 
     @classmethod
-    def has_poll_access(
+    def has_access_to_poll_id(
         cls, poll_id: int, user_id: int, username: Optional[str]
     ) -> bool:
         """
@@ -541,6 +578,15 @@ class BaseAPI(object):
         except Polls.DoesNotExist:
             return False
 
+        return cls.has_access_to_poll(
+            poll, user_id=user_id, username=username
+        )
+
+    @classmethod
+    def has_access_to_poll(
+        cls, poll: Polls, user_id: int, username: Optional[str]
+    ) -> bool:
+        poll_id = poll.id
         creator_id = poll.creator_id.id
         assert isinstance(creator_id, int)
 
