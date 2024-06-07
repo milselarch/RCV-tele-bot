@@ -6,6 +6,7 @@ import time
 import telegram
 import traceback
 import textwrap
+import asyncio
 import re
 
 from load_config import *
@@ -36,6 +37,7 @@ from telegram.ext import (
 
 ID_PATTERN = re.compile(r"^[1-9]\d*$")
 MAX_DISPLAY_VOTE_COUNT = 30
+MAX_CONCURRENT_UPDATES = 256
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -132,7 +134,11 @@ class RankedChoiceBot(BaseAPI):
     def start_bot(self):
         self.bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
         self.webhook_url = TELE_CONFIG['webhook_url']
-        self.app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+
+        builder = ApplicationBuilder()
+        builder.token(TELEGRAM_BOT_TOKEN)
+        builder.concurrent_updates(MAX_CONCURRENT_UPDATES)
+        self.app = builder.build()
 
         commands_mapping = self.kwargify(
             start=self.start_handler,
@@ -354,20 +360,24 @@ class RankedChoiceBot(BaseAPI):
             assert registration_status == UserRegistrationStatus.REGISTERED
             poll_info = self._read_poll_info(poll_id=poll_id)
             notification = query.answer("Registered for poll")
-
-            await self.update_poll_message(
+            poll_message_update = self.update_poll_message(
                 poll_info=poll_info, chat_id=chat_id,
                 message_id=message_id, context=context
             )
-            await notification
+            await asyncio.gather(notification, poll_message_update)
         else:
             await query.answer("unknown callback command")
             return False
 
     async def update_poll_message(
         self, poll_info: PollInfo, chat_id: int, message_id: int,
-        context: CallbackContext
+        context: CallbackContext, verbose: bool = False
     ):
+        """
+        attempts to update the poll info message such that in
+        the event that there are multiple simultaneous update attempts
+        only the latest update will be propagated
+        """
         poll_id = poll_info.poll_id
         bot_username = context.bot.username
         voter_count = poll_info.num_poll_voters
@@ -377,7 +387,8 @@ class RankedChoiceBot(BaseAPI):
 
         poll_locks.update_voter_count(voter_count)
         chat_lock = poll_locks.get_chat_lock(chat_id=chat_id)
-        print('PRE_LOCKS', self.locks_manager.poll_locks_map)
+        if verbose:
+            print('PRE_LOCK', self.locks_manager.poll_locks_map)
 
         async with chat_lock:
             if poll_locks.has_correct_voter_count(voter_count):
@@ -394,10 +405,11 @@ class RankedChoiceBot(BaseAPI):
                     self.locks_manager.remove_chat_lock(
                         poll_id=poll_id, chat_id=chat_id
                     )
-            else:
+            elif verbose:
                 print('IGNORE', voter_count)
 
-        print('LOCKS', self.locks_manager.poll_locks_map)
+        if verbose:
+            print('POST_LOCK', self.locks_manager.poll_locks_map)
 
     @staticmethod
     def is_whitelisted_chat(poll_id: int, chat_id: int):
@@ -1435,7 +1447,7 @@ class RankedChoiceBot(BaseAPI):
 
     @staticmethod
     def register_commands(
-            dispatcher, commands_mapping, wrap_func=lambda func: func
+        dispatcher, commands_mapping, wrap_func=lambda func: func
     ):
         for command_name in commands_mapping:
             handler = commands_mapping[command_name]
