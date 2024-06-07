@@ -499,6 +499,14 @@ class BaseAPI(object):
         cls, poll_id: int, bot_username: str
     ) -> PollMessage:
         poll_info = cls._read_poll_info(poll_id=poll_id)
+        return cls._generate_poll_message(
+            poll_info=poll_info, bot_username=bot_username
+        )
+
+    @classmethod
+    def _generate_poll_message(
+        cls, poll_info: PollInfo, bot_username: str
+    ) -> PollMessage:
         poll_message = cls.generate_poll_info(
             poll_info.poll_id, poll_info.poll_question,
             poll_info.poll_options,
