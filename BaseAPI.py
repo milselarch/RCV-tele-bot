@@ -324,7 +324,7 @@ class BaseAPI(object):
     def _register_user_id(
         poll_id: int, user_id: int, ignore_voter_limit: bool,
         from_whitelist: bool = False
-    ) -> Result[PollVoters, MessageBuilder]:
+    ) -> Result[(PollVoters, bool), MessageBuilder]:
         """
         :param poll_id:
         :param user_id: user telegram id
@@ -332,6 +332,8 @@ class BaseAPI(object):
         whether to register the user even if poll voter limit is reached
         :param from_whitelist:
         whether the voter was registered from the username whitelist
+        Return result OK value is PollVoter row and
+        whether voter entry was created
         """
         error_message = MessageBuilder()
 
@@ -353,8 +355,9 @@ class BaseAPI(object):
                 )
 
                 if voter_limit_reached and voter_row_created:
-                    voter_row_created = False
                     txn.rollback()
+                    error_message.add("Voter limit reached")
+                    return Err(error_message)
 
             if voter_row_created and not from_whitelist:
                 # increment number of registered voters
@@ -363,7 +366,7 @@ class BaseAPI(object):
                     Polls.id == poll_id
                 ).execute()
 
-            return Ok(poll_voter)
+            return Ok((poll_voter, voter_row_created))
 
     @classmethod
     def _register_voter(
@@ -457,7 +460,11 @@ class BaseAPI(object):
             )
 
             if register_result.is_ok():
-                return UserRegistrationStatus.REGISTERED
+                _, newly_registered = register_result.ok()
+                if newly_registered:
+                    return UserRegistrationStatus.REGISTERED
+                else:
+                    return UserRegistrationStatus.ALREADY_REGISTERED
             else:
                 return UserRegistrationStatus.FAILED
 
