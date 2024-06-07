@@ -19,7 +19,7 @@ from typing_extensions import Any
 from RankedVote import RankedVote
 from strenum import StrEnum
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
@@ -324,7 +324,7 @@ class BaseAPI(object):
     def _register_user_id(
         poll_id: int, user_id: int, ignore_voter_limit: bool,
         from_whitelist: bool = False
-    ) -> Result[(PollVoters, bool), MessageBuilder]:
+    ) -> Result[Tuple[PollVoters, bool], MessageBuilder]:
         """
         :param poll_id:
         :param user_id: user telegram id
@@ -460,7 +460,7 @@ class BaseAPI(object):
             )
 
             if register_result.is_ok():
-                _, newly_registered = register_result.ok()
+                _, newly_registered = register_result.unwrap()
                 if newly_registered:
                     return UserRegistrationStatus.REGISTERED
                 else:
