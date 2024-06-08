@@ -16,7 +16,7 @@ from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
 from RankedChoice import SpecialVotes
 from typing import List, Tuple, Dict, Optional, Sequence
-from UpdateLocksManager import UpdateLocksManager
+from PollsLockManager import PollsLockManager
 
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
@@ -86,7 +86,7 @@ class RankedChoiceBot(BaseAPI):
 
         self.poll_max_options = 20
         self.poll_option_max_length = 100
-        self.locks_manager = UpdateLocksManager()
+        self.poll_locks_manager = PollsLockManager()
         self.webhook_url = None
 
     @staticmethod
@@ -381,17 +381,17 @@ class RankedChoiceBot(BaseAPI):
         poll_id = poll_info.poll_id
         bot_username = context.bot.username
         voter_count = poll_info.num_poll_voters
-        poll_locks = self.locks_manager.get_poll_locks(
+        poll_locks = await self.poll_locks_manager.get_poll_locks(
             poll_id=poll_id
         )
 
-        poll_locks.update_voter_count(voter_count)
-        chat_lock = poll_locks.get_chat_lock(chat_id=chat_id)
+        await poll_locks.update_voter_count(voter_count)
+        chat_lock = await poll_locks.get_chat_lock(chat_id=chat_id)
         if verbose:
-            print('PRE_LOCK', self.locks_manager.poll_locks_map)
+            print('PRE_LOCK', self.poll_locks_manager.poll_locks_map)
 
         async with chat_lock:
-            if poll_locks.has_correct_voter_count(voter_count):
+            if await poll_locks.has_correct_voter_count(voter_count):
                 try:
                     poll_display_message = self._generate_poll_message(
                         poll_info=poll_info, bot_username=bot_username
@@ -402,14 +402,14 @@ class RankedChoiceBot(BaseAPI):
                         reply_markup=poll_display_message.reply_markup
                     )
                 finally:
-                    self.locks_manager.remove_chat_lock(
+                    await self.poll_locks_manager.remove_chat_lock(
                         poll_id=poll_id, chat_id=chat_id
                     )
             elif verbose:
                 print('IGNORE', voter_count)
 
         if verbose:
-            print('POST_LOCK', self.locks_manager.poll_locks_map)
+            print('POST_LOCK', self.poll_locks_manager.poll_locks_map)
 
     @staticmethod
     def is_whitelisted_chat(poll_id: int, chat_id: int):

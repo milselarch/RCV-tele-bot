@@ -8,8 +8,6 @@ import hashlib
 import textwrap
 import dataclasses
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
 import RankedChoice
 import telegram
 import asyncio
@@ -21,6 +19,7 @@ from strenum import StrEnum
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
 from database import (
