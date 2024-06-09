@@ -19,13 +19,15 @@ from strenum import StrEnum
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
+from load_config import YAML_CONFIG
 from database import (
     Polls, PollVoters, UsernameWhitelist,
     PollOptions, VoteRankings, db, Users
 )
+from middleware import admin_only
 
 REGISTER_CALLBACK_CMD = "REGISTER"
 
@@ -84,9 +86,7 @@ class BaseAPI(object):
             return Err(error_message)
 
         if not poll.closed:
-            error_message.add(
-                'poll votes can only be viewed after closing'
-            )
+            error_message.add('poll votes can only be viewed after closing')
             return Err(error_message)
 
         return Ok(poll_id)
@@ -128,7 +128,7 @@ class BaseAPI(object):
             raw_cache_value: Optional[bytes] = self.redis_cache.get(cache_key)
             if raw_cache_value is not None:
                 _poll_winner = ast.literal_eval(raw_cache_value.decode())
-                print('CACHE_HIT', poll_id, [_poll_winner])
+                # print('CACHE_HIT', poll_id, [_poll_winner])
                 return Ok(_poll_winner)
 
             return Err(False)
@@ -151,8 +151,8 @@ class BaseAPI(object):
                 return cache_value.unwrap()
 
             poll_winner = self._determine_poll_winner(poll_id)
-            success = self.redis_cache.set(cache_key, str(poll_winner))
-            print('CACHE_SET', poll_id, [poll_winner], success)
+            await self.redis_cache.set(cache_key, str(poll_winner))
+            # print('CACHE_SET', poll_id, [poll_winner], success)
             return poll_winner
 
     @classmethod
@@ -257,14 +257,14 @@ class BaseAPI(object):
         if register_result.is_err():
             return register_result
         else:
-            poll_voter = register_result.unwrap()
+            poll_voter: PollVoters = register_result.unwrap()
             return Ok(poll_voter.id)
 
     @classmethod
     def _register_voter_from_whitelist(
         cls, poll_id: int, user_id: int, ignore_voter_limit: bool,
         username: str
-    ) -> Result[bool, MessageBuilder]:
+    ) -> Result[PollVoters, MessageBuilder]:
         """
         Given a username whitelist entry that is unoccupied:
         1.  assign a user_id to the whitelist entry
@@ -289,10 +289,13 @@ class BaseAPI(object):
 
             error_message = MessageBuilder()
             whitelisted_user = whitelist_user_result.unwrap()
+            whitelist_entry_id = whitelisted_user.id
+            assert isinstance(whitelist_entry_id, int)
+            whitelisted_user_id = whitelisted_user.user_id
             # increment number of registered voters
             whitelist_inapplicable = (
-                (whitelisted_user.user_id is not None) and
-                (whitelisted_user.user_id != user_id)
+                (whitelisted_user_id is not None) and
+                (whitelisted_user_id.id != user_id)
             )
 
             if whitelist_inapplicable:
@@ -302,11 +305,13 @@ class BaseAPI(object):
                     "poll with the same username"
                 ))
 
-            if whitelisted_user.user_id is None:
-                whitelisted_user.user_id = user_id
-                whitelisted_user.save()
+            if whitelisted_user_id is None:
+                UsernameWhitelist.update({
+                    UsernameWhitelist.user_id: user_id
+                }).where(
+                    UsernameWhitelist.id == whitelist_entry_id
+                ).execute()
 
-            assert whitelisted_user.user_id == user_id
             register_result = cls._register_user_id(
                 poll_id=poll_id, user_id=user_id,
                 ignore_voter_limit=ignore_voter_limit,
@@ -317,7 +322,8 @@ class BaseAPI(object):
                 transaction.rollback()
                 return register_result
 
-        return Ok(True)
+            poll_voter_row, _ = register_result.unwrap()
+            return Ok(poll_voter_row)
 
     @staticmethod
     def _register_user_id(
@@ -532,6 +538,28 @@ class BaseAPI(object):
             text=poll_message, reply_markup=reply_markup
         )
 
+    @admin_only
+    async def lookup_from_username_admin(self, update: Update, *_, **__):
+        """
+        Looks up user_ids for users with a matching username
+        """
+        assert isinstance(update, Update)
+        message = update.message
+        raw_text = message.text.strip()
+
+        try:
+            username = raw_text[raw_text.index(' '):].strip()
+        except ValueError:
+            await message.reply_text("username not found")
+            return False
+
+        matching_users = Users.select().where(Users.username == username)
+        user_ids = [user.id for user in matching_users]
+        await message.reply_text(textwrap.dedent(f"""
+            matching user_ids for username [{username}]:
+            {' '.join([f'#{user_id}' for user_id in user_ids])}
+        """))
+
     @classmethod
     def build_group_vote_markup(
         cls, poll_id: int
@@ -638,9 +666,11 @@ class BaseAPI(object):
             return Err(error_message)
 
         whitelisted_user: UsernameWhitelist = query.get()
+        whitelisted_user_id = whitelisted_user.user_id
+        # increment number of registered voters
         whitelist_inapplicable = (
-            (whitelisted_user.user_id is not None) and
-            (whitelisted_user.user_id != user_id)
+            (whitelisted_user_id is not None) and
+            (whitelisted_user_id.id != user_id)
         )
 
         if whitelist_inapplicable:
@@ -747,7 +777,7 @@ class BaseAPI(object):
     ) -> Result[bool, MessageBuilder]:
         error_message = MessageBuilder()
 
-        print('rankings =', rankings)
+        # print('rankings =', rankings)
         if len(rankings) != len(set(rankings)):
             error_message.add('vote rankings must be unique')
             return Err(error_message)

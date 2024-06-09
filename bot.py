@@ -4,12 +4,12 @@ import logging
 import time
 
 import telegram
-import traceback
 import textwrap
 import asyncio
 import re
 
-from load_config import *
+from middleware import track_errors, admin_only
+from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
 from json import JSONDecodeError
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
@@ -56,25 +56,6 @@ to do:
 / fetch poll results 
 automatically calculate + broadcast poll results
 """
-
-
-def error_logger(update, context):
-    """Log Errors caused by Updates."""
-    logger.warning(
-        'Update "%s" caused error "%s"',
-        update, context.error
-    )
-
-
-def track_errors(func):
-    def caller(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            print(traceback.format_exc())
-            raise e
-
-    return caller
 
 
 class RankedChoiceBot(BaseAPI):
@@ -133,7 +114,7 @@ class RankedChoiceBot(BaseAPI):
 
     def start_bot(self):
         self.bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-        self.webhook_url = TELE_CONFIG['webhook_url']
+        self.webhook_url = WEBHOOK_URL
 
         builder = ApplicationBuilder()
         builder.token(TELEGRAM_BOT_TOKEN)
@@ -158,9 +139,11 @@ class RankedChoiceBot(BaseAPI):
             about=self.show_about,
             help=self.show_help,
 
-            vote_admin=self.admin_vote_for_poll,
+            vote_admin=self.vote_for_poll_admin,
             unclose_poll_admin=self.unclose_poll_admin,
-            close_poll_admin=self.close_poll_admin
+            close_poll_admin=self.close_poll_admin,
+            lookup_from_username_admin=self.lookup_from_username_admin
+            # TODO: add admin command to add fake users for testing
         )
 
         # on different commands - answer in Telegram
@@ -478,7 +461,7 @@ class RankedChoiceBot(BaseAPI):
         chat_type = update.message.chat.type
         if chat_type != 'private':
             chat_id = update.message.chat.id
-            print('CHAT_ID', chat_id)
+            # print('CHAT_ID', chat_id)
             whitelisted_chat_ids.append(chat_id)
 
         return await self.create_poll(
@@ -705,6 +688,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(
                 f'Whitelisted chat for user self-registration'
             )
+            return True
         else:
             # noinspection PyUnresolvedReferences
             try:
@@ -719,12 +703,11 @@ class RankedChoiceBot(BaseAPI):
                 )
                 return False
 
-            whitelist_row.delete_instance().execute()
+            whitelist_row.delete_instance()
             await message.reply_text(
                 f'Removed user self-registration chat whitelist'
             )
-
-        return True
+            return True
 
     async def view_votes(self, update: Update, *_, **__):
         message: Message = update.message
@@ -744,14 +727,13 @@ class RankedChoiceBot(BaseAPI):
         if get_poll_closed_result.is_err():
             error_message = get_poll_closed_result.err()
             await error_message.call(message.reply_text)
+            return False
 
         has_poll_access = self.has_access_to_poll_id(
             poll_id, user_id, username=user.username
         )
         if not has_poll_access:
-            await message.reply_text(
-                f'You have no access to poll {poll_id}'
-            )
+            await message.reply_text(f'You have no access to poll {poll_id}')
             return False
 
         # get poll options in ascending order
@@ -850,15 +832,10 @@ class RankedChoiceBot(BaseAPI):
     async def close_poll_admin(self, update, *_, **__):
         await self._set_poll_status(update, True)
 
-    async def _set_poll_status(self, update, closed=True):
+    @admin_only
+    async def _set_poll_status(self, update: Update, closed=True):
+        assert isinstance(update, Update)
         message = update.message
-        user = update.message.from_user
-        user_id = user['id']
-
-        if user_id != YAML_CONFIG['telegram']['sudo_id']:
-            await message.reply_text('ACCESS DENIED')
-            return False
-
         extract_result = self.extract_poll_id(update)
 
         if extract_result.is_err():
@@ -1009,7 +986,8 @@ class RankedChoiceBot(BaseAPI):
                    Poll has no winner
                """))
 
-    async def admin_vote_for_poll(self, update: Update, *_, **__):
+    @admin_only
+    async def vote_for_poll_admin(self, update: Update, *_, **__):
         """
         telegram command formats:
         /vote_admin {username} {poll_id}: {option_1} > ... > {option_n}
@@ -1020,13 +998,8 @@ class RankedChoiceBot(BaseAPI):
         """
         # vote for someone else
         message: Message = update.message
-        raw_text = message.text.strip()
         user = update.message.from_user
-        user_id = user.id
-
-        if user_id != YAML_CONFIG['telegram']['sudo_id']:
-            await message.reply_text('ACCESS DENIED')
-            return False
+        raw_text = message.text.strip()
 
         if ' ' not in raw_text:
             await message.reply_text('no user specified')
@@ -1043,9 +1016,9 @@ class RankedChoiceBot(BaseAPI):
 
         if username_or_id.startswith('@'):
             # resolve telegram user_id by username
-            username_or_id = username_or_id[1:]
+            username = username_or_id[1:]
             matching_users = Users.select().where(
-                Users.username == username_or_id
+                Users.username == username
             )
 
             if len(matching_users) > 1:
@@ -1104,7 +1077,7 @@ class RankedChoiceBot(BaseAPI):
         )
 
     def _vote_for_poll(
-            self, raw_text: str, user_id: int, username: Optional[str]
+        self, raw_text: str, user_id: int, username: Optional[str]
     ) -> Result[int, MessageBuilder]:
         """
         telegram command format
@@ -1115,7 +1088,7 @@ class RankedChoiceBot(BaseAPI):
         /vote 3 1 > 2 > 3
         """
         error_message = MessageBuilder()
-        print('RAW_VOTE_TEXT', [raw_text, user_id])
+        # print('RAW_VOTE_TEXT', [raw_text, user_id])
         if ' ' not in raw_text:
             error_message.add('no poll id specified')
             return Err(error_message)
@@ -1157,7 +1130,7 @@ class RankedChoiceBot(BaseAPI):
 
     @classmethod
     def unpack_rankings_and_poll_id(
-            cls, raw_text
+        cls, raw_text
     ) -> Result[Tuple[int, List[int]], MessageBuilder]:
         """
         raw_text format:
@@ -1179,11 +1152,9 @@ class RankedChoiceBot(BaseAPI):
         \s*([0-9]+|withhold|abstain) -> final ranking number or special vote
         $ -> end of string        
         """
-        print('RAW', raw_arguments)
-        pattern_match1 = re.match(
-            '^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|{}|{})$'.format(
-                *SpecialVotes.get_str_values()
-            ), raw_arguments
+        # print('RAW_ARGS', [raw_arguments])
+        pattern1 = '^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|{}|{})$'.format(
+            *SpecialVotes.get_str_values()
         )
         """
         catches input of format:
@@ -1196,11 +1167,13 @@ class RankedChoiceBot(BaseAPI):
         ([0-9]+|withhold|abstain) -> final ranking number or special vote
         $ -> end of string        
         """
-        pattern_match2 = re.match(
-            '^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|{}|{})$'.format(
-                *SpecialVotes.get_str_values()
-            ), raw_arguments
+        pattern2 = '^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|{}|{})$'.format(
+            *SpecialVotes.get_str_values()
         )
+
+        pattern_match1 = re.match(pattern1, raw_arguments)
+        pattern_match2 = re.match(pattern2, raw_arguments)
+        # print("P1P2", pattern1, pattern2)
 
         if pattern_match1:
             raw_arguments = raw_arguments.replace(':', '')
@@ -1241,9 +1214,9 @@ class RankedChoiceBot(BaseAPI):
     async def show_about(update: Update, *_, **__):
         message: Message = update.message
         await message.reply_text(textwrap.dedent("""
-               The source code for this bot can be found at:
-               https://github.com/milselarch/RCV-tele-bot
-           """))
+            The source code for this bot can be found at:
+            https://github.com/milselarch/RCV-tele-bot
+        """))
 
     @staticmethod
     async def show_help(update: Update, *_, **__):
@@ -1368,14 +1341,19 @@ class RankedChoiceBot(BaseAPI):
         for voter in poll_voters:
             # print('VOTER', voter.dicts())
             # TODO: fix AttributeError here
-            username: str = voter.user_id.username
+            username: Optional[str] = voter.user_id.username
             user_id: int = voter.user_id.id
             recorded_user_ids.add(user_id)
 
-            if voter.voted:
-                voted_usernames.append(username)
+            if username is None:
+                display_name: str = f'#{user_id}'
             else:
-                not_voted_usernames.append(username)
+                display_name: str = username
+
+            if voter.voted:
+                voted_usernames.append(display_name)
+            else:
+                not_voted_usernames.append(display_name)
 
         whitelisted_usernames = UsernameWhitelist.select().where(
             UsernameWhitelist.poll_id == poll_id

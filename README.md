@@ -55,8 +55,8 @@ Commands for testing and debugging purposes:
 (typically only the poll's author is allowed to do this)
 3) `/unclose_poll_admin {poll_id}` - Reopen a poll (typically a poll cannot be reopened)
 
-### Setup
-Project was built using Python3.10
+### Backend Setup
+Project was built using `Python3.10`
 
 1. Create a database and database user for the bot program to use as follows:
    ```SQL
@@ -65,24 +65,49 @@ Project was built using Python3.10
    GRANT create, alter, delete, index, insert, select, update, references ON ranked_choice_voting.* TO 'rcv_user'@'localhost';
    GRANT reload ON *.* TO 'rcv_user'@'localhost';
    ```
-3. Create a config.yml file at the project root using config.example.yml as a template,
+2. Create a config.yml file at the project root using config.example.yml as a template,
    and fill it up with MySQL credentials and telegram bot API token
-4. Create a new virtual env at the project root and activate it
+3. Create a new virtual env at the project root and activate it
    ```shell
    $ python3.10 -m venv venv
    $ source venv/bin/activate
    ```
-5. Install dependencies and do database initialisation
+4. Install dependencies and do database initialisation
    ```shell
    (venv) $ python -m pip install -r requirements.txt
    (venv) $ python -m database.py
    ```
+5. Install and run Redis cache
+    - `sudo apt update`
+    - `sudo apt install redis-server -y`
+    - `sudo vim /etc/redis/redis.conf`
+      - Changed `supervised no` to `supervised systemd`
+    - `sudo systemctl restart redis`
+    - `sudo systemctl status redis`
+    - `sudo systemctl enable --now redis-server`
 6. Run the bot
    ```shell
    (venv) $ python bot.py
    ```
 
 ### Database Schema
-Database ORM definition can be found in `database.py`  
+Database ORM definition can be found in `database.py`
 
 ![Schema Image](https://github.com/milselarch/RCV-tele-bot/blob/master/schema.png)
+
+### Frontend Setup
+Uses node `v20.10.0`   
+
+Installation:  
+1. `nvm use v20.10.0`
+2. `cd telegram-webapp`
+3. `npm install`
+
+Development run instructions:
+1. `cd telegram-webapp`
+2. `npm run start`
+
+Production build instructions:
+1. `firebase init`
+2. `npm run build`
+3. `firebase deploy`
