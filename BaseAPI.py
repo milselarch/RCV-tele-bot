@@ -8,6 +8,8 @@ import hashlib
 import textwrap
 import dataclasses
 
+from telegram.ext import ContextTypes, CallbackContext
+
 import RankedChoice
 import telegram
 import asyncio
@@ -22,12 +24,11 @@ from result import Ok, Err, Result
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
-from load_config import YAML_CONFIG
+from bot_middleware import admin_only
 from database import (
-    Polls, PollVoters, UsernameWhitelist,
-    PollOptions, VoteRankings, db, Users
+    Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings, db,
+    Users
 )
-from middleware import admin_only
 
 REGISTER_CALLBACK_CMD = "REGISTER"
 
@@ -331,14 +332,17 @@ class BaseAPI(object):
         from_whitelist: bool = False
     ) -> Result[Tuple[PollVoters, bool], MessageBuilder]:
         """
+        Attempts to
+
         :param poll_id:
         :param user_id: user telegram id
         :param ignore_voter_limit:
-        whether to register the user even if poll voter limit is reached
+        Whether to register the user even if poll voter limit is reached
         :param from_whitelist:
-        whether the voter was registered from the username whitelist
-        Return result OK value is PollVoter row and
-        whether voter entry was created
+        Whether the voter was registered from the username whitelist.
+        Doesn't increment voter count if set
+        :return:
+        Ok value is PollVoter row and whether new PollVoter entry was created
         """
         error_message = MessageBuilder()
 
@@ -559,6 +563,22 @@ class BaseAPI(object):
             matching user_ids for username [{username}]:
             {' '.join([f'#{user_id}' for user_id in user_ids])}
         """))
+
+    @admin_only
+    async def insert_user(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        pass
+
+    @staticmethod
+    async def error_handler(_: object, context: CallbackContext):
+        # TODO: log error in database with a ticket number and send it back
+        chat_id: Optional[int] = context._chat_id
+        if chat_id is not None:
+            await context.bot.send_message(
+                chat_id=chat_id, text="Unexpected error"
+            )
+        return False
 
     @classmethod
     def build_group_vote_markup(

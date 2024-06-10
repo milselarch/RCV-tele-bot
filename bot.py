@@ -1,4 +1,3 @@
-# import asyncio
 import json
 import logging
 import time
@@ -8,13 +7,13 @@ import textwrap
 import asyncio
 import re
 
-from middleware import track_errors, admin_only
-from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
 from json import JSONDecodeError
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
 from RankedChoice import SpecialVotes
+from bot_middleware import track_errors, admin_only
+from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
 from typing import List, Tuple, Dict, Optional, Sequence
 from PollsLockManager import PollsLockManager
 
@@ -163,6 +162,7 @@ class RankedChoiceBot(BaseAPI):
             self.inline_keyboard_handler
         ))
 
+        self.app.add_error_handler(self.error_handler)
         self.app.run_polling(allowed_updates=Update.ALL_TYPES)
 
     async def start_handler(
@@ -1339,8 +1339,6 @@ class RankedChoiceBot(BaseAPI):
         recorded_user_ids = set()
 
         for voter in poll_voters:
-            # print('VOTER', voter.dicts())
-            # TODO: fix AttributeError here
             username: Optional[str] = voter.user_id.username
             user_id: int = voter.user_id.id
             recorded_user_ids.add(user_id)

@@ -1,11 +1,8 @@
-import yaml
 import datetime
 
 from playhouse.shortcuts import ReconnectMixin
+from load_config import YAML_CONFIG
 from peewee import *
-
-with open('config.yml', 'r') as config_file:
-    YAML_CONFIGS = yaml.safe_load(config_file)
 
 
 class DB(ReconnectMixin, MySQLDatabase):
@@ -14,8 +11,8 @@ class DB(ReconnectMixin, MySQLDatabase):
 
 db = DB(
     database='ranked_choice_voting',
-    user=YAML_CONFIGS['database']['user'],
-    password=YAML_CONFIGS['database']['password']
+    user=YAML_CONFIG['database']['user'],
+    password=YAML_CONFIG['database']['password']
 )
 
 

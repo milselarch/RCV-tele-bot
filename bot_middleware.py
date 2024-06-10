@@ -1,7 +1,7 @@
 import traceback
 
 from telegram import Update
-from load_config import YAML_CONFIG
+from load_config import TELE_CONFIG
 from typing import Callable, Awaitable
 
 
@@ -22,7 +22,7 @@ def admin_only(func: Callable[..., Awaitable]) -> Callable[..., Awaitable]:
         user = message.from_user
         user_id = user.id
 
-        if user_id != YAML_CONFIG['telegram']['sudo_id']:
+        if user_id != TELE_CONFIG['sudo_id']:
             await message.reply_text('ACCESS DENIED')
             return False
 
