@@ -1,6 +1,7 @@
 import ast
 import hmac
 import json
+import re
 import secrets
 import string
 import time
@@ -8,7 +9,7 @@ import hashlib
 import textwrap
 import dataclasses
 
-from telegram.ext import ContextTypes, CallbackContext
+from telegram.ext import CallbackContext
 
 import RankedChoice
 import telegram
@@ -565,10 +566,58 @@ class BaseAPI(object):
         """))
 
     @admin_only
-    async def insert_user(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
-    ):
-        pass
+    async def insert_user_admin(self, update: Update, *_, **__):
+        """
+        Inserts a user with the given user_id and username into
+        the Users table
+        """
+        message = update.message
+        raw_text = message.text.strip()
+
+        if ' ' not in raw_text:
+            await message.reply_text('Arguments not specified')
+            return False
+
+        cmd_arguments = raw_text[raw_text.index(' ')+1:]
+        # <user_id> <username> <--force (optional)>
+        args_pattern = r"^([1-9]\d*)\s+(@?[a-zA-Z0-9_]+)\s?(--force)?$"
+        args_regex = re.compile(args_pattern)
+        match = args_regex.search(cmd_arguments)
+
+        if match is None:
+            await message.reply_text(f'Invalid arguments {[cmd_arguments]}')
+            return False
+
+        capture_groups = match.groups()
+        user_id = int(capture_groups[0])
+        username: str = capture_groups[1]
+        force: bool = capture_groups[2] is not None
+        if username.startswith('@'): username = username[1:]
+        assert len(username) >= 1
+
+        if not force:
+            user, created = Users.get_or_create(id=user_id, username=username)
+
+            if created:
+                await message.reply_text(
+                    f'User with user_id {user_id} and username '
+                    f'{username} created'
+                )
+            else:
+                await message.reply_text(
+                    'User already exists, use --force to '
+                    'override existing entry'
+                )
+        else:
+            Users.insert(id=user_id, username=username).on_conflict(
+                preserve=[Users.id],
+                update={Users.username: username}
+            ).execute()
+
+            await message.reply_text(
+                f'User with user_id {user_id} and username '
+                f'{username} replaced'
+            )
 
     @staticmethod
     async def error_handler(_: object, context: CallbackContext):
@@ -578,6 +627,7 @@ class BaseAPI(object):
             await context.bot.send_message(
                 chat_id=chat_id, text="Unexpected error"
             )
+
         return False
 
     @classmethod

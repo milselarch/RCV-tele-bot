@@ -141,8 +141,8 @@ class RankedChoiceBot(BaseAPI):
             vote_admin=self.vote_for_poll_admin,
             unclose_poll_admin=self.unclose_poll_admin,
             close_poll_admin=self.close_poll_admin,
-            lookup_from_username_admin=self.lookup_from_username_admin
-            # TODO: add admin command to add fake users for testing
+            lookup_from_username_admin=self.lookup_from_username_admin,
+            insert_user_admin=self.insert_user_admin
         )
 
         # on different commands - answer in Telegram
