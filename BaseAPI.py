@@ -8,6 +8,7 @@ import time
 import hashlib
 import textwrap
 import dataclasses
+from enum import IntEnum
 
 from telegram.ext import CallbackContext
 
@@ -34,10 +35,38 @@ from database import (
 REGISTER_CALLBACK_CMD = "REGISTER"
 
 
+class SubscriptionTiers(IntEnum):
+    FREE = 0
+    TIER_1 = 1
+    TIER_2 = 2
+
+    def get_max_voters(self):
+        # returns the maximum number of voters that can join a poll created
+        # by a user with the given subscription tier
+        match self:
+            case SubscriptionTiers.FREE:
+                return 10
+            case SubscriptionTiers.TIER_1:
+                return 50
+            case SubscriptionTiers.TIER_2:
+                return 200
+            case _:
+                raise ValueError(f"Invalid SubscriptionTiers value: {self}")
+
+
 class UserRegistrationStatus(StrEnum):
     REGISTERED = 'REGISTERED'
     ALREADY_REGISTERED = 'ALREADY_REGISTERED'
+    INVALID_SUBSCRIPTION_TIER = 'INVALID_SUBSCRIPTION_TIER'
     USER_NOT_FOUND = 'USER_NOT_FOUND'
+    POLL_NOT_FOUND = 'POLL_NOT_FOUND'
+    VOTER_LIMIT_REACHED = 'VOTER_LIMIT_REACHED'
+    NOT_WHITELISTED = 'NOT_WHITELISTED'
+    """
+    Another user (different user_id) has already registered for the
+    same poll using the same username
+    """
+    USERNAME_TAKEN = 'USERNAME_TAKEN'
     FAILED = 'FAILED'
 
 
@@ -114,7 +143,9 @@ class BaseAPI(object):
         poll = result.unwrap()
         return Ok(poll.num_voters)
 
-    async def get_poll_winner(self, poll_id: int) -> Optional[int]:
+    async def get_poll_winner(
+        self, poll_id: int
+    ) -> Tuple[Optional[int], bool]:
         """
         Returns poll winner for specified poll
         Attempts to get poll winner from cache if it exists,
@@ -122,6 +153,7 @@ class BaseAPI(object):
         and write to the redis cache before returning
         :param poll_id:
         :return:
+        poll winner, whether winner was cached
         """
         assert isinstance(poll_id, int)
         cache_key = self._build_poll_winner_cache_key(poll_id)
@@ -135,9 +167,9 @@ class BaseAPI(object):
 
             return Err(False)
 
-        cache_value = read_cache_value()
-        if cache_value.is_ok():
-            return cache_value.unwrap()
+        cache_read_result = read_cache_value()
+        if cache_read_result.is_ok():
+            return cache_read_result.unwrap(), True
 
         async with self.cache_lock:
             """
@@ -152,10 +184,10 @@ class BaseAPI(object):
             if cache_value.is_ok():
                 return cache_value.unwrap()
 
-            poll_winner = self._determine_poll_winner(poll_id)
-            await self.redis_cache.set(cache_key, str(poll_winner))
+            poll_winner: Optional[int] = self._determine_poll_winner(poll_id)
+            cached: bool = self.redis_cache.set(cache_key, str(poll_winner))
             # print('CACHE_SET', poll_id, [poll_winner], success)
-            return poll_winner
+            return poll_winner, cached
 
     @classmethod
     def _determine_poll_winner(cls, poll_id: int) -> Optional[int]:
@@ -216,7 +248,7 @@ class BaseAPI(object):
     @classmethod
     def verify_voter(
         cls, poll_id: int, user_id: int, username: Optional[str] = None
-    ) -> Result[int, MessageBuilder]:
+    ) -> Result[int, UserRegistrationStatus]:
         """
         Checks if the user is a member of the poll
         Attempts to auto enroll user if their username is whitelisted
@@ -230,10 +262,10 @@ class BaseAPI(object):
         except PollVoters.DoesNotExist:
             pass
 
-        error_message = MessageBuilder()
+        # error_message = MessageBuilder()
         if not isinstance(username, str):
-            error_message.add(f"You're not a voter of poll {poll_id}")
-            return Err(error_message)
+            # error_message.add(f"You're not a voter of poll {poll_id}")
+            return Err(UserRegistrationStatus.NOT_WHITELISTED)
 
         username_str = username
         assert isinstance(username_str, str)
@@ -266,7 +298,7 @@ class BaseAPI(object):
     def _register_voter_from_whitelist(
         cls, poll_id: int, user_id: int, ignore_voter_limit: bool,
         username: str
-    ) -> Result[PollVoters, MessageBuilder]:
+    ) -> Result[PollVoters, UserRegistrationStatus]:
         """
         Given a username whitelist entry that is unoccupied:
         1.  assign a user_id to the whitelist entry
@@ -289,7 +321,6 @@ class BaseAPI(object):
                 transaction.rollback()
                 return whitelist_user_result
 
-            error_message = MessageBuilder()
             whitelisted_user = whitelist_user_result.unwrap()
             whitelist_entry_id = whitelisted_user.id
             assert isinstance(whitelist_entry_id, int)
@@ -302,10 +333,7 @@ class BaseAPI(object):
 
             if whitelist_inapplicable:
                 transaction.rollback()
-                return Err(error_message.add(
-                    "Another user has already registered for the "
-                    "poll with the same username"
-                ))
+                return Err(UserRegistrationStatus.USERNAME_TAKEN)
 
             if whitelisted_user_id is None:
                 UsernameWhitelist.update({
@@ -331,7 +359,7 @@ class BaseAPI(object):
     def _register_user_id(
         poll_id: int, user_id: int, ignore_voter_limit: bool,
         from_whitelist: bool = False
-    ) -> Result[Tuple[PollVoters, bool], MessageBuilder]:
+    ) -> Result[Tuple[PollVoters, bool], UserRegistrationStatus]:
         """
         Attempts to
 
@@ -345,16 +373,14 @@ class BaseAPI(object):
         :return:
         Ok value is PollVoter row and whether new PollVoter entry was created
         """
-        error_message = MessageBuilder()
-
         with db.atomic():
             try:
                 poll = Polls.get(id=poll_id)
             except Polls.DoesNotExist:
-                error_message.add("Poll not found")
-                return Err(error_message)
+                return Err(UserRegistrationStatus.POLL_NOT_FOUND)
 
-            voter_limit_reached = (poll.num_votes >= poll.max_voters)
+            # print('NUM_VOTES', poll.num_voters, poll.max_voters)
+            voter_limit_reached = (poll.num_voters >= poll.max_voters)
             if ignore_voter_limit:
                 voter_limit_reached = False
 
@@ -366,8 +392,7 @@ class BaseAPI(object):
 
                 if voter_limit_reached and voter_row_created:
                     txn.rollback()
-                    error_message.add("Voter limit reached")
-                    return Err(error_message)
+                    return Err(UserRegistrationStatus.VOTER_LIMIT_REACHED)
 
             if voter_row_created and not from_whitelist:
                 # increment number of registered voters
@@ -400,8 +425,13 @@ class BaseAPI(object):
         except Users.DoesNotExist:
             return UserRegistrationStatus.USER_NOT_FOUND
 
+        try:
+            subscription_tier = SubscriptionTiers(user.subscription_tier)
+        except ValueError:
+            return UserRegistrationStatus.INVALID_SUBSCRIPTION_TIER
+
         has_empty_whitelist_entry = False
-        ignore_voter_limit = user.membership_tier > 0
+        ignore_voter_limit = subscription_tier != SubscriptionTiers.FREE
 
         if username is not None:
             assert isinstance(username, str)
@@ -445,6 +475,7 @@ class BaseAPI(object):
                     if whitelisted_user.user_id == user_id:
                         return UserRegistrationStatus.ALREADY_REGISTERED
                     elif whitelisted_user.user_id is None:
+                        # print("POP", poll_id, user_id, username_str)
                         register_result = cls._register_voter_from_whitelist(
                             poll_id=poll_id, user_id=user_id,
                             ignore_voter_limit=ignore_voter_limit,
@@ -454,7 +485,8 @@ class BaseAPI(object):
                         if register_result.is_ok():
                             return UserRegistrationStatus.REGISTERED
                         else:
-                            return UserRegistrationStatus.FAILED
+                            assert register_result.is_err()
+                            return register_result.err_value
 
                     # username whitelist entry assigned to different user_id
                     assert isinstance(whitelisted_user.user_id, int)
@@ -469,6 +501,7 @@ class BaseAPI(object):
                 ignore_voter_limit=ignore_voter_limit
             )
 
+            print("REGISTER_RESULT", register_result)
             if register_result.is_ok():
                 _, newly_registered = register_result.unwrap()
                 if newly_registered:
@@ -476,7 +509,8 @@ class BaseAPI(object):
                 else:
                     return UserRegistrationStatus.ALREADY_REGISTERED
             else:
-                return UserRegistrationStatus.FAILED
+                assert register_result.is_err()
+                return register_result.err_value
 
     @staticmethod
     def check_has_voted(poll_id: int, user_id: int) -> bool:
@@ -720,11 +754,10 @@ class BaseAPI(object):
     @staticmethod
     def get_whitelist_entry(
         poll_id: int, user_id: int, username: str
-    ) -> Result[UsernameWhitelist, MessageBuilder]:
+    ) -> Result[UsernameWhitelist, UserRegistrationStatus]:
         assert isinstance(poll_id, int)
         assert isinstance(user_id, int)
         assert isinstance(username, str)
-        error_message = MessageBuilder()
 
         query = UsernameWhitelist.select().where(
             (UsernameWhitelist.username == username) &
@@ -732,8 +765,9 @@ class BaseAPI(object):
         )
 
         if not query.exists():
-            error_message.add(f"You're not a voter of poll {poll_id}")
-            return Err(error_message)
+            # error_message = MessageBuilder()
+            # error_message.add(f"You're not a voter of poll {poll_id}")
+            return Err(UserRegistrationStatus.NOT_WHITELISTED)
 
         whitelisted_user: UsernameWhitelist = query.get()
         whitelisted_user_id = whitelisted_user.user_id
@@ -744,10 +778,7 @@ class BaseAPI(object):
         )
 
         if whitelist_inapplicable:
-            return Err(error_message.add(
-                "Another user has already registered for the "
-                "poll with the same username"
-            ))
+            return Err(UserRegistrationStatus.USERNAME_TAKEN)
 
         return Ok(whitelisted_user)
 
@@ -902,6 +933,7 @@ class BaseAPI(object):
             return Err(error_message)
 
         # verify that the user can vote for the poll
+        print('PRE_VERIFY', poll_id, user_id, username)
         verify_result = cls.verify_voter(poll_id, user_id, username)
         if verify_result.is_err():
             error_message.add(f"You're not a voter of poll {poll_id}")

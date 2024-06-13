@@ -26,8 +26,8 @@ class Users(BaseModel):
     # telegram user id
     id = BigIntegerField(primary_key=True)
     username = CharField(max_length=255, default=None, null=True)
-    membership_tier = IntegerField(default=0)
     credits = IntegerField(default=0)
+    subscription_tier = IntegerField(default=0)
 
     class Meta:
         database = db
