@@ -1,7 +1,6 @@
 import ast
 import hmac
 import json
-import re
 import secrets
 import string
 import time
@@ -10,6 +9,7 @@ import textwrap
 import dataclasses
 from enum import IntEnum
 
+from peewee import fn
 from telegram.ext import CallbackContext
 
 import RankedChoice
@@ -23,16 +23,18 @@ from strenum import StrEnum
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
-from bot_middleware import admin_only
 from database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings, db,
     Users
 )
 
-REGISTER_CALLBACK_CMD = "REGISTER"
+
+class CallbackCommands(StrEnum):
+    REGISTER = 'REGISTER'
+    DELETE = 'DELETE'
 
 
 class SubscriptionTiers(IntEnum):
@@ -53,6 +55,17 @@ class SubscriptionTiers(IntEnum):
             case _:
                 raise ValueError(f"Invalid SubscriptionTiers value: {self}")
 
+    def get_max_polls(self):
+        match self:
+            case SubscriptionTiers.FREE:
+                return 10
+            case SubscriptionTiers.TIER_1:
+                return 20
+            case SubscriptionTiers.TIER_2:
+                return 40
+            case _:
+                raise ValueError(f"Invalid SubscriptionTiers value: {self}")
+
 
 class UserRegistrationStatus(StrEnum):
     REGISTERED = 'REGISTERED'
@@ -66,6 +79,7 @@ class UserRegistrationStatus(StrEnum):
     Another user (different user_id) has already registered for the
     same poll using the same username
     """
+    POLL_CLOSED = 'POLL_CLOSED'
     USERNAME_TAKEN = 'USERNAME_TAKEN'
     FAILED = 'FAILED'
 
@@ -87,6 +101,7 @@ class PollInfo(object):
     # numerical ranking of each option within the poll
     option_numbers: List[int]
     open_registration: bool
+    closed: bool
 
 
 class BaseAPI(object):
@@ -412,6 +427,12 @@ class BaseAPI(object):
         or by directly creating a PollVoters entry otherwise
         Does NOT validate if the user is allowed to register for the poll
         """
+        poll = Polls.get_or_none(Polls.id == poll_id)
+        if poll is None:
+            return UserRegistrationStatus.POLL_NOT_FOUND
+        elif poll.closed:
+            return UserRegistrationStatus.POLL_CLOSED
+
         # noinspection PyUnresolvedReferences
         try:
             PollVoters.get(poll_id=poll_id, user_id=user_id)
@@ -556,11 +577,11 @@ class BaseAPI(object):
 
     @classmethod
     def _generate_poll_message(
-        cls, poll_info: PollInfo, bot_username: str
+        cls, poll_info: PollInfo, bot_username: str,
     ) -> PollMessage:
         poll_message = cls.generate_poll_info(
             poll_info.poll_id, poll_info.poll_question,
-            poll_info.poll_options,
+            poll_info.poll_options, closed=poll_info.closed,
             bot_username=bot_username,
             num_voters=poll_info.num_poll_voters,
             num_votes=poll_info.num_poll_votes
@@ -577,82 +598,6 @@ class BaseAPI(object):
             text=poll_message, reply_markup=reply_markup
         )
 
-    @admin_only
-    async def lookup_from_username_admin(self, update: Update, *_, **__):
-        """
-        Looks up user_ids for users with a matching username
-        """
-        assert isinstance(update, Update)
-        message = update.message
-        raw_text = message.text.strip()
-
-        try:
-            username = raw_text[raw_text.index(' '):].strip()
-        except ValueError:
-            await message.reply_text("username not found")
-            return False
-
-        matching_users = Users.select().where(Users.username == username)
-        user_ids = [user.id for user in matching_users]
-        await message.reply_text(textwrap.dedent(f"""
-            matching user_ids for username [{username}]:
-            {' '.join([f'#{user_id}' for user_id in user_ids])}
-        """))
-
-    @admin_only
-    async def insert_user_admin(self, update: Update, *_, **__):
-        """
-        Inserts a user with the given user_id and username into
-        the Users table
-        """
-        message = update.message
-        raw_text = message.text.strip()
-
-        if ' ' not in raw_text:
-            await message.reply_text('Arguments not specified')
-            return False
-
-        cmd_arguments = raw_text[raw_text.index(' ')+1:]
-        # <user_id> <username> <--force (optional)>
-        args_pattern = r"^([1-9]\d*)\s+(@?[a-zA-Z0-9_]+)\s?(--force)?$"
-        args_regex = re.compile(args_pattern)
-        match = args_regex.search(cmd_arguments)
-
-        if match is None:
-            await message.reply_text(f'Invalid arguments {[cmd_arguments]}')
-            return False
-
-        capture_groups = match.groups()
-        user_id = int(capture_groups[0])
-        username: str = capture_groups[1]
-        force: bool = capture_groups[2] is not None
-        if username.startswith('@'): username = username[1:]
-        assert len(username) >= 1
-
-        if not force:
-            user, created = Users.get_or_create(id=user_id, username=username)
-
-            if created:
-                await message.reply_text(
-                    f'User with user_id {user_id} and username '
-                    f'{username} created'
-                )
-            else:
-                await message.reply_text(
-                    'User already exists, use --force to '
-                    'override existing entry'
-                )
-        else:
-            Users.insert(id=user_id, username=username).on_conflict(
-                preserve=[Users.id],
-                update={Users.username: username}
-            ).execute()
-
-            await message.reply_text(
-                f'User with user_id {user_id} and username '
-                f'{username} replaced'
-            )
-
     @staticmethod
     async def error_handler(_: object, context: CallbackContext):
         # TODO: log error in database with a ticket number and send it back
@@ -664,12 +609,16 @@ class BaseAPI(object):
 
         return False
 
+    @staticmethod
+    def count_polls_created(user_id: int) -> int:
+        return Polls.select().where(Polls.creator_id == user_id).count()
+
     @classmethod
     def build_group_vote_markup(
         cls, poll_id: int
     ) -> List[List[InlineKeyboardButton]]:
         callback_data = json.dumps(cls.kwargify(
-            poll_id=poll_id, command=REGISTER_CALLBACK_CMD
+            poll_id=poll_id, command=str(CallbackCommands.REGISTER)
         ))
         markup_layout = [[InlineKeyboardButton(
             text=f'Register for poll', callback_data=callback_data
@@ -709,7 +658,8 @@ class BaseAPI(object):
             poll_options=poll_options, num_poll_voters=poll.num_voters,
             num_poll_votes=poll.num_votes,
             option_numbers=poll_option_rankings,
-            open_registration=poll.open_registration
+            open_registration=poll.open_registration,
+            closed=poll.closed
         )
 
     @classmethod
@@ -750,6 +700,17 @@ class BaseAPI(object):
                 return True
 
         return False
+
+    @staticmethod
+    def resolve_username_to_user_ids(username: str) -> List[int]:
+        # noinspection PyUnresolvedReferences
+        try:
+            matching_users = Users.select().where(Users.username == username)
+        except Users.DoesNotExist:
+            return []
+
+        user_ids = [user.id for user in matching_users]
+        return user_ids
 
     @staticmethod
     def get_whitelist_entry(
@@ -807,8 +768,9 @@ class BaseAPI(object):
     @staticmethod
     def generate_poll_info(
         poll_id, poll_question, poll_options, bot_username,
-        num_votes=0, num_voters=0
+        num_votes=0, num_voters=0, closed: bool = False
     ):
+        close_tag = '(closed)' if closed else ''
         numbered_poll_options = [
             f'{k + 1}. {poll_option}' for k, poll_option,
             in enumerate(poll_options)
@@ -822,7 +784,7 @@ class BaseAPI(object):
 
         return (
             textwrap.dedent(f"""
-            POLL ID: {poll_id}
+            POLL ID: {poll_id} {close_tag}
             POLL QUESTION: 
             {poll_question}
             ——————————————————
@@ -933,7 +895,7 @@ class BaseAPI(object):
             return Err(error_message)
 
         # verify that the user can vote for the poll
-        print('PRE_VERIFY', poll_id, user_id, username)
+        # print('PRE_VERIFY', poll_id, user_id, username)
         verify_result = cls.verify_voter(poll_id, user_id, username)
         if verify_result.is_err():
             error_message.add(f"You're not a voter of poll {poll_id}")
