@@ -649,13 +649,14 @@ class RankedChoiceBot(BaseAPI):
 
         for raw_poll_user in raw_poll_usernames:
             if raw_poll_user.startswith('#'):
-                if ID_PATTERN.match(raw_poll_user) is None:
+                raw_poll_user_id = raw_poll_user[1:]
+                if ID_PATTERN.match(raw_poll_user_id) is None:
                     await message.reply_text(
                         f'Invalid poll user id: {raw_poll_user}'
                     )
                     return False
 
-                poll_user_id = int(raw_poll_user[1:])
+                poll_user_id = int(raw_poll_user_id)
                 poll_user_ids.append(poll_user_id)
                 continue
 
@@ -688,6 +689,10 @@ class RankedChoiceBot(BaseAPI):
         if num_user_created_polls >= poll_creation_limit:
             await message.reply_text(limit_reached_text)
             return False
+
+        # create users if they don't exist
+        user_rows = [self.kwargify(id=user_id) for user_id in poll_user_ids]
+        Users.insert_many(user_rows).on_conflict_ignore().execute()
 
         with db.atomic():
             num_user_created_polls = self.count_polls_created(creator_user_id)

@@ -89,6 +89,10 @@ Project was built using `Python3.10`
    ```shell
    (venv) $ python bot.py
    ```
+7. Run the webapp backend server
+    ```shell
+   (venv) $ python webapp.py
+   ```
 
 ### Database Schema
 Database ORM definition can be found in `database.py`

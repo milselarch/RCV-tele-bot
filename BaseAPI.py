@@ -655,7 +655,6 @@ class BaseAPI(object):
 
     @classmethod
     def _read_poll_info(cls, poll_id: int) -> PollInfo:
-        # TODO: add method to get metadata only
         poll_metadata = cls._read_poll_metadata(poll_id)
         poll_option_rows = PollOptions.select().where(
             PollOptions.poll_id == poll_id
