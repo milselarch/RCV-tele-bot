@@ -31,7 +31,7 @@ from telegram import (
 )
 from telegram.ext import (
     CommandHandler, ApplicationBuilder, ContextTypes,
-    MessageHandler, filters, CallbackContext, CallbackQueryHandler
+    MessageHandler, filters, CallbackContext, CallbackQueryHandler, Application
 )
 
 
@@ -119,6 +119,7 @@ class RankedChoiceBot(BaseAPI):
         builder = ApplicationBuilder()
         builder.token(TELEGRAM_BOT_TOKEN)
         builder.concurrent_updates(MAX_CONCURRENT_UPDATES)
+        builder.post_init(self.post_init)
         self.app = builder.build()
 
         commands_mapping = self.kwargify(
@@ -167,6 +168,35 @@ class RankedChoiceBot(BaseAPI):
 
         # self.app.add_error_handler(self.error_handler)
         self.app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+    @staticmethod
+    async def post_init(application: Application):
+        # print('SET COMMANDS')
+        await application.bot.set_my_commands([
+            ('start', 'start bot'),
+            ('user_details', 'shows your username and user id'),
+            ('create_poll', 'creates a new poll'), (
+                'create_poll',
+                'creates a new poll that users can self register for'
+            ), ('view_poll', 'shows poll details given poll_id'), (
+                'vote', 'vote for the poll with the specified poll_id'
+            ), (
+                'poll_results',
+                'returns poll results if the poll has been closed'
+            ), (
+                'has_voted',
+                "check if you've voted for the poll given the poll ID"
+            ), (
+                'close_poll',
+                'close the poll with the specified poll_id'
+            ), (
+                'view_votes',
+                'view all the votes entered for the poll'
+            ), (
+                'view_voters',
+                'show which voters have voted and which have not'
+            ), ('help', 'view commands available to the bot')
+        ])
 
     async def start_handler(
         self, update, context: ContextTypes.DEFAULT_TYPE
@@ -463,6 +493,7 @@ class RankedChoiceBot(BaseAPI):
 
         extract_poll_id_result = self.extract_poll_id(update)
         if extract_poll_id_result.is_err():
+            await message.reply_text('Poll ID not specified')
             return False
 
         poll_id = extract_poll_id_result.unwrap()
@@ -632,7 +663,7 @@ class RankedChoiceBot(BaseAPI):
         poll_creation_limit = subscription_tier.get_max_polls()
         limit_reached_text = textwrap.dedent(f"""
             Poll creation limit reached
-            Use /delete <POLL_ID> to remove unused polls
+            Use /delete {{POLL_ID}} to remove unused polls
         """)
 
         if num_user_created_polls >= poll_creation_limit:
@@ -1605,6 +1636,8 @@ class RankedChoiceBot(BaseAPI):
            - show which voters have voted and which have not
            ——————————————————
            /about - view miscellaneous information about the bot
+           /view_polls - view all polls created by you
+           /delete_poll {poll_id} - delete poll by poll_id
            /help - view commands available to the bot
            """))
 

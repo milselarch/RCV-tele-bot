@@ -7,20 +7,17 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-from enum import IntEnum
-
-from peewee import fn
-from telegram.ext import CallbackContext
-
 import RankedChoice
 import telegram
 import asyncio
 import redis
 
+from enum import IntEnum
 from typing_extensions import Any
 from RankedVote import RankedVote
 from strenum import StrEnum
 
+from telegram.ext import CallbackContext
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
