@@ -34,7 +34,7 @@ from telegram.ext import (
     MessageHandler, filters, CallbackContext, CallbackQueryHandler, Application
 )
 
-
+__VERSION__ = '1.0.0'
 ID_PATTERN = re.compile(r"^[1-9]\d*$")
 MAX_DISPLAY_VOTE_COUNT = 30
 MAX_CONCURRENT_UPDATES = 256
@@ -1547,9 +1547,12 @@ class RankedChoiceBot(BaseAPI):
     @staticmethod
     async def show_about(update: Update, *_, **__):
         message: Message = update.message
-        await message.reply_text(textwrap.dedent("""
+        await message.reply_text(textwrap.dedent(f"""
+            Version {__VERSION__}
             The source code for this bot can be found at:
             https://github.com/milselarch/RCV-tele-bot
+            Join the feedback and discussion group at: 
+            https://t.me/+fs0WPn1pfmYxNjg1
         """))
 
     @classmethod
