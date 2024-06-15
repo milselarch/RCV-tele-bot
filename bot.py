@@ -994,6 +994,7 @@ class RankedChoiceBot(BaseAPI):
     @admin_only
     async def lookup_from_username_admin(self, update: Update, *_, **__):
         """
+        /lookup_from_username_admin {username}
         Looks up user_ids for users with a matching username
         """
         assert isinstance(update, Update)

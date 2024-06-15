@@ -74,8 +74,10 @@ Commands for testing and debugging purposes:
 2) `/close_poll_admin {poll_id}` - Close a poll
 (typically only the poll's author is allowed to do this)
 3) `/unclose_poll_admin {poll_id}` - Reopen a poll (typically a poll cannot be reopened)
-4) `/lookup_from_username_admin` - Resolve user ID(s) given username
-5) `/insert_user_admin` - Insert a user by user_id and optional username 
+4) `/lookup_from_username_admin {username}` - Resolve user ID(s) given username
+5) `/insert_user_admin {user_id} {username}` - Insert a user with user_id and username  
+    `/insert_user_admin {user_id} {username}`  
+    `/insert_user_admin {user_id} {username} --force`
 
 ### Backend Setup
 Project was built using `Python3.10`
