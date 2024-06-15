@@ -110,18 +110,23 @@ class VotingWebApp(BaseAPI):
         super().__init__()
         self.router = APIRouter()
         self.router.add_api_route(
-            '/fetch_poll', self.fetch_poll, methods=['POST']
+            '/fetch_poll', self.fetch_poll_endpoint,
+            methods=['POST']
         )
 
-    def fetch_poll(self, request: Request, payload: FetchPollPayload):
+    def fetch_poll_endpoint(
+        self, request: Request, payload: FetchPollPayload
+    ):
         telegram_data_header = request.headers.get(TELEGRAM_DATA_HEADER)
         parsed_query = parse_qs(telegram_data_header)
         user_json_str = unquote(parsed_query['user'][0])
         user_info = json.loads(user_json_str)
 
-        chat_username = user_info['username']
+        user_id = int(user_info['id'])
+        username = (user_info['username'])
         read_poll_result = self.read_poll_info(
-            poll_id=payload.poll_id, chat_username=chat_username
+            poll_id=payload.poll_id, user_id=user_id,
+            username=username
         )
 
         if read_poll_result.is_err():
