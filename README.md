@@ -16,7 +16,22 @@ Bot and webapp backends were written in Python3.10 using the python-telegram-bot
    ...
    poll option m
    ```
-4) `/view_poll {poll_id}` - Shows poll details given `poll_id`
+4) `/create_group_poll ...` - Creates a new poll that chat members can self-register for
+   ```
+   /create_poll @user_1 @user_2 ... @user_n:  
+   poll title  
+   poll option 1  
+   poll option 2
+   ...
+   poll option m
+   ```
+5) `/whitelist_chat_registration {poll_id}`  
+whitelists the current chat so that chat members can self-register
+for the poll specified by poll_id within the chat group
+5) `/blacklist_chat_registration {poll_id}`  
+whitelists the current chat so that chat members can self-register
+for the poll specified by poll_id within the chat group
+6) `/view_poll {poll_id}` - Shows poll details given `poll_id`
 5) `/vote ...` - Vote for the poll with the specified `poll_id`
    ```
    /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
@@ -25,12 +40,13 @@ Bot and webapp backends were written in Python3.10 using the python-telegram-bot
    ```
    requires that the user is one of the registered 
    voters of the poll  
-   The last option of the ranked vote can also accept 2 special values, `0` and `nil`:
-   - Vote `0` to abstain from voting for any option in the poll   
+   The last option of the ranked vote can also accept 2 special values, 
+   `abstain` and `withhold`:
+   - Vote `withhold` to abstain from voting for any option in the poll   
      (In this scenario, no vote will be given to any of the candidates,
      but the voter will still be counted towards the total number of 
      voters needed to achieve a majority in the polling result calculation)
-   - Vote `nil` to effectively exclude yourself from the poll  
+   - Vote `abstain` to effectively exclude yourself from the poll  
      (In this scenario, no vote will be given to any of the candidates, 
      and the voter will no longer be counted towards the total number of 
      voters needed to achieve a majority in the polling result calculation)

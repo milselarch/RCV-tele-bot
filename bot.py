@@ -1622,8 +1622,9 @@ class RankedChoiceBot(BaseAPI):
            for the poll specified by poll_id within the chat group
            ——————————————————
            /blacklist_chat_registration {poll_id}
-           blacklists the current chat so that chat members cannot self-register
-           for the poll specified by poll_id within the chat group
+           blacklists the current chat so that chat members cannot 
+           self-register for the poll specified by poll_id within the chat
+           group
            ——————————————————
            /view_poll {poll_id} - shows poll details given poll_id
            ——————————————————
