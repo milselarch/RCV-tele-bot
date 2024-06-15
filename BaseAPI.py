@@ -88,17 +88,23 @@ class PollMessage(object):
 
 
 @dataclasses.dataclass
-class PollInfo(object):
-    poll_id: int
-    poll_question: str
-    # description of each option within the poll
-    poll_options: List[str]
-    num_poll_voters: int
-    num_poll_votes: int
-    # numerical ranking of each option within the poll
-    option_numbers: List[int]
+class PollMetadata(object):
+    id: int
+    question: str
+    num_voters: int
+    num_votes: int
+
     open_registration: bool
     closed: bool
+
+
+@dataclasses.dataclass
+class PollInfo(object):
+    metadata: PollMetadata
+    # description of each option within the poll
+    poll_options: List[str]
+    # numerical ranking of each option within the poll
+    option_numbers: List[int]
 
 
 class BaseAPI(object):
@@ -576,18 +582,19 @@ class BaseAPI(object):
     def _generate_poll_message(
         cls, poll_info: PollInfo, bot_username: str,
     ) -> PollMessage:
+        poll_metadata = poll_info.metadata
         poll_message = cls.generate_poll_info(
-            poll_info.poll_id, poll_info.poll_question,
-            poll_info.poll_options, closed=poll_info.closed,
+            poll_metadata.id, poll_metadata.question,
+            poll_info.poll_options, closed=poll_metadata.closed,
             bot_username=bot_username,
-            num_voters=poll_info.num_poll_voters,
-            num_votes=poll_info.num_poll_votes
+            num_voters=poll_metadata.num_voters,
+            num_votes=poll_metadata.num_votes
         )
 
         reply_markup = None
-        if poll_info.open_registration:
+        if poll_metadata.open_registration:
             vote_markup_data = cls.build_group_vote_markup(
-                poll_id=poll_info.poll_id
+                poll_id=poll_metadata.id
             )
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
@@ -637,10 +644,21 @@ class BaseAPI(object):
         return Ok(cls._read_poll_info(poll_id=poll_id))
 
     @classmethod
-    def _read_poll_info(cls, poll_id: int) -> PollInfo:
+    def _read_poll_metadata(cls, poll_id: int) -> PollMetadata:
         poll = Polls.select().where(Polls.id == poll_id).get()
+        return PollMetadata(
+            id=poll.id, question=poll.desc,
+            num_voters=poll.num_voters, num_votes=poll.num_votes,
+            open_registration=poll.open_registration,
+            closed=poll.closed
+        )
+
+    @classmethod
+    def _read_poll_info(cls, poll_id: int) -> PollInfo:
+        # TODO: add method to get metadata only
+        poll_metadata = cls._read_poll_metadata(poll_id)
         poll_option_rows = PollOptions.select().where(
-            PollOptions.poll_id == poll.id
+            PollOptions.poll_id == poll_id
         ).order_by(PollOptions.option_number)
 
         poll_options = [
@@ -651,12 +669,8 @@ class BaseAPI(object):
         ]
 
         return PollInfo(
-            poll_id=poll_id, poll_question=poll.desc,
-            poll_options=poll_options, num_poll_voters=poll.num_voters,
-            num_poll_votes=poll.num_votes,
-            option_numbers=poll_option_rankings,
-            open_registration=poll.open_registration,
-            closed=poll.closed
+            metadata=poll_metadata, poll_options=poll_options,
+            option_numbers=poll_option_rankings
         )
 
     @classmethod

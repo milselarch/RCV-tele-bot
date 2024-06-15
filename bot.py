@@ -46,17 +46,6 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-"""
-to do:
-/ create poll
-/ view poll options / votes
-/ vote on a poll        
-# TODO: only allow poll results to be seen if everyone voted
-
-/ fetch poll results 
-automatically calculate + broadcast poll results
-"""
-
 
 class RankedChoiceBot(BaseAPI):
     def __init__(self, config_path='config.yml'):
@@ -131,6 +120,7 @@ class RankedChoiceBot(BaseAPI):
             blacklist_chat_registration=self.blacklist_chat_registration,
 
             view_poll=self.view_poll,
+            view_polls=self.view_all_polls,
             vote=self.vote_for_poll,
             poll_results=self.fetch_poll_results,
             has_voted=self.has_voted,
@@ -138,7 +128,6 @@ class RankedChoiceBot(BaseAPI):
             view_votes=self.view_votes,
             view_voters=self.view_poll_voters,
             about=self.show_about,
-            view_polls=self.view_all_polls,
             delete_poll=self.delete_poll,
             help=self.show_help,
 
@@ -172,31 +161,49 @@ class RankedChoiceBot(BaseAPI):
     @staticmethod
     async def post_init(application: Application):
         # print('SET COMMANDS')
-        await application.bot.set_my_commands([
-            ('start', 'start bot'),
-            ('user_details', 'shows your username and user id'),
-            ('create_poll', 'creates a new poll'), (
-                'create_poll',
-                'creates a new poll that users can self register for'
-            ), ('view_poll', 'shows poll details given poll_id'), (
-                'vote', 'vote for the poll with the specified poll_id'
-            ), (
-                'poll_results',
-                'returns poll results if the poll has been closed'
-            ), (
-                'has_voted',
-                "check if you've voted for the poll given the poll ID"
-            ), (
-                'close_poll',
-                'close the poll with the specified poll_id'
-            ), (
-                'view_votes',
-                'view all the votes entered for the poll'
-            ), (
-                'view_voters',
-                'show which voters have voted and which have not'
-            ), ('help', 'view commands available to the bot')
-        ])
+        await application.bot.set_my_commands([(
+            'start', 'start bot'
+        ), (
+            'user_details', 'shows your username and user id'
+        ), (
+            'create_poll', 'creates a new poll'
+        ), (
+            'create_group_poll',
+            'creates a new poll that users can self register for'
+        ),  (
+            'whitelist_chat_registration',
+            'whitelist a chat for self registration'
+        ), (
+            'blacklist_chat_registration',
+            'removes a chat from self registration whitelist'
+        ), (
+            'view_poll', 'shows poll details given poll_id'
+        ), (
+            'view_polls', 'shows all polls that you have created'
+        ), (
+            'vote', 'vote for the poll with the specified poll_id'
+        ), (
+            'poll_results',
+            'returns poll results if the poll has been closed'
+        ), (
+            'has_voted',
+            "check if you've voted for the poll given the poll ID"
+        ), (
+            'close_poll',
+            'close the poll with the specified poll_id'
+        ), (
+            'view_votes',
+            'view all the votes entered for the poll'
+        ), (
+            'view_voters',
+            'show which voters have voted and which have not'
+        ), (
+            'about', 'miscellaneous info about the bot'
+        ), (
+            'delete_poll', 'delete a poll'
+        ), (
+            'help', 'view commands available to the bot'
+        )])
 
     async def start_handler(
         self, update, context: ContextTypes.DEFAULT_TYPE
@@ -239,8 +246,9 @@ class RankedChoiceBot(BaseAPI):
         reply_markup = ReplyKeyboardMarkup(self.build_private_vote_markup(
             poll_id=poll_id, user=user
         ))
-
-        await message.reply_text(poll_message, reply_markup=reply_markup)
+        await message.reply_text(
+            poll_message.text, reply_markup=reply_markup
+        )
 
     @track_errors
     async def web_app_handler(self, update: Update, _):
@@ -271,9 +279,20 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
+        poll_id = vote_result.unwrap()
+        await self.send_post_vote_reply(
+            message=message, poll_id=poll_id
+        )
+
+    async def send_post_vote_reply(self, message: Message, poll_id: int):
+        poll_metadata = self._read_poll_metadata(poll_id)
+        num_voters = poll_metadata.num_voters
+        num_votes = poll_metadata.num_votes
+
         await message.reply_text(textwrap.dedent(f"""
-            vote has been registered
-        """))
+             vote has been registered
+             {num_votes} / {num_voters} voted
+         """))
 
     @track_errors
     @record_username_wrapper
@@ -429,9 +448,9 @@ class RankedChoiceBot(BaseAPI):
         the event that there are multiple simultaneous update attempts
         only the latest update will be propagated
         """
-        poll_id = poll_info.poll_id
+        poll_id = poll_info.metadata.id
         bot_username = context.bot.username
-        voter_count = poll_info.num_poll_voters
+        voter_count = poll_info.metadata.num_voters
         poll_locks = await self.poll_locks_manager.get_poll_locks(
             poll_id=poll_id
         )
@@ -1209,10 +1228,10 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        # poll_id = vote_result.unwrap()
-        await message.reply_text(textwrap.dedent(f"""
-            vote has been registered
-        """))
+        poll_id = vote_result.unwrap()
+        await self.send_post_vote_reply(
+            message=message, poll_id=poll_id
+        )
 
     @classmethod
     def read_vote_count(cls, poll_id: int) -> Result[int, MessageBuilder]:
