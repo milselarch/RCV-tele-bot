@@ -15,7 +15,7 @@ from RankedChoice import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
 from typing import List, Tuple, Dict, Optional, Sequence
-from PollsLockManager import PollsLockManager
+from LocksManager import PollsLockManager
 
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
@@ -34,7 +34,7 @@ from telegram.ext import (
     MessageHandler, filters, CallbackContext, CallbackQueryHandler, Application
 )
 
-__VERSION__ = '1.0.0'
+__VERSION__ = '1.0.1'
 ID_PATTERN = re.compile(r"^[1-9]\d*$")
 MAX_DISPLAY_VOTE_COUNT = 30
 MAX_CONCURRENT_UPDATES = 256
@@ -252,11 +252,16 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def web_app_handler(self, update: Update, _):
-        payload = json.loads(update.effective_message.web_app_data.data)
-        poll_id = int(payload['poll_id'])
-        ranked_option_numbers: List[int] = payload['option_numbers']
-
         message: Message = update.message
+        payload = json.loads(update.effective_message.web_app_data.data)
+
+        try:
+            poll_id = int(payload['poll_id'])
+            ranked_option_numbers: List[int] = payload['option_numbers']
+        except KeyError:
+            await message.reply_text('Invalid payload')
+            return False
+
         user: User = message.from_user
         username: Optional[str] = user.username
         user_id = user.id
