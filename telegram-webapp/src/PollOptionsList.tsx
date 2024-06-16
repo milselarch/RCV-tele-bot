@@ -80,7 +80,7 @@ export const PollOptionsList = ({
     <div className="poll-container">
       <div className="title">
         <p className="no-select">
-          {poll?.poll_question}
+          {poll?.metadata.question}
         </p>
       </div>
 
@@ -123,7 +123,7 @@ export const PollOptionsList = ({
         </div>
       </div>
 
-      <span className="mono"> [{poll?.poll_id}] </span>
+      <span className="mono"> [{poll?.metadata.id}] </span>
     </div>
   )
 }

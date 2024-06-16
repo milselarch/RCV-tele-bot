@@ -127,9 +127,9 @@ function App() {
     } else if (abstain_final) {
       final_vote_rankings.push(ABSTAIN_VOTE_VALUE)
     }
-
+    // console.log('PAYLOAD', payload)
     window.Telegram.WebApp.sendData(JSON.stringify({
-      'poll_id': poll.poll_id, 'option_numbers': final_vote_rankings
+      'poll_id': poll.metadata.id, 'option_numbers': final_vote_rankings
     }));
   }
 
