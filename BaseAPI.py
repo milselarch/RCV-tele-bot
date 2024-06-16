@@ -374,6 +374,29 @@ class BaseAPI(object):
             return Ok(poll_voter_row)
 
     @staticmethod
+    def _reg_status_to_msg(
+        registration_status: UserRegistrationStatus, poll_id: int
+    ):
+        match registration_status:
+            case UserRegistrationStatus.REGISTERED:
+                return "Registered for poll"
+            case UserRegistrationStatus.ALREADY_REGISTERED:
+                return "Already registered for poll"
+            case UserRegistrationStatus.VOTER_LIMIT_REACHED:
+                return "Voter limit reached"
+            case UserRegistrationStatus.USERNAME_TAKEN:
+                return textwrap.dedent(""""
+                    Another user has already registered for the poll 
+                    using the same username
+                """)
+            case UserRegistrationStatus.POLL_NOT_FOUND:
+                return f"Poll #{poll_id} not found"
+            case UserRegistrationStatus.POLL_CLOSED:
+                return f"Poll #{poll_id} has been closed"
+            case _:
+                return "Unexpected registration error"
+
+    @staticmethod
     def _register_user_id(
         poll_id: int, user_id: int, ignore_voter_limit: bool,
         from_whitelist: bool = False
