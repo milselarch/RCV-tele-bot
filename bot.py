@@ -1,7 +1,6 @@
 import json
 import logging
 import time
-
 import telegram
 import textwrap
 import asyncio
@@ -31,10 +30,11 @@ from telegram import (
 )
 from telegram.ext import (
     CommandHandler, ApplicationBuilder, ContextTypes,
-    MessageHandler, filters, CallbackContext, CallbackQueryHandler, Application
+    MessageHandler, filters, CallbackContext, CallbackQueryHandler,
+    Application
 )
 
-__VERSION__ = '1.0.1'
+__VERSION__ = '1.0.2'
 ID_PATTERN = re.compile(r"^[1-9]\d*$")
 MAX_DISPLAY_VOTE_COUNT = 30
 MAX_CONCURRENT_UPDATES = 256
@@ -116,6 +116,7 @@ class RankedChoiceBot(BaseAPI):
             user_details=self.user_details_handler,
             create_poll=self.create_poll,
             create_group_poll=self.create_group_poll,
+            register_user_id=self.register_user_id,
             whitelist_chat_registration=self.whitelist_chat_registration,
             blacklist_chat_registration=self.blacklist_chat_registration,
 
@@ -170,7 +171,10 @@ class RankedChoiceBot(BaseAPI):
         ), (
             'create_group_poll',
             'creates a new poll that users can self register for'
-        ),  (
+        ), (
+            'register_user_id',
+            'registers a user by user_id for a poll'
+        ), (
             'whitelist_chat_registration',
             'whitelist a chat for self registration'
         ), (
@@ -386,34 +390,14 @@ class RankedChoiceBot(BaseAPI):
                 poll_id=poll_id, user_id=user.id, username=user.username
             )
 
-            match registration_status:
-                case UserRegistrationStatus.REGISTERED:
-                    pass
-                case UserRegistrationStatus.ALREADY_REGISTERED:
-                    await query.answer("Already registered for poll")
-                    return False
-                case UserRegistrationStatus.VOTER_LIMIT_REACHED:
-                    await query.answer("Voter limit reached")
-                    return False
-                case UserRegistrationStatus.USERNAME_TAKEN:
-                    await query.answer(textwrap.dedent(""""
-                        Another user has already registered for the poll 
-                        using the same username
-                    """))
-                    return False
-                case UserRegistrationStatus.POLL_NOT_FOUND:
-                    await query.answer(f"Poll #{poll_id} not found")
-                    return False
-                case UserRegistrationStatus.POLL_CLOSED:
-                    await query.answer(f"Poll #{poll_id} has been closed")
-                    return False
-                case _:
-                    await query.answer("Unexpected registration error")
-                    return False
+            reply_text = self._reg_status_to_msg(registration_status, poll_id)
+            if registration_status != UserRegistrationStatus.REGISTERED:
+                await query.answer(reply_text)
+                return False
 
             assert registration_status == UserRegistrationStatus.REGISTERED
             poll_info = self._read_poll_info(poll_id=poll_id)
-            notification = query.answer("Registered for poll")
+            notification = query.answer(reply_text)
             poll_message_update = self.update_poll_message(
                 poll_info=poll_info, chat_id=chat_id,
                 message_id=message_id, context=context
@@ -678,12 +662,13 @@ class RankedChoiceBot(BaseAPI):
 
             whitelisted_usernames.append(whitelisted_username)
 
+        num_voters = len(poll_user_ids) + len(whitelisted_usernames)
         max_voters = subscription_tier.get_max_voters()
-        if len(whitelisted_usernames) > max_voters:
+        if num_voters > max_voters:
             await message.reply_text(f'Whitelisted voters exceeds limit')
             return False
 
-        assert len(whitelisted_usernames) <= max_voters
+        assert num_voters <= max_voters
         num_user_created_polls = self.count_polls_created(creator_user_id)
         poll_creation_limit = subscription_tier.get_max_polls()
         limit_reached_text = textwrap.dedent(f"""
@@ -709,8 +694,7 @@ class RankedChoiceBot(BaseAPI):
 
             new_poll = Polls.create(
                 desc=poll_question, creator_id=creator_user_id,
-                num_voters=len(poll_user_ids),
-                open_registration=open_registration,
+                num_voters=num_voters, open_registration=open_registration,
                 max_voters=subscription_tier.get_max_voters()
             )
 
@@ -749,14 +733,12 @@ class RankedChoiceBot(BaseAPI):
             UsernameWhitelist.insert_many(whitelisted_user_rows).execute()
             PollOptions.insert_many(poll_option_rows).execute()
             ChatWhitelist.insert_many(chat_whitelist_rows).execute()
-            new_poll.num_voters = len(whitelisted_user_rows)
-            new_poll.save()
 
         bot_username = context.bot.username
         poll_message = self.generate_poll_info(
             new_poll_id, poll_question, poll_options,
             bot_username=bot_username, closed=False,
-            num_voters=len(whitelisted_usernames)
+            num_voters=num_voters
         )
 
         from_user: User = update.message.from_user
@@ -778,6 +760,69 @@ class RankedChoiceBot(BaseAPI):
         await message.reply_text(
             poll_message, reply_markup=reply_markup
         )
+
+    async def register_user_id(self, update: Update, *_, **__):
+        """
+        registers a user by user_id for a poll
+        /whitelist_user_id {poll_id} {user_id}
+        """
+        message: Message = update.message
+        user = message.from_user
+        raw_text = message.text.strip()
+        pattern = re.compile(r'^\S+\s+([1-9]\d*)\s+([1-9]\d*)$')
+        matches = pattern.match(raw_text)
+
+        if user is None:
+            await message.reply_text(f'user not found')
+            return False
+        if matches is None:
+            await message.reply_text(f'Format invalid')
+            return False
+
+        capture_groups = matches.groups()
+        if len(capture_groups) != 2:
+            await message.reply_text(f'Format invalid')
+            return False
+
+        poll_id = int(capture_groups[0])
+        user_id = int(capture_groups[1])
+
+        try:
+            poll = Polls.select().where(Polls.id == poll_id).get()
+        except Polls.DoesNotExist:
+            await message.reply_text(f'poll {poll_id} does not exist')
+            return False
+
+        if poll.creator_id.id != user.id:
+            await message.reply_text(
+                'only poll creator is allowed to whitelist chats '
+                'for open user registration'
+            )
+            return False
+
+        # noinspection PyUnresolvedReferences
+        try:
+            PollVoters.get(poll_id=poll_id, user_id=user_id)
+            await message.reply_text(f'User #{user_id} already registered')
+            return False
+        except PollVoters.DoesNotExist:
+            pass
+
+        Users.insert(id=user_id).on_conflict_ignore().execute()
+        register_result = self._register_user_id(
+            poll_id=poll_id, user_id=user_id,
+            ignore_voter_limit=False, from_whitelist=False
+        )
+
+        if register_result.is_err():
+            err: UserRegistrationStatus = register_result.err_value
+            assert isinstance(err, UserRegistrationStatus)
+            response_text = self._reg_status_to_msg(err, poll_id)
+            await message.reply_text(response_text)
+            return False
+
+        await message.reply_text(f'User #{user_id} registered')
+        return True
 
     async def whitelist_chat_registration(
         self, update: Update, *_, **__
@@ -1615,8 +1660,9 @@ class RankedChoiceBot(BaseAPI):
            poll option 1
            poll option 2
            ...
-           poll option m    
-           - creates a new poll
+           poll option m   
+
+           Creates a new poll
            ——————————————————
            /create_group_poll @username_1 @username_2 ... @username_n:
            poll title
@@ -1624,14 +1670,18 @@ class RankedChoiceBot(BaseAPI):
            poll option 2
            ...
            poll option m
-           - creates a new poll that chat members can self-register for
+           
+           Creates a new poll that chat members can self-register for
+           ——————————————————
+           /register_user_id {poll_id} {user_id}
+           Registers a user by user_id for a poll
            ——————————————————
            /whitelist_chat_registration {poll_id}
-           whitelists the current chat so that chat members can self-register
+           Whitelists the current chat so that chat members can self-register
            for the poll specified by poll_id within the chat group
            ——————————————————
            /blacklist_chat_registration {poll_id}
-           blacklists the current chat so that chat members cannot 
+           Blacklists the current chat so that chat members cannot 
            self-register for the poll specified by poll_id within the chat
            group
            ——————————————————
@@ -1645,29 +1695,29 @@ class RankedChoiceBot(BaseAPI):
                > Vote withhold if you want to vote for none of the options
                > Vote abstain if you want to remove yourself from the poll 
 
-           - vote for the poll with the specified poll_id
+           Vote for the poll with the specified poll_id
            requires that the user is one of the registered 
            voters of the poll
            ——————————————————
            /poll_results {poll_id}
-           - returns poll results if the poll has been closed
+           Returns poll results if the poll has been closed
            ——————————————————
            /has_voted {poll_id} 
-           - tells you if you've voted for the poll with the 
+           Tells you if you've voted for the poll with the 
            specified poll_id
            ——————————————————
            /close_poll {poll_id}
-           - close the poll with the specified poll_id
-           note that only the poll's creator is allowed 
+           Close the poll with the specified poll_id
+           Note that only the creator of the poll is allowed 
            to issue this command to close the poll
            ——————————————————
            /view_votes {poll_id}
-           - view all the votes entered for the poll 
+           View all the votes entered for the poll 
            with the specified poll_id. This can only be done
            after the poll has been closed first
            ——————————————————
            /view_voters {poll_id}
-           - show which voters have voted and which have not
+           Show which voters have voted and which have not
            ——————————————————
            /about - view miscellaneous information about the bot
            /view_polls - view all polls created by you

@@ -26,14 +26,15 @@ Bot and webapp backends were written in Python3.10 using the python-telegram-bot
    ...
    poll option m
    ```
-5) `/whitelist_chat_registration {poll_id}`  
+5) `/register_user_id {poll_id} {user_id}` - registers a user by user_id for a poll
+6) `/whitelist_chat_registration {poll_id}`  
 whitelists the current chat so that chat members can self-register
 for the poll specified by poll_id within the chat group
-6) `/blacklist_chat_registration {poll_id}`  
+7) `/blacklist_chat_registration {poll_id}`  
 whitelists the current chat so that chat members can self-register
 for the poll specified by poll_id within the chat group
-7) `/view_poll {poll_id}` - Shows poll details given `poll_id`
-8) `/vote ...` - Vote for the poll with the specified `poll_id`
+8) `/view_poll {poll_id}` - Shows poll details given `poll_id`
+9) `/vote ...` - Vote for the poll with the specified `poll_id`
    ```
    /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
    /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
@@ -51,20 +52,20 @@ for the poll specified by poll_id within the chat group
      (In this scenario, no vote will be given to any of the candidates, 
      and the voter will no longer be counted towards the total number of 
      voters needed to achieve a majority in the polling result calculation)
-9) `/poll_results {poll_id}` - Returns poll results if the poll has been closed
-10) `/has_voted {poll_id}` - Tells you if you've voted for the poll with the 
+10) `/poll_results {poll_id}` - Returns poll results if the poll has been closed
+11) `/has_voted {poll_id}` - Tells you if you've voted for the poll with the 
 specified poll_id
-11) `/close_poll {poll_id}` - Close the poll with the specified poll_id.   
+12) `/close_poll {poll_id}` - Close the poll with the specified poll_id.   
 note that only the poll's creator is allowed
 to issue this command to close the poll
-12) `/view_votes {poll_id}` - View all the votes entered for the poll 
+13) `/view_votes {poll_id}` - View all the votes entered for the poll 
 with the specified poll_id. This can only be done after the poll 
 has been closed first
-13) `/view_voters {poll_id}` - Show which voters have voted and which have not
-14) `/about` - View miscellaneous information about the bot
-15) `/view_polls` - View all polls created by you
-16) `/delete_poll {poll_id}` - Delete poll by poll_id
-17) `/help` - View commands available to the bot
+14) `/view_voters {poll_id}` - Show which voters have voted and which have not
+15) `/about` - View miscellaneous information about the bot
+16) `/view_polls` - View all polls created by you
+17) `/delete_poll {poll_id}` - Delete poll by poll_id
+18) `/help` - View commands available to the bot
 
 Commands for testing and debugging purposes: 
 1) `/vote_admin ...` - Casts a vote on behalf of the specified user  
@@ -105,7 +106,7 @@ Project was built using `Python3.10`
     - `sudo apt update`
     - `sudo apt install redis-server -y`
     - `sudo vim /etc/redis/redis.conf`
-      - Changed `supervised no` to `supervised systemd`
+      - Change `supervised no` to `supervised systemd`
     - `sudo systemctl restart redis`
     - `sudo systemctl status redis`
     - `sudo systemctl enable --now redis-server`
