@@ -273,7 +273,7 @@ class BaseAPI(object):
         and the username whitelist entry is empty
         Returns PollVoters entry id of user for the specified poll
         """
-        # noinspection PyUnresolvedReferences
+        
         try:
             poll_voter = cls.get_poll_voter(poll_id, user_id)
             return Ok(poll_voter.id)
@@ -459,14 +459,12 @@ class BaseAPI(object):
         elif poll.closed:
             return UserRegistrationStatus.POLL_CLOSED
 
-        # noinspection PyUnresolvedReferences
         try:
             PollVoters.get(poll_id=poll_id, user_id=user_id)
             return UserRegistrationStatus.ALREADY_REGISTERED
         except PollVoters.DoesNotExist:
             pass
 
-        # noinspection PyUnresolvedReferences
         try:
             user: Users = Users.get(id=user_id)
         except Users.DoesNotExist:
@@ -569,7 +567,7 @@ class BaseAPI(object):
 
     @classmethod
     def is_poll_voter(cls, poll_id: int, user_id: int):
-        # noinspection PyUnresolvedReferences
+        
         try:
             cls.get_poll_voter(poll_id=poll_id, user_id=user_id)
             return True
@@ -736,7 +734,7 @@ class BaseAPI(object):
 
     @staticmethod
     def resolve_username_to_user_ids(username: str) -> List[int]:
-        # noinspection PyUnresolvedReferences
+        
         try:
             matching_users = Users.select().where(Users.username == username)
         except Users.DoesNotExist:

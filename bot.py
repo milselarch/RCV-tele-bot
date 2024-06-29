@@ -571,7 +571,7 @@ class RankedChoiceBot(BaseAPI):
         assert isinstance(creator_user_id, int)
         raw_text = message.text.strip()
         # print('CHAT_IDS', whitelisted_chat_ids)
-        # noinspection PyUnresolvedReferences
+        
         try:
             user_entry: Users = Users.get(id=creator_user_id)
         except Users.DoesNotExist:
@@ -800,7 +800,6 @@ class RankedChoiceBot(BaseAPI):
             )
             return False
 
-        # noinspection PyUnresolvedReferences
         try:
             PollVoters.get(poll_id=poll_id, user_id=user_id)
             await message.reply_text(f'User #{user_id} already registered')
@@ -876,7 +875,7 @@ class RankedChoiceBot(BaseAPI):
             )
             return True
         else:
-            # noinspection PyUnresolvedReferences
+            
             try:
                 whitelist_row = ChatWhitelist.get(
                     (ChatWhitelist.poll_id == poll_id) &
@@ -1390,7 +1389,7 @@ class RankedChoiceBot(BaseAPI):
         if username_or_id.startswith('@'):
             # resolve telegram user_id by username
             username = username_or_id[1:]
-            # noinspection PyUnresolvedReferences
+            
             try:
                 matching_users = Users.select().where(
                     Users.username == username
@@ -1415,7 +1414,7 @@ class RankedChoiceBot(BaseAPI):
                 return False
 
             user_id = int(raw_user_id)
-            # noinspection PyUnresolvedReferences
+            
             try:
                 user = Users.select().where(Users.id == user_id).get()
             except Users.DoesNotExist:

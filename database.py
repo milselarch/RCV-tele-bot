@@ -1,8 +1,13 @@
+import peewee
 import datetime
 
 from playhouse.shortcuts import ReconnectMixin
 from load_config import YAML_CONFIG
-from peewee import *
+from peewee import (
+    Model, MySQLDatabase, BigIntegerField, CharField,
+    IntegerField, AutoField, TextField, DateTimeField,
+    BooleanField, ForeignKeyField, SQL
+)
 
 
 class DB(ReconnectMixin, MySQLDatabase):
@@ -17,6 +22,8 @@ db = DB(
 
 
 class BaseModel(Model):
+    DoesNotExist: peewee.DoesNotExist
+
     class Meta:
         database = db
 
