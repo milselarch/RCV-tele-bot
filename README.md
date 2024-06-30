@@ -122,7 +122,7 @@ Project was built using `Python3.10`
 ### Database Schema
 Database ORM definition can be found in `database.py`
 
-![Schema Image](https://github.com/milselarch/RCV-tele-bot/blob/master/schema.png)
+![Schema Image](https://raw.githubusercontent.com/milselarch/RCV-tele-bot/master/db-diagram.svg)
 
 ### Frontend Setup
 Uses node `v20.10.0`   
