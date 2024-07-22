@@ -114,9 +114,14 @@ Project was built using `Python3.10`
    ```shell
    (venv) $ python bot.py
    ```
-7. Run the webapp backend server
+7. Run the webapp backend server  
+   7.1. development  
     ```shell
    (venv) $ python webapp.py
+   ```
+   7.2. production
+   ```shell
+   (venv) $ uvicorn webapp:app --host 0.0.0.0 --port 5100
    ```
 
 ### Database Schema
