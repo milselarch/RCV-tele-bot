@@ -44,7 +44,7 @@ class SubscriptionTiers(IntEnum):
         # by a user with the given subscription tier
         match self:
             case SubscriptionTiers.FREE:
-                return 10
+                return 20
             case SubscriptionTiers.TIER_1:
                 return 50
             case SubscriptionTiers.TIER_2:
