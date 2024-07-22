@@ -117,11 +117,11 @@ Project was built using `Python3.10`
 7. Run the webapp backend server  
    7.1. development  
     ```shell
-   (venv) $ python webapp.py
+   (venv) $ python webapp.py --port <YOUR_PORT_NUMBER>
    ```
-   7.2. production
+   7.2. production (requires ASGI configuration as well)
    ```shell
-   (venv) $ uvicorn webapp:app --host 0.0.0.0 --port 5100
+   (venv) $ uvicorn webapp:app --host 0.0.0.0 --port <YOUR_PORT_NUMBER>
    ```
 
 ### Database Schema
