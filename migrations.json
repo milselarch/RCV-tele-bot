@@ -3,10 +3,12 @@
   "directory": "migrations",
   "history": "migratehistory",
   "models": [
-    "database.Chats",
+    "database.Users",
+    "database.Polls",
+    "database.ChatWhitelist",
     "database.PollVoters",
-    "database.Options",
-    "database.Votes",
-    "database.Polls"
+    "database.UsernameWhitelist",
+    "database.PollOptions",
+    "database.VoteRankings"
   ]
 }
