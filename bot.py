@@ -681,7 +681,10 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         # create users if they don't exist
-        user_rows = [self.kwargify(id=user_id) for user_id in poll_user_ids]
+        user_rows = [
+            self.kwargify(id=user_id, tele_id=user_id)
+            for user_id in poll_user_ids
+        ]
         Users.insert_many(user_rows).on_conflict_ignore().execute()
 
         with db.atomic():
@@ -1087,18 +1090,21 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         capture_groups = match.groups()
-        user_id = int(capture_groups[0])
+        tele_id = int(capture_groups[0])
         username: str = capture_groups[1]
         force: bool = capture_groups[2] is not None
         if username.startswith('@'): username = username[1:]
         assert len(username) >= 1
 
         if not force:
-            user, created = Users.get_or_create(id=user_id, username=username)
+            user, created = Users.get_or_create(
+                id=tele_id, username=username,
+                tele_id=tele_id
+            )
 
             if created:
                 await message.reply_text(
-                    f'User with user_id {user_id} and username '
+                    f'User with tele_id {tele_id} and username '
                     f'{username} created'
                 )
             else:
@@ -1107,13 +1113,13 @@ class RankedChoiceBot(BaseAPI):
                     'override existing entry'
                 )
         else:
-            Users.insert(id=user_id, username=username).on_conflict(
+            Users.insert(id=tele_id, username=username).on_conflict(
                 preserve=[Users.id],
                 update={Users.username: username}
             ).execute()
 
             await message.reply_text(
-                f'User with user_id {user_id} and username '
+                f'User with user_id {tele_id} and username '
                 f'{username} replaced'
             )
 
@@ -1163,18 +1169,21 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         capture_groups = match.groups()
-        user_id = int(capture_groups[0])
+        tele_id = int(capture_groups[0])
         username: str = capture_groups[1]
         force: bool = capture_groups[2] is not None
         if username.startswith('@'): username = username[1:]
         assert len(username) >= 1
 
         if not force:
-            user, created = Users.get_or_create(id=user_id, username=username)
+            user, created = Users.get_or_create(
+                id=tele_id, username=username,
+                tele_id=tele_id
+            )
 
             if created:
                 await message.reply_text(
-                    f'User with user_id {user_id} and username '
+                    f'User with user_id {tele_id} and username '
                     f'{username} created'
                 )
             else:
@@ -1183,13 +1192,13 @@ class RankedChoiceBot(BaseAPI):
                     'override existing entry'
                 )
         else:
-            Users.insert(id=user_id, username=username).on_conflict(
+            Users.insert(id=tele_id, username=username).on_conflict(
                 preserve=[Users.id],
                 update={Users.username: username}
             ).execute()
 
             await message.reply_text(
-                f'User with user_id {user_id} and username '
+                f'User with user_id {tele_id} and username '
                 f'{username} replaced'
             )
 

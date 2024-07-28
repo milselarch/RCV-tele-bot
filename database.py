@@ -30,8 +30,9 @@ class BaseModel(Model):
 
 # maps telegram user ids to their usernames
 class Users(BaseModel):
-    # telegram user id
     id = BigIntegerField(primary_key=True)
+    # telegram user id
+    tele_id = BigIntegerField(null=False)
     username = CharField(max_length=255, default=None, null=True)
     credits = IntegerField(default=0)
     subscription_tier = IntegerField(default=0)

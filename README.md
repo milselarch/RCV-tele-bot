@@ -44,7 +44,8 @@ for the poll specified by poll_id within the chat group
    voters of the poll  
    The last option of the ranked vote can also accept 2 special values, 
    `abstain` and `withhold`:
-   - Vote `withhold` to abstain from voting for any option in the poll   
+   - Vote `withhold` to cast a vote of no-confidence and boycott all the
+     options in the poll  
      (In this scenario, no vote will be given to any of the candidates,
      but the voter will still be counted towards the total number of 
      voters needed to achieve a majority in the polling result calculation)
