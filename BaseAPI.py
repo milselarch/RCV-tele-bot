@@ -8,8 +8,6 @@ import hashlib
 import textwrap
 import dataclasses
 
-import peewee
-
 import RankedChoice
 import telegram
 import asyncio
