@@ -1,6 +1,6 @@
 # Ranked Choice Voting Telegram Bot
 Ranked choice voting telegram bot - try it at [@ranked_choice_voting_bot](https://t.me/ranked_choice_voting_bot)   
-Bot and webapp backends were written in Python3.10 using the python-telegram-bot bot library, and the peewee SQL ORM. Voting webapp interface integration was written in Typescript using React and [react-telegram-web-app](https://github.com/vkruglikov/react-telegram-web-app) components
+Bot and webapp backends were written in Python3.12 using the python-telegram-bot bot library, and the peewee SQL ORM. Voting webapp interface integration was written in Typescript using React and [react-telegram-web-app](https://github.com/vkruglikov/react-telegram-web-app) components
 
 ![RCV-SSV3](https://github.com/user-attachments/assets/33f3d77e-063b-4c78-9267-a92e3bbb6e0a)
 
@@ -44,7 +44,8 @@ for the poll specified by poll_id within the chat group
    voters of the poll  
    The last option of the ranked vote can also accept 2 special values, 
    `abstain` and `withhold`:
-   - Vote `withhold` to abstain from voting for any option in the poll   
+   - Vote `withhold` to cast a vote of no-confidence and boycott all the
+     options in the poll  
      (In this scenario, no vote will be given to any of the candidates,
      but the voter will still be counted towards the total number of 
      voters needed to achieve a majority in the polling result calculation)
@@ -81,7 +82,7 @@ Commands for testing and debugging purposes:
     `/insert_user_admin {user_id} {username} --force`
 
 ### Backend Setup
-Project was built using `Python3.10`
+Project was built using `Python3.12`
 
 1. Create a database and database user for the bot program to use as follows:
    ```SQL
@@ -94,7 +95,7 @@ Project was built using `Python3.10`
    and fill it up with MySQL credentials and telegram bot API token
 3. Create a new virtual env at the project root and activate it
    ```shell
-   $ python3.10 -m venv venv
+   $ python3.12 -m venv venv
    $ source venv/bin/activate
    ```
 4. Install dependencies and do database initialisation

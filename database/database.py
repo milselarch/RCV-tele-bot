@@ -1,10 +1,17 @@
+from __future__ import annotations
+
 import peewee
 import datetime
 
 from playhouse.shortcuts import ReconnectMixin
 from load_config import YAML_CONFIG
+
+from typing import Iterable, Self
+from db_helpers import (
+    ModelRowFields, TypedModel, BoundModelRowFields
+)
 from peewee import (
-    Model, MySQLDatabase, BigIntegerField, CharField,
+    MySQLDatabase, BigIntegerField, CharField,
     IntegerField, AutoField, TextField, DateTimeField,
     BooleanField, ForeignKeyField, SQL
 )
@@ -21,17 +28,23 @@ db = DB(
 )
 
 
-class BaseModel(Model):
+class BaseModel(TypedModel):
     DoesNotExist: peewee.DoesNotExist
 
     class Meta:
         database = db
 
+    @classmethod
+    def batch_insert(cls, row_entries: Iterable[ModelRowFields]):
+        rows = [row_entry.to_dict() for row_entry in row_entries]
+        return cls.insert_many(rows)
+
 
 # maps telegram user ids to their usernames
 class Users(BaseModel):
-    # telegram user id
     id = BigIntegerField(primary_key=True)
+    # telegram user id
+    tele_id = BigIntegerField(null=False)
     username = CharField(max_length=255, default=None, null=True)
     credits = IntegerField(default=0)
     subscription_tier = IntegerField(default=0)
@@ -45,6 +58,15 @@ class Users(BaseModel):
             # it possible there will be collisions here regardless
             (('username',), False),
         )
+
+    @classmethod
+    def build_row_from_fields(
+        cls, tele_id: int, username: str | None = None
+    ) -> BoundModelRowFields[Self]:
+        return BoundModelRowFields(cls, {
+            cls.id: tele_id, cls.tele_id: tele_id,
+            cls.username: username
+        })
 
 
 # stores poll metadata (description, open time, etc etc)

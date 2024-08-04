@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import json
 import logging
 import time
+
 import telegram
 import textwrap
 import asyncio
@@ -80,7 +83,9 @@ class RankedChoiceBot(BaseAPI):
                 chat_username: str = user.username
                 # print('UPDATE_USER', user.id, chat_username)
 
-                Users.insert(id=user.id, username=chat_username).on_conflict(
+                Users.build_row_from_fields(
+                    tele_id=user.id, username=chat_username
+                ).insert().on_conflict(
                     preserve=[Users.id],
                     update={Users.username: chat_username}
                 ).execute()
@@ -634,19 +639,19 @@ class RankedChoiceBot(BaseAPI):
 
         raw_poll_usernames: List[str] = command_p1.split()
         whitelisted_usernames: List[str] = []
-        poll_user_ids: List[int] = []
+        poll_user_tele_ids: List[int] = []
 
         for raw_poll_user in raw_poll_usernames:
             if raw_poll_user.startswith('#'):
-                raw_poll_user_id = raw_poll_user[1:]
-                if ID_PATTERN.match(raw_poll_user_id) is None:
+                raw_poll_user_tele_id = raw_poll_user[1:]
+                if ID_PATTERN.match(raw_poll_user_tele_id) is None:
                     await message.reply_text(
                         f'Invalid poll user id: {raw_poll_user}'
                     )
                     return False
 
-                poll_user_id = int(raw_poll_user_id)
-                poll_user_ids.append(poll_user_id)
+                poll_user_id = int(raw_poll_user_tele_id)
+                poll_user_tele_ids.append(poll_user_id)
                 continue
 
             if raw_poll_user.startswith('@'):
@@ -662,7 +667,7 @@ class RankedChoiceBot(BaseAPI):
 
             whitelisted_usernames.append(whitelisted_username)
 
-        num_voters = len(poll_user_ids) + len(whitelisted_usernames)
+        num_voters = len(poll_user_tele_ids) + len(whitelisted_usernames)
         max_voters = subscription_tier.get_max_voters()
         if num_voters > max_voters:
             await message.reply_text(f'Whitelisted voters exceeds limit')
@@ -681,10 +686,13 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         # create users if they don't exist
-        user_rows = [self.kwargify(id=user_id) for user_id in poll_user_ids]
-        Users.insert_many(user_rows).on_conflict_ignore().execute()
+        user_rows = [
+            Users.build_row_from_fields(tele_id=tele_id)
+            for tele_id in poll_user_tele_ids
+        ]
 
         with db.atomic():
+            Users.batch_insert(user_rows).on_conflict_ignore().execute()
             num_user_created_polls = self.count_polls_created(creator_user_id)
             # verify again that the number of polls created is still
             # within the limit to prevent race conditions
@@ -718,7 +726,7 @@ class RankedChoiceBot(BaseAPI):
                     poll_id=new_poll_id, username=raw_poll_user
                 ))
             # whitelist voters in poll by user id
-            for poll_user_id in poll_user_ids:
+            for poll_user_id in poll_user_tele_ids:
                 poll_voter_rows.append(self.kwargify(
                     poll_id=new_poll_id, user_id=poll_user_id
                 ))
@@ -807,7 +815,10 @@ class RankedChoiceBot(BaseAPI):
         except PollVoters.DoesNotExist:
             pass
 
-        Users.insert(id=user_id).on_conflict_ignore().execute()
+        Users.build_row_from_fields(
+            tele_id=user_id
+        ).insert().on_conflict_ignore().execute()
+
         register_result = self._register_user_id(
             poll_id=poll_id, user_id=user_id,
             ignore_voter_limit=False, from_whitelist=False
@@ -1087,18 +1098,20 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         capture_groups = match.groups()
-        user_id = int(capture_groups[0])
+        tele_id = int(capture_groups[0])
         username: str = capture_groups[1]
         force: bool = capture_groups[2] is not None
         if username.startswith('@'): username = username[1:]
         assert len(username) >= 1
 
         if not force:
-            user, created = Users.get_or_create(id=user_id, username=username)
+            user, created = Users.build_row_from_fields(
+                tele_id=tele_id, username=username
+            ).get_or_create()
 
             if created:
                 await message.reply_text(
-                    f'User with user_id {user_id} and username '
+                    f'User with tele_id {tele_id} and username '
                     f'{username} created'
                 )
             else:
@@ -1107,13 +1120,15 @@ class RankedChoiceBot(BaseAPI):
                     'override existing entry'
                 )
         else:
-            Users.insert(id=user_id, username=username).on_conflict(
+            Users.build_row_from_fields(
+                tele_id=tele_id, username=username
+            ).insert().on_conflict(
                 preserve=[Users.id],
                 update={Users.username: username}
             ).execute()
 
             await message.reply_text(
-                f'User with user_id {user_id} and username '
+                f'User with user_id {tele_id} and username '
                 f'{username} replaced'
             )
 
@@ -1163,18 +1178,20 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         capture_groups = match.groups()
-        user_id = int(capture_groups[0])
+        tele_id = int(capture_groups[0])
         username: str = capture_groups[1]
         force: bool = capture_groups[2] is not None
         if username.startswith('@'): username = username[1:]
         assert len(username) >= 1
 
         if not force:
-            user, created = Users.get_or_create(id=user_id, username=username)
+            user, created = Users.build_row_from_fields(
+                tele_id=tele_id, username=username
+            ).get_or_create()
 
             if created:
                 await message.reply_text(
-                    f'User with user_id {user_id} and username '
+                    f'User with user_id {tele_id} and username '
                     f'{username} created'
                 )
             else:
@@ -1183,13 +1200,15 @@ class RankedChoiceBot(BaseAPI):
                     'override existing entry'
                 )
         else:
-            Users.insert(id=user_id, username=username).on_conflict(
+            Users.build_row_from_fields(
+                tele_id=tele_id, username=username
+            ).insert().on_conflict(
                 preserve=[Users.id],
                 update={Users.username: username}
             ).execute()
 
             await message.reply_text(
-                f'User with user_id {user_id} and username '
+                f'User with user_id {tele_id} and username '
                 f'{username} replaced'
             )
 
