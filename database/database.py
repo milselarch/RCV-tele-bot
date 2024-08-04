@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# noinspection PyUnresolvedReferences
-import ParentImport
 import peewee
 import datetime
 
@@ -9,7 +7,7 @@ from playhouse.shortcuts import ReconnectMixin
 from load_config import YAML_CONFIG
 
 from typing import Iterable, Self
-from db_helpers import (
+from database.db_helpers import (
     ModelRowFields, TypedModel, BoundModelRowFields
 )
 from peewee import (
