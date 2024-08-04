@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# noinspection PyUnresolvedReferences
+import ParentImport
 import peewee
 import datetime
 
