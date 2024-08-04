@@ -1542,7 +1542,7 @@ class RankedChoiceBot(BaseAPI):
         # remove starting command from raw_text
         raw_arguments = raw_text[raw_text.index(' '):].strip()
 
-        """
+        r"""
         catches input of format:
         {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
         {poll_id} {choice_1} > {choice_2} > ... > {choice_n}
@@ -1555,10 +1555,10 @@ class RankedChoiceBot(BaseAPI):
         $ -> end of string        
         """
         # print('RAW_ARGS', [raw_arguments])
-        pattern1 = '^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|{}|{})$'.format(
+        pattern1 = r'^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|{}|{})$'.format(
             *SpecialVotes.get_str_values()
         )
-        """
+        r"""
         catches input of format:
         {poll_id} {choice_1} {choice_2} ... {choice_n}
 
@@ -1569,7 +1569,7 @@ class RankedChoiceBot(BaseAPI):
         ([0-9]+|withhold|abstain) -> final ranking number or special vote
         $ -> end of string        
         """
-        pattern2 = '^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|{}|{})$'.format(
+        pattern2 = r'^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|{}|{})$'.format(
             *SpecialVotes.get_str_values()
         )
 
@@ -1588,7 +1588,7 @@ class RankedChoiceBot(BaseAPI):
             ]
         elif pattern_match2:
             raw_arguments = raw_arguments.replace(':', '')
-            raw_arguments = re.sub('\s+', ' ', raw_arguments)
+            raw_arguments = re.sub(r'\s+', ' ', raw_arguments)
             raw_arguments_arr = raw_arguments.split(' ')
             raw_poll_id = int(raw_arguments_arr[0])
             raw_votes = raw_arguments_arr[1:]

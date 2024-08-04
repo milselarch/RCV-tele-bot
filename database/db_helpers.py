@@ -10,17 +10,17 @@ from typing import (
 
 class ModelRowFields(object):
     def __init__(self, fields: Dict[peewee.Field, Any]):
-        self.__fields: Dict[str, Any] = {}
+        self._fields: Dict[str, Any] = {}
 
         for field, value in fields.items():
             #  print('FIELD_NAME', field, field.name)
             if isinstance(field, peewee.ForeignKeyField):
-                self.__fields[field.name] = value.id
+                self._fields[field.name] = value.id
             else:
-                self.__fields[field.name] = value
+                self._fields[field.name] = value
 
     def to_dict(self) -> Dict[str, Any]:
-        return self.__fields.copy()
+        return self._fields.copy()
 
 
 M = TypeVar('M', bound=Model)
@@ -43,7 +43,7 @@ class BoundModelRowFields(ModelRowFields, Generic[T]):
         super().__init__(fields)
 
     def get_or_create(self) -> Tuple[T, bool]:
-        return self.__base_model.get_or_create(**self.__fields)
+        return self.__base_model.get_or_create(**self._fields)
 
     def insert(self):
-        return self.__base_model.insert(**self.__fields)
+        return self.__base_model.insert(**self._fields)
