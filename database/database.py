@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import datetime
-from operator import index
 
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok
-
 from load_config import YAML_CONFIG
-
 from typing import Self, Optional
 from database.db_helpers import (
     TypedModel, BoundModelRowFields, Empty, EmptyField
@@ -256,6 +253,6 @@ class PollWinners(BaseModel):
 db.connect()
 db.create_tables([
     Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
-    PollOptions, VoteRankings
+    PollOptions, VoteRankings, PollWinners
 ], safe=True)
 

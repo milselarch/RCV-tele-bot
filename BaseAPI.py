@@ -7,7 +7,6 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-from concurrent.futures import ThreadPoolExecutor
 
 import RankedChoice
 import telegram
@@ -20,6 +19,7 @@ from strenum import StrEnum
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
+from concurrent.futures import ThreadPoolExecutor
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
@@ -1057,4 +1057,3 @@ class BaseAPI(object):
     @staticmethod
     def kwargify(**kwargs):
         return kwargs
-

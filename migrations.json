@@ -9,6 +9,7 @@
     "database.PollVoters",
     "database.UsernameWhitelist",
     "database.PollOptions",
-    "database.VoteRankings"
+    "database.VoteRankings",
+    "database.PollWinners"
   ]
 }
