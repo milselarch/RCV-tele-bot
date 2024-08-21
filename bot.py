@@ -15,8 +15,10 @@ from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
 from RankedChoice import SpecialVotes
 from bot_middleware import track_errors, admin_only
+from database.database import UserID
+from database.db_helpers import EmptyField, Empty
 from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
-from typing import List, Tuple, Dict, Optional, Sequence
+from typing import List, Tuple, Dict, Optional, Sequence, Iterable
 from LocksManager import PollsLockManager
 
 from database import (
@@ -25,11 +27,12 @@ from database import (
 )
 from BaseAPI import (
     BaseAPI, UserRegistrationStatus, PollInfo, SubscriptionTiers,
-    CallbackCommands
+    CallbackCommands, GetPollWinnerStatus
 )
 from telegram import (
     Update, Message, WebAppInfo, ReplyKeyboardMarkup,
-    KeyboardButton, User, InlineKeyboardMarkup, InlineKeyboardButton
+    KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton,
+    User as TeleUser
 )
 from telegram.ext import (
     CommandHandler, ApplicationBuilder, ContextTypes,
@@ -37,7 +40,7 @@ from telegram.ext import (
     Application
 )
 
-__VERSION__ = '1.0.2'
+__VERSION__ = '1.0.3'
 ID_PATTERN = re.compile(r"^[1-9]\d*$")
 MAX_DISPLAY_VOTE_COUNT = 30
 MAX_CONCURRENT_UPDATES = 256
@@ -71,20 +74,20 @@ class RankedChoiceBot(BaseAPI):
             # print("SELF", self)
             if update.callback_query is not None:
                 query = update.callback_query
-                user = query.from_user
+                tele_user = query.from_user
             elif update.message is not None:
                 message: Message = update.message
-                user = message.from_user
+                tele_user = message.from_user
             else:
-                user = None
+                tele_user = None
 
-            if user is not None:
-                assert isinstance(user, User)
-                chat_username: str = user.username
+            if tele_user is not None:
+                assert isinstance(tele_user, TeleUser)
+                chat_username: str = tele_user.username
                 # print('UPDATE_USER', user.id, chat_username)
 
-                Users.build_row_from_fields(
-                    tele_id=user.id, username=chat_username
+                Users.build_from_fields(
+                    tele_id=tele_user.id, username=chat_username
                 ).insert().on_conflict(
                     preserve=[Users.id],
                     update={Users.username: chat_username}
@@ -121,7 +124,7 @@ class RankedChoiceBot(BaseAPI):
             user_details=self.user_details_handler,
             create_poll=self.create_poll,
             create_group_poll=self.create_group_poll,
-            register_user_id=self.register_user_id,
+            register_user_id=self.register_user_by_tele_id,
             whitelist_chat_registration=self.whitelist_chat_registration,
             blacklist_chat_registration=self.blacklist_chat_registration,
 
@@ -237,13 +240,20 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = int(pattern_match.group(1))
-        user: User = update.message.from_user
-        user_id = user.id
+        tele_user: TeleUser = update.message.from_user
+        user_tele_id = tele_user.id
 
+        try:
+            user = Users.build_from_fields(tele_id=user_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        user_id = user.get_int_id()
         view_poll_result = self.get_poll_message(
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
-            username=user.username
+            username=tele_user.username
         )
 
         if view_poll_result.is_err():
@@ -253,7 +263,7 @@ class RankedChoiceBot(BaseAPI):
 
         poll_message = view_poll_result.unwrap()
         reply_markup = ReplyKeyboardMarkup(self.build_private_vote_markup(
-            poll_id=poll_id, user=user
+            poll_id=poll_id, tele_user=tele_user
         ))
         await message.reply_text(
             poll_message.text, reply_markup=reply_markup
@@ -271,9 +281,9 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text('Invalid payload')
             return False
 
-        user: User = message.from_user
-        username: Optional[str] = user.username
-        user_id = user.id
+        tele_user: TeleUser = message.from_user
+        username: Optional[str] = tele_user.username
+        user_tele_id = tele_user.id
 
         formatted_rankings = ' > '.join([
             self.stringify_ranking(rank) for rank in ranked_option_numbers
@@ -285,7 +295,7 @@ class RankedChoiceBot(BaseAPI):
 
         vote_result = self.register_vote(
             poll_id=poll_id, rankings=ranked_option_numbers,
-            user_id=user_id, username=username
+            user_tele_id=user_tele_id, username=username
         )
 
         if vote_result.is_err():
@@ -313,13 +323,13 @@ class RankedChoiceBot(BaseAPI):
     async def handle_unknown_command(self, update: Update, _):
         await update.message.reply_text("Command not found")
 
-    def generate_poll_url(self, poll_id: int, user: User) -> str:
+    def generate_poll_url(self, poll_id: int, tele_user: TeleUser) -> str:
         req = PreparedRequest()
         auth_date = str(int(time.time()))
         query_id = self.generate_secret()
         user_info = json.dumps({
-            'id': user.id,
-            'username': user.username
+            'id': tele_user.id,
+            'username': tele_user.username
         })
 
         data_check_string = self.make_data_check_string(
@@ -340,9 +350,11 @@ class RankedChoiceBot(BaseAPI):
         return req.url
 
     def build_private_vote_markup(
-        self, poll_id: int, user: User
+        self, poll_id: int, tele_user: TeleUser
     ) -> List[List[KeyboardButton]]:
-        poll_url = self.generate_poll_url(poll_id=poll_id, user=user)
+        poll_url = self.generate_poll_url(
+            poll_id=poll_id, tele_user=tele_user
+        )
         logger.info(f'POLL_URL = {poll_url}')
         # create vote button for reply message
         markup_layout = [[KeyboardButton(
@@ -363,9 +375,9 @@ class RankedChoiceBot(BaseAPI):
         chat_id = query.message.chat_id
         message_id = query.message.message_id
         raw_callback_data = query.data
-        user = query.from_user
+        tele_user: TeleUser | None = query.from_user
 
-        if user is None:
+        if tele_user is None:
             await query.answer("Only users can be registered")
             return False
         if raw_callback_data is None:
@@ -382,17 +394,26 @@ class RankedChoiceBot(BaseAPI):
             await query.answer("Callback command unknown")
             return False
 
-        user_id = user.id
+        user_tele_id = tele_user.id
         command = callback_data['command']
+
+        try:
+            user = Users.build_from_fields(tele_id=user_tele_id).get()
+            user_id = user.get_int_id()
+        except Users.DoesNotExist:
+            await query.answer(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
 
         if command == CallbackCommands.REGISTER:
             poll_id = int(callback_data['poll_id'])
+
             if not self.is_whitelisted_chat(poll_id=poll_id, chat_id=chat_id):
                 await query.answer("Not allowed to register from this chat")
                 return False
 
             registration_status = self._register_voter(
-                poll_id=poll_id, user_id=user.id, username=user.username
+                poll_id=poll_id, user_id=user_id,
+                username=tele_user.username
             )
 
             reply_text = self._reg_status_to_msg(registration_status, poll_id)
@@ -416,7 +437,9 @@ class RankedChoiceBot(BaseAPI):
                 await query.answer(f"Poll #{poll_id} does not exist")
                 return False
 
-            is_poll_creator = user_id == poll.creator_id.id
+            assert isinstance(poll, Polls)
+            poll_creator = poll.get_creator()
+            is_poll_creator = user_id == poll_creator.get_int_id()
 
             if not is_poll_creator:
                 await query.answer(f"Not creator of poll #{poll_id}")
@@ -479,7 +502,7 @@ class RankedChoiceBot(BaseAPI):
     def is_whitelisted_chat(poll_id: int, chat_id: int):
         query = ChatWhitelist.select().where(
             (ChatWhitelist.chat_id == chat_id) &
-            (ChatWhitelist.poll_id == poll_id)
+            (ChatWhitelist.poll == poll_id)
         )
         return query.exists()
 
@@ -501,14 +524,21 @@ class RankedChoiceBot(BaseAPI):
         /has_voted {poll_id}
         """
         message = update.message
-        user = update.message.from_user
-        user_id = user.id
+        tele_user: TeleUser | None = update.message.from_user
+        user_tele_id = tele_user.id
 
         extract_poll_id_result = self.extract_poll_id(update)
         if extract_poll_id_result.is_err():
             await message.reply_text('Poll ID not specified')
             return False
 
+        try:
+            user = Users.build_from_fields(tele_id=user_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        user_id = user.get_int_id()
         poll_id = extract_poll_id_result.unwrap()
         is_voter = self.is_poll_voter(
             poll_id=poll_id, user_id=user_id
@@ -567,22 +597,22 @@ class RankedChoiceBot(BaseAPI):
         chocolate
         """
         message: Message = update.message
-        creator_user = message.from_user
+        creator_user: TeleUser | None = message.from_user
         if creator_user is None:
             await message.reply_text("Creator user not specified")
             return False
 
-        creator_user_id = creator_user.id
-        assert isinstance(creator_user_id, int)
+        creator_tele_id = creator_user.id
+        assert isinstance(creator_tele_id, int)
         raw_text = message.text.strip()
         # print('CHAT_IDS', whitelisted_chat_ids)
-        
-        try:
-            user_entry: Users = Users.get(id=creator_user_id)
-        except Users.DoesNotExist:
+
+        user_res = Users.get_from_tele_id(creator_tele_id)
+        if user_res.is_err():
             await message.reply_text("Creator user does not exist")
             return False
 
+        user_entry: Users = user_res.unwrap()
         try:
             subscription_tier = SubscriptionTiers(
                 user_entry.subscription_tier
@@ -650,8 +680,8 @@ class RankedChoiceBot(BaseAPI):
                     )
                     return False
 
-                poll_user_id = int(raw_poll_user_tele_id)
-                poll_user_tele_ids.append(poll_user_id)
+                poll_user_tele_id = int(raw_poll_user_tele_id)
+                poll_user_tele_ids.append(poll_user_tele_id)
                 continue
 
             if raw_poll_user.startswith('@'):
@@ -673,8 +703,15 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'Whitelisted voters exceeds limit')
             return False
 
+        try:
+            user = Users.build_from_fields(tele_id=creator_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        creator_id = user.get_int_id()
         assert num_voters <= max_voters
-        num_user_created_polls = self.count_polls_created(creator_user_id)
+        num_user_created_polls = self.count_polls_created(creator_id)
         poll_creation_limit = subscription_tier.get_max_polls()
         limit_reached_text = textwrap.dedent(f"""
             Poll creation limit reached
@@ -687,24 +724,28 @@ class RankedChoiceBot(BaseAPI):
 
         # create users if they don't exist
         user_rows = [
-            Users.build_row_from_fields(tele_id=tele_id)
+            Users.build_from_fields(tele_id=tele_id)
             for tele_id in poll_user_tele_ids
         ]
 
         with db.atomic():
-            Users.batch_insert(user_rows).on_conflict_ignore().execute()
-            num_user_created_polls = self.count_polls_created(creator_user_id)
+            inserted_users: Iterable[Users] = (
+                Users.batch_insert(user_rows).on_conflict_ignore().execute()
+            )
+
+            inserted_user_ids = [user.get_int_id() for user in inserted_users]
+            num_user_created_polls = self.count_polls_created(creator_id)
             # verify again that the number of polls created is still
             # within the limit to prevent race conditions
             if num_user_created_polls >= poll_creation_limit:
                 await message.reply_text(limit_reached_text)
                 return False
 
-            new_poll = Polls.create(
-                desc=poll_question, creator_id=creator_user_id,
+            new_poll = Polls.build_from_fields(
+                desc=poll_question, creator_id=creator_id,
                 num_voters=num_voters, open_registration=open_registration,
                 max_voters=subscription_tier.get_max_voters()
-            )
+            ).create()
 
             new_poll_id: int = new_poll.id
             assert isinstance(new_poll_id, int)
@@ -713,6 +754,7 @@ class RankedChoiceBot(BaseAPI):
             poll_option_rows = []
             poll_voter_rows = []
 
+            # TODO: use build from fields instead
             # create poll options
             for k, poll_option in enumerate(poll_options):
                 poll_choice_number = k+1
@@ -720,17 +762,19 @@ class RankedChoiceBot(BaseAPI):
                     poll_id=new_poll_id, option_name=poll_option,
                     option_number=poll_choice_number
                 ))
+            # TODO: use build from fields instead
             # whitelist voters in poll by username
             for raw_poll_user in whitelisted_usernames:
                 whitelisted_user_rows.append(self.kwargify(
                     poll_id=new_poll_id, username=raw_poll_user
                 ))
+            # TODO: use build from fields instead
             # whitelist voters in poll by user id
-            for poll_user_id in poll_user_tele_ids:
+            for poll_user_id in inserted_user_ids:
                 poll_voter_rows.append(self.kwargify(
-                    poll_id=new_poll_id, user_id=poll_user_id
+                    poll_id=new_poll_id, user=poll_user_id
                 ))
-
+            # TODO: use build from fields instead
             # chat ids that are whitelisted for user self-registration
             for chat_id in whitelisted_chat_ids:
                 chat_whitelist_rows.append(self.kwargify(
@@ -749,14 +793,13 @@ class RankedChoiceBot(BaseAPI):
             num_voters=num_voters
         )
 
-        from_user: User = update.message.from_user
         chat_type = update.message.chat.type
         reply_markup = None
 
         if chat_type == 'private':
             # create vote button for reply message
             vote_markup_data = self.build_private_vote_markup(
-                poll_id=new_poll_id, user=from_user
+                poll_id=new_poll_id, tele_user=creator_user
             )
             reply_markup = ReplyKeyboardMarkup(vote_markup_data)
         elif open_registration:
@@ -769,10 +812,10 @@ class RankedChoiceBot(BaseAPI):
             poll_message, reply_markup=reply_markup
         )
 
-    async def register_user_id(self, update: Update, *_, **__):
+    async def register_user_by_tele_id(self, update: Update, *_, **__):
         """
-        registers a user by user_id for a poll
-        /whitelist_user_id {poll_id} {user_id}
+        registers a user by user_tele_id for a poll
+        /whitelist_user_id {poll_id} {user_tele_id}
         """
         message: Message = update.message
         user = message.from_user
@@ -793,7 +836,13 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = int(capture_groups[0])
-        user_id = int(capture_groups[1])
+        user_tele_id = int(capture_groups[1])
+
+        try:
+            user = Users.build_from_fields(tele_id=user_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
 
         try:
             poll = Polls.select().where(Polls.id == poll_id).get()
@@ -801,7 +850,9 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'poll {poll_id} does not exist')
             return False
 
-        if poll.creator_id.id != user.id:
+        user_id = user.get_int_id()
+        creator_id: UserID = poll.get_creator().get_int_id()
+        if creator_id != user_id:
             await message.reply_text(
                 'only poll creator is allowed to whitelist chats '
                 'for open user registration'
@@ -815,10 +866,6 @@ class RankedChoiceBot(BaseAPI):
         except PollVoters.DoesNotExist:
             pass
 
-        Users.build_row_from_fields(
-            tele_id=user_id
-        ).insert().on_conflict_ignore().execute()
-
         register_result = self._register_user_id(
             poll_id=poll_id, user_id=user_id,
             ignore_voter_limit=False, from_whitelist=False
@@ -831,7 +878,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(response_text)
             return False
 
-        await message.reply_text(f'User #{user_id} registered')
+        await message.reply_text(f'User #{user_tele_id} registered')
         return True
 
     async def whitelist_chat_registration(
@@ -852,7 +899,7 @@ class RankedChoiceBot(BaseAPI):
         self, update: Update, whitelist: bool
     ) -> bool:
         message = update.message
-        user = message.from_user
+        tele_user: TeleUser | None = message.from_user
 
         extract_poll_id_result = self.extract_poll_id(update)
         if extract_poll_id_result.is_err():
@@ -868,9 +915,15 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'poll {poll_id} does not exist')
             return False
 
-        creator_id = poll.creator_id.id
+        try:
+            user = Users.build_from_fields(tele_id=tele_user.id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
 
-        if creator_id != user.id:
+        user_id = user.get_int_id()
+        creator_id: UserID = poll.get_creator().get_int_id()
+        if creator_id != user_id:
             await message.reply_text(
                 'only poll creator is allowed to whitelist chats '
                 'for open user registration'
@@ -889,7 +942,7 @@ class RankedChoiceBot(BaseAPI):
             
             try:
                 whitelist_row = ChatWhitelist.get(
-                    (ChatWhitelist.poll_id == poll_id) &
+                    (ChatWhitelist.poll == poll_id) &
                     (ChatWhitelist.chat_id == message.chat.id)
                 )
             except ChatWhitelist.DoesNotExist:
@@ -915,9 +968,16 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = extract_result.unwrap()
-        user: User = update.message.from_user
-        user_id = user.id
+        tele_user: TeleUser | None = update.message.from_user
+        user_tele_id = tele_user.id
 
+        try:
+            user = Users.build_from_fields(tele_id=user_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        user_id = user.get_int_id()
         # check if voter is part of the poll
         get_poll_closed_result = self.get_poll_closed(poll_id)
         if get_poll_closed_result.is_err():
@@ -926,7 +986,7 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         has_poll_access = self.has_access_to_poll_id(
-            poll_id, user_id, username=user.username
+            poll_id, user_id, username=tele_user.username
         )
         if not has_poll_access:
             await message.reply_text(f'You have no access to poll {poll_id}')
@@ -934,7 +994,7 @@ class RankedChoiceBot(BaseAPI):
 
         # get poll options in ascending order
         poll_option_rows = PollOptions.select().where(
-            PollOptions.poll_id == poll_id
+            PollOptions.poll == poll_id
         ).order_by(PollOptions.option_number)
 
         # map poll option ids to their option ranking numbers
@@ -946,13 +1006,13 @@ class RankedChoiceBot(BaseAPI):
             )
 
         relevant_voters = PollVoters.select(PollVoters.id).where(
-            PollVoters.poll_id == poll_id
+            PollVoters.poll == poll_id
         )
         # TODO: is this or the join query faster?
         vote_rows = VoteRankings.select().where(
-            VoteRankings.poll_voter_id.in_(relevant_voters)
+            VoteRankings.poll_voter.in_(relevant_voters)
         ).order_by(
-            VoteRankings.option_id, VoteRankings.ranking
+            VoteRankings.option, VoteRankings.ranking
         )
         """
         vote_rows = VoteRankings.select().join(
@@ -975,13 +1035,13 @@ class RankedChoiceBot(BaseAPI):
             or either of the <abstain> or <withhold> special votes
             (which are represented as negative numbers -1 and -2)
             """
-            voter_id: int = vote_row.poll_voter_id.id
+            voter_id: int = vote_row.poll_voter.id
             assert isinstance(voter_id, int)
 
             if voter_id not in vote_sequence_map:
                 vote_sequence_map[voter_id] = {}
 
-            option_id_row = vote_row.option_id
+            option_id_row = vote_row.option
 
             if option_id_row is None:
                 vote_value = vote_row.special_value
@@ -1067,8 +1127,8 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text("username not found")
             return False
 
-        user_ids = self.resolve_username_to_user_ids(username)
-        id_strings = ' '.join([f'#{user_id}' for user_id in user_ids])
+        user_tele_ids = self.resolve_username_to_user_tele_ids(username)
+        id_strings = ' '.join([f'#{tele_id}' for tele_id in user_tele_ids])
         await message.reply_text(textwrap.dedent(f"""
             matching user_ids for username [{username}]:
             {id_strings}
@@ -1105,7 +1165,7 @@ class RankedChoiceBot(BaseAPI):
         assert len(username) >= 1
 
         if not force:
-            user, created = Users.build_row_from_fields(
+            user, created = Users.build_from_fields(
                 tele_id=tele_id, username=username
             ).get_or_create()
 
@@ -1120,15 +1180,15 @@ class RankedChoiceBot(BaseAPI):
                     'override existing entry'
                 )
         else:
-            Users.build_row_from_fields(
+            Users.build_from_fields(
                 tele_id=tele_id, username=username
             ).insert().on_conflict(
-                preserve=[Users.id],
+                preserve=[Users.tele_id],
                 update={Users.username: username}
             ).execute()
 
             await message.reply_text(
-                f'User with user_id {tele_id} and username '
+                f'User with tele_id {tele_id} and username '
                 f'{username} replaced'
             )
 
@@ -1148,10 +1208,10 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         matching_users = Users.select().where(Users.username == username)
-        user_ids = [user.id for user in matching_users]
+        user_tele_ids = [user.tele_id for user in matching_users]
         await message.reply_text(textwrap.dedent(f"""
-            matching user_ids for username [{username}]:
-            {' '.join([f'#{user_id}' for user_id in user_ids])}
+            matching user_tele_ids for username [{username}]:
+            {' '.join([f'#{tele_id}' for tele_id in user_tele_ids])}
         """))
 
     @admin_only
@@ -1185,7 +1245,7 @@ class RankedChoiceBot(BaseAPI):
         assert len(username) >= 1
 
         if not force:
-            user, created = Users.build_row_from_fields(
+            user, created = Users.build_from_fields(
                 tele_id=tele_id, username=username
             ).get_or_create()
 
@@ -1200,7 +1260,7 @@ class RankedChoiceBot(BaseAPI):
                     'override existing entry'
                 )
         else:
-            Users.build_row_from_fields(
+            Users.build_from_fields(
                 tele_id=tele_id, username=username
             ).insert().on_conflict(
                 preserve=[Users.id],
@@ -1218,15 +1278,22 @@ class RankedChoiceBot(BaseAPI):
         /view_poll 3
         """
         message = update.message
-        user = update.message.from_user
+        tele_user: TeleUser | None = update.message.from_user
         extract_result = self.extract_poll_id(update)
-        user_id = user.id
+        user_tele_id = tele_user.id
 
         if extract_result.is_err():
             error_message = extract_result.err()
             await error_message.call(message.reply_text)
             return False
 
+        try:
+            user = Users.build_from_fields(tele_id=user_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        user_id = user.get_int_id()
         poll_id = extract_result.unwrap()
         view_poll_result = self.get_poll_message(
             poll_id=poll_id, user_id=user_id,
@@ -1252,7 +1319,7 @@ class RankedChoiceBot(BaseAPI):
         if chat_type == 'private':
             # create vote button for reply message
             vote_markup_data = self.build_private_vote_markup(
-                poll_id=poll_id, user=user
+                poll_id=poll_id, tele_user=tele_user
             )
             reply_markup = ReplyKeyboardMarkup(vote_markup_data)
         elif poll.open_registration:
@@ -1276,7 +1343,7 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         assert isinstance(user_id, int)
-        polls = Polls.select().where(Polls.creator_id == user_id)
+        polls = Polls.select().where(Polls.creator == user_id)
         poll_descriptions = []
 
         for poll in polls:
@@ -1289,11 +1356,11 @@ class RankedChoiceBot(BaseAPI):
         )
 
     async def vote_and_report(
-        self, raw_text: str, user_id: int, message: Message,
+        self, raw_text: str, user_tele_id: int, message: Message,
         username: Optional[str]
     ):
         vote_result = self._vote_for_poll(
-            raw_text=raw_text, user_id=user_id,
+            raw_text=raw_text, user_tele_id=user_tele_id,
             username=username
         )
 
@@ -1328,7 +1395,7 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = extract_result.unwrap()
-        user = message.from_user
+        tele_user: TeleUser | None = message.from_user
 
         try:
             poll = Polls.select().where(Polls.id == poll_id).get()
@@ -1336,10 +1403,15 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'poll {poll_id} does not exist')
             return False
 
-        creator_id = poll.creator_id.id
-        assert isinstance(creator_id, int)
+        try:
+            user = Users.build_from_fields(tele_id=tele_user.id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
 
-        if creator_id != user.id:
+        user_id = user.get_int_id()
+        creator_id: UserID = poll.get_creator().get_int_id()
+        if creator_id != user_id:
             await message.reply_text(
                 'only poll creator is allowed to close poll'
             )
@@ -1348,27 +1420,23 @@ class RankedChoiceBot(BaseAPI):
         poll.closed = True
         poll.save()
 
-        winning_option_id, cached = await self.get_poll_winner(poll_id)
-        cache_error_message = (
-            '' if cached else f'\n[Error while saving poll winner]'
-        )
+        await message.reply_text(f'poll {poll_id} closed')
+        winning_option_id, get_status = await self.get_poll_winner(poll_id)
 
-        if winning_option_id is not None:
+        if get_status == GetPollWinnerStatus.COMPUTING:
+            return await message.reply_text(textwrap.dedent(f"""
+                Poll winner computation in progress
+                Please check again later
+             """))
+        elif winning_option_id is not None:
             winning_options = PollOptions.select().where(
                 PollOptions.id == winning_option_id
             )
 
             option_name = winning_options[0].option_name
-            await message.reply_text(textwrap.dedent(f"""
-               Poll closed
-               Poll winner is:
-               {option_name}
-            """) + cache_error_message)
+            return await message.reply_text(f'Poll winner is: {option_name}')
         else:
-            await message.reply_text(textwrap.dedent(f"""
-               Poll closed
-               Poll has no winner
-            """) + cache_error_message)
+            return await message.reply_text('Poll has no winner')
 
     @admin_only
     async def vote_for_poll_admin(self, update: Update, *_, **__):
@@ -1382,7 +1450,6 @@ class RankedChoiceBot(BaseAPI):
         """
         # vote for someone else
         message: Message = update.message
-        user = update.message.from_user
         raw_text = message.text.strip()
 
         if ' ' not in raw_text:
@@ -1394,7 +1461,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text('no poll_id specified (admin)')
             return False
 
-        name_or_id_pattern = re.compile(r"^([^ :]+)[ :]")
+        name_or_id_pattern = re.compile(r"^([a-zA-Z0-9]+#[0-9]+)[ :]")
         matches = name_or_id_pattern.match(raw_text)
         username_or_id: str = matches.group(1)
         if username_or_id is None:
@@ -1407,41 +1474,63 @@ class RankedChoiceBot(BaseAPI):
 
         if username_or_id.startswith('@'):
             # resolve telegram user_id by username
-            username = username_or_id[1:]
-            
-            try:
-                matching_users = Users.select().where(
-                    Users.username == username
-                )
-            except Users.DoesNotExist:
-                await message.reply_text('No matching users found')
-                return False
+            username: str = username_or_id[1:]
+            tele_id: int | EmptyField = Empty
+
+            if '#' in username:
+                username, raw_tele_id = username.split('#')
+                tele_id = int(raw_tele_id)
+
+            user_query = Users.build_from_fields(
+                tele_id=tele_id, username=username
+            )
+
+            matching_users = user_query.select()
 
             if len(matching_users) > 1:
-                user_ids = [user.id for user in matching_users]
+                user_tele_ids = [
+                    user_entry.tele_id for user_entry in matching_users
+                ]
                 await message.reply_text(
-                    f'multiple users with same username: {user_ids}'
+                    f'multiple users with same username: {user_tele_ids}'
                 )
                 return False
+            elif len(matching_users) == 0:
+                if tele_id is Empty:
+                    # cannot create user entry if only username was specified
+                    await message.reply_text(
+                        'No users with matching username found'
+                    )
+                    return False
+                else:
+                    # create user entry if username and tele_id are specified
+                    user_db_entry, _ = user_query.get_or_create()
+            else:
+                assert len(matching_users) == 1
+                user_db_entry = matching_users[0]
 
-            user_id = matching_users[0].id
+            user_tele_id = user_db_entry.tele_id
+
         elif username_or_id.startswith('#'):
             # try to parse user_id directly
-            raw_user_id = username_or_id[1:].strip()
-            if ID_PATTERN.match(raw_user_id) is None:
-                await message.reply_text(f'invalid user id: {raw_user_id}')
+            raw_tele_id = username_or_id[1:].strip()
+            if ID_PATTERN.match(raw_tele_id) is None:
+                await message.reply_text(f'invalid user id: {raw_tele_id}')
                 return False
 
-            user_id = int(raw_user_id)
+            user_tele_id = int(raw_tele_id)
             
             try:
-                user = Users.select().where(Users.id == user_id).get()
+                user = Users.build_from_fields(tele_id=user_tele_id).get()
             except Users.DoesNotExist:
-                pass
+                await message.reply_text(f'invalid user id: {user_tele_id}')
+                return False
 
             username = user.username
         else:
-            await message.reply_text(f'@username or #user_id required')
+            await message.reply_text(
+                f'@username or #user_id or @username#user_id required'
+            )
             return False
 
         if ' ' not in raw_text:
@@ -1453,7 +1542,7 @@ class RankedChoiceBot(BaseAPI):
         # print('RAW', [raw_text])
 
         await self.vote_and_report(
-            raw_text, user_id=user_id, message=message,
+            raw_text, user_tele_id=user_tele_id, message=message,
             username=username
         )
 
@@ -1468,16 +1557,23 @@ class RankedChoiceBot(BaseAPI):
         """
         message = update.message
         raw_text = message.text.strip()
-        user = update.message.from_user
-        username = user.username
-        user_id = user.id
+        tele_user: TeleUser | None = update.message.from_user
+
+        try:
+            Users.build_from_fields(tele_id=tele_user.id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        username = tele_user.username
+        user_tele_id = tele_user.id
 
         await self.vote_and_report(
-            raw_text, user_id, message, username=username
+            raw_text, user_tele_id, message, username=username
         )
 
     def _vote_for_poll(
-        self, raw_text: str, user_id: int, username: Optional[str]
+        self, raw_text: str, user_tele_id: int, username: Optional[str]
     ) -> Result[int, MessageBuilder]:
         """
         telegram command format
@@ -1506,7 +1602,7 @@ class RankedChoiceBot(BaseAPI):
         # print('PRE_REGISTER')
         return self.register_vote(
             poll_id=poll_id, rankings=rankings,
-            user_id=user_id, username=username
+            user_tele_id=user_tele_id, username=username
         )
 
     @staticmethod
@@ -1760,12 +1856,23 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = extract_result.unwrap()
-        user: User = message.from_user
-        user_id = user.id
-        # check if voter is part of the poll
+        tele_user: TeleUser | None = message.from_user
+        if tele_user is None:
+            await message.reply_text('UNEXPECTED ERROR: USER NOT FOUND')
+            return False
 
+        user_tele_id = tele_user.id
+
+        try:
+            user = Users.build_from_fields(tele_id=user_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        user_id = user.get_int_id()
+        # check if voter is part of the poll
         has_poll_access = self.has_access_to_poll_id(
-            poll_id, user_id, username=user.username
+            poll_id, user_id, username=tele_user.username
         )
         if not has_poll_access:
             await message.reply_text(f'You have no access to poll {poll_id}')
@@ -1778,10 +1885,10 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         vote_count = read_vote_count_result.unwrap()
-        poll_voters = PollVoters.select().join(
-            Users, on=(PollVoters.user_id == Users.id)
+        poll_voters: Iterable[PollVoters] = PollVoters.select().join(
+            Users, on=(PollVoters.user == Users.id)
         ).where(
-            PollVoters.poll_id == poll_id
+            PollVoters.poll == poll_id
         )
 
         if vote_count >= MAX_DISPLAY_VOTE_COUNT:
@@ -1792,15 +1899,16 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         voted_usernames, not_voted_usernames = [], []
-        recorded_user_ids = set()
+        recorded_user_ids: set[int] = set()
 
         for voter in poll_voters:
-            username: Optional[str] = voter.user_id.username
-            user_id: int = voter.user_id.id
-            recorded_user_ids.add(user_id)
+            username: Optional[str] = voter.user.username
+            voter_user = voter.get_voter_user()
+            user_tele_id = voter_user.get_tele_id()
+            recorded_user_ids.add(user_tele_id)
 
             if username is None:
-                display_name: str = f'#{user_id}'
+                display_name: str = f'#{user_tele_id}'
             else:
                 display_name: str = username
 
@@ -1810,26 +1918,26 @@ class RankedChoiceBot(BaseAPI):
                 not_voted_usernames.append(display_name)
 
         whitelisted_usernames = UsernameWhitelist.select().where(
-            UsernameWhitelist.poll_id == poll_id
+            UsernameWhitelist.poll == poll_id
         )
 
         for whitelist_entry in whitelisted_usernames:
-            optional_user_id = whitelist_entry.user_id
+            optional_user = whitelist_entry.user
             username: str = whitelist_entry.username
 
-            if optional_user_id is not None:
-                user_id: int = whitelist_entry.user_id.id
-                if user_id not in recorded_user_ids:
+            if optional_user is not None:
+                user_tele_id = whitelist_entry.user.get_tele_id()
+                if user_tele_id not in recorded_user_ids:
                     not_voted_usernames.append(username)
             else:
                 not_voted_usernames.append(username)
 
         await message.reply_text(textwrap.dedent(f"""
-               voted:
-               {' '.join(voted_usernames)}
-               not voted:
-               {' '.join(not_voted_usernames)}
-           """))
+            voted:
+            {' '.join(voted_usernames)}
+            not voted:
+            {' '.join(not_voted_usernames)}
+        """))
 
     async def fetch_poll_results(self, update, *_, **__):
         """
@@ -1848,12 +1956,19 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = extract_result.unwrap()
-        user = message.from_user
-        user_id = user.id
+        tele_user: TeleUser | None = message.from_user
+        user_tele_id = tele_user.id
 
+        try:
+            user = Users.build_from_fields(tele_id=user_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        user_id = user.get_int_id()
         # check if voter is part of the poll
         has_poll_access = self.has_access_to_poll_id(
-            poll_id, user_id, username=user.username
+            poll_id, user_id, username=tele_user.username
         )
         if not has_poll_access:
             await message.reply_text(f'You have no access to poll {poll_id}')
@@ -1864,23 +1979,22 @@ class RankedChoiceBot(BaseAPI):
             error_message = get_poll_closed_result.err()
             await error_message.call(message.reply_text)
 
-        winning_option_id, cached = await self.get_poll_winner(poll_id)
-        cache_error_message = (
-            '' if cached else f'\n[Error while saving poll winner]'
-        )
+        winning_option_id, get_status = await self.get_poll_winner(poll_id)
 
-        if winning_option_id is None:
-            await message.reply_text('no poll winner')
-            return False
-        else:
+        if get_status == GetPollWinnerStatus.COMPUTING:
+            await message.reply_text(textwrap.dedent(f"""
+                Poll winner computation in progress
+                Please check again later
+             """))
+        elif winning_option_id is not None:
             winning_options = PollOptions.select().where(
                 PollOptions.id == winning_option_id
             )
 
             option_name = winning_options[0].option_name
-            await message.reply_text(
-                f'poll winner is:\n{option_name}{cache_error_message}'
-            )
+            return await message.reply_text(f'Poll winner is: {option_name}')
+        else:
+            return await message.reply_text('Poll has no winner')
 
     @staticmethod
     def register_commands(

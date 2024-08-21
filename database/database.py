@@ -1,19 +1,21 @@
 from __future__ import annotations
 
-import peewee
 import datetime
+from operator import index
 
 from playhouse.shortcuts import ReconnectMixin
+from result import Result, Ok
+
 from load_config import YAML_CONFIG
 
-from typing import Iterable, Self
+from typing import Self, Optional
 from database.db_helpers import (
-    ModelRowFields, TypedModel, BoundModelRowFields
+    TypedModel, BoundModelRowFields, Empty, EmptyField
 )
 from peewee import (
     MySQLDatabase, BigIntegerField, CharField,
     IntegerField, AutoField, TextField, DateTimeField,
-    BooleanField, ForeignKeyField, SQL
+    BooleanField, ForeignKeyField, SQL, BigAutoField
 )
 
 
@@ -29,22 +31,19 @@ db = DB(
 
 
 class BaseModel(TypedModel):
-    DoesNotExist: peewee.DoesNotExist
-
     class Meta:
         database = db
 
-    @classmethod
-    def batch_insert(cls, row_entries: Iterable[ModelRowFields]):
-        rows = [row_entry.to_dict() for row_entry in row_entries]
-        return cls.insert_many(rows)
+
+class UserID(int):
+    pass
 
 
 # maps telegram user ids to their usernames
 class Users(BaseModel):
-    id = BigIntegerField(primary_key=True)
+    id = BigAutoField(primary_key=True)
     # telegram user id
-    tele_id = BigIntegerField(null=False)
+    tele_id = BigIntegerField(null=False, index=True, unique=True)
     username = CharField(max_length=255, default=None, null=True)
     credits = IntegerField(default=0)
     subscription_tier = IntegerField(default=0)
@@ -60,13 +59,29 @@ class Users(BaseModel):
         )
 
     @classmethod
-    def build_row_from_fields(
-        cls, tele_id: int, username: str | None = None
+    def build_from_fields(
+        cls, user_id: int | EmptyField = Empty,
+        tele_id: int | EmptyField = Empty,
+        username: str | None | EmptyField = Empty
     ) -> BoundModelRowFields[Self]:
         return BoundModelRowFields(cls, {
-            cls.id: tele_id, cls.tele_id: tele_id,
-            cls.username: username
+            cls.id: user_id, cls.tele_id: tele_id, cls.username: username
         })
+
+    def get_int_id(self) -> UserID:
+        # TODO: do a unit test for this
+        assert isinstance(self.id, int)
+        return UserID(self.id)
+
+    def get_tele_id(self) -> int:
+        assert isinstance(self.tele_id, int)
+        return self.tele_id
+
+    @classmethod
+    def get_from_tele_id(
+        cls, tele_id: int
+    ) -> Result[Users, Users.DoesNotExist]:
+        return cls.build_from_fields(tele_id=tele_id).safe_get()
 
 
 # stores poll metadata (description, open time, etc etc)
@@ -82,19 +97,42 @@ class Polls(BaseModel):
     auto_refill = BooleanField(default=False)
 
     # telegram user id of poll creator
-    creator_id = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
+    creator = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
     max_voters = IntegerField(default=10)
     # number of registered voters in the poll
     num_voters = IntegerField(default=0)
     # number of registered votes in the poll
     num_votes = IntegerField(default=0)
 
+    def get_creator(self) -> Users:
+        # TODO: do a unit test for this
+        assert isinstance(self.creator, Users)
+        return self.creator
+
+    def get_creator_id(self) -> UserID:
+        return self.get_creator().get_int_id()
+
+    @classmethod
+    def build_from_fields(
+        cls, desc: str | EmptyField = Empty,
+        creator_id: UserID | EmptyField = Empty,
+        num_voters: int | EmptyField = Empty,
+        open_registration: bool | EmptyField = Empty,
+        max_voters: int | EmptyField = Empty
+    ) -> BoundModelRowFields[Self]:
+        return BoundModelRowFields(cls, {
+            cls.desc: desc, cls.creator: creator_id,
+            cls.num_voters: num_voters,
+            cls.open_registration: open_registration,
+            cls.max_voters: max_voters
+        })
+
 
 # whitelisted group chats from which users are
 # allowed to register as voters for a poll
 class ChatWhitelist(BaseModel):
     id = AutoField(primary_key=True)
-    poll_id = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
+    poll = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     chat_id = BigIntegerField()  # telegram chat ID
     broadcasted = BooleanField(default=False)
 
@@ -102,24 +140,38 @@ class ChatWhitelist(BaseModel):
         database = db
         indexes = (
             # Unique multi-column index for poll_id-chat_id pairs
-            (('poll_id', 'chat_id'), True),
+            (('poll', 'chat_id'), True),
         )
 
 
 class PollVoters(BaseModel):
     id = AutoField(primary_key=True)
     # poll that voter is eligible to vote for
-    poll_id = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
+    poll = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     # telegram user id of voter
-    user_id = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
+    user = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
     voted = BooleanField(default=False)
 
     class Meta:
         database = db
         indexes = (
             # Unique multi-column index for poll_id-user_id pairs
-            (('poll_id', 'user_id'), True),
+            (('poll', 'user'), True),
         )
+
+    @classmethod
+    def build_from_fields(
+        cls, user_id: int | EmptyField = Empty,
+        poll_id: int | EmptyField = Empty,
+    ) -> BoundModelRowFields[Self]:
+        return BoundModelRowFields(cls, {
+            cls.user: user_id, cls.poll: poll_id
+        })
+
+    def get_voter_user(self) -> Users:
+        # TODO: do a unit test for this
+        assert isinstance(self.user, Users)
+        return self.user
 
 
 # whitelists voters for a poll by their username
@@ -130,9 +182,9 @@ class UsernameWhitelist(BaseModel):
     # username of whitelisted telegram user
     username = CharField(max_length=255)
     # poll that voter is eligible to vote for
-    poll_id = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
+    poll = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     # telegram user id of voter
-    user_id = ForeignKeyField(
+    user = ForeignKeyField(
         Users, to_field='id', null=True, on_delete='CASCADE'
     )
 
@@ -140,24 +192,24 @@ class UsernameWhitelist(BaseModel):
         database = db
         indexes = (
             # Unique multi-column index for poll_id-username pairs
-            (('poll_id', 'username'), True),
+            (('poll', 'username'), True),
         )
 
 
 class PollOptions(BaseModel):
     id = AutoField(primary_key=True)
-    poll_id = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
+    poll = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     option_name = CharField(max_length=255)
     option_number = IntegerField()
 
 
 class VoteRankings(BaseModel):
     id = AutoField(primary_key=True)
-    poll_voter_id = ForeignKeyField(
+    poll_voter = ForeignKeyField(
         PollVoters, to_field='id', on_delete='CASCADE'
     )
     # ID of the corresponding poll option for the vote
-    option_id = ForeignKeyField(
+    option = ForeignKeyField(
         PollOptions, to_field='id', null=True, on_delete='CASCADE'
     )
     # special vote value that doesn't map to any of the poll options
@@ -166,6 +218,38 @@ class VoteRankings(BaseModel):
         constraints=[SQL("CHECK (special_value < 0)")], null=True
     )
     ranking = IntegerField()
+
+
+class PollWinners(BaseModel):
+    id = AutoField(primary_key=True)
+    poll = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
+    option = ForeignKeyField(
+        PollOptions, to_field='id', on_delete='CASCADE',
+        null=True
+    )
+
+    @classmethod
+    def build_from_fields(
+        cls, poll_id: int | EmptyField = Empty,
+        option_id: int | EmptyField = Empty
+    ) -> BoundModelRowFields[Self]:
+        return BoundModelRowFields(cls, {
+            cls.poll: poll_id, cls.option: option_id
+        })
+
+    @classmethod
+    def read_poll_winner_id(cls, poll_id: int) -> Result[Optional[int]]:
+        get_result = cls.build_from_fields(poll_id=poll_id).safe_get()
+        if get_result.is_err():
+            return get_result
+
+        poll_winner = get_result.unwrap()
+        winning_option = poll_winner.option
+        if winning_option is None:
+            return Ok(None)
+
+        winning_option_id = int(winning_option.id)
+        return Ok(winning_option_id)
 
 
 # Create tables (if they don't exist)
