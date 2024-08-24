@@ -7,7 +7,7 @@ from result import Result, Ok
 from load_config import YAML_CONFIG
 from typing import Self, Optional
 from database.db_helpers import (
-    BoundRowFields, Empty, EmptyField, BTypedModel
+    BoundRowFields, Empty, EmptyField, TypedModel
 )
 from peewee import (
     MySQLDatabase, BigIntegerField, CharField,
@@ -27,7 +27,7 @@ db = DB(
 )
 
 
-class BaseModel(BTypedModel):
+class BaseModel(TypedModel):
     class Meta:
         database = db
 
@@ -65,7 +65,7 @@ class Users(BaseModel):
             cls.id: user_id, cls.tele_id: tele_id, cls.username: username
         })
 
-    def get_int_id(self) -> UserID:
+    def get_user_id(self) -> UserID:
         # TODO: do a unit test for this
         assert isinstance(self.id, int)
         return UserID(self.id)
@@ -107,7 +107,7 @@ class Polls(BaseModel):
         return self.creator
 
     def get_creator_id(self) -> UserID:
-        return self.get_creator().get_int_id()
+        return self.get_creator().get_user_id()
 
     @classmethod
     def build_from_fields(

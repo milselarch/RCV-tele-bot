@@ -7,6 +7,7 @@ import time
 import hashlib
 import textwrap
 import dataclasses
+from collections import defaultdict
 
 import RankedChoice
 import redis
@@ -27,7 +28,7 @@ from database import (
     Users
 )
 from database.database import PollWinners, BaseModel, UserID
-from aioredlock import Aioredlock
+from aioredlock import Aioredlock, LockError
 
 
 class CallbackCommands(StrEnum):
@@ -190,31 +191,36 @@ class BaseAPI(object):
             return cache_result.unwrap(), GetPollWinnerStatus.CACHED
 
         redis_cache_key = self._build_poll_winner_cache_key(poll_id)
+        # print('CACHE_KEY', redis_cache_key)
         if await self.redis_lock_manager.is_locked(redis_cache_key):
             return None, GetPollWinnerStatus.COMPUTING
 
-        # prevents race conditions where multiple computations
-        # are run concurrently for the same poll
-        with await self.redis_lock_manager.lock(
-            redis_cache_key, lock_timeout=self.POLL_CACHE_EXPIRY
-        ):
-            cache_result = PollWinners.read_poll_winner_id(poll_id)
-            if cache_result.is_ok():
-                # print('INNER_CACHE_HIT', cache_result)
-                return cache_result.unwrap(), GetPollWinnerStatus.CACHED
+        try:
+            # prevents race conditions where multiple computations
+            # are run concurrently for the same poll
+            async with await self.redis_lock_manager.lock(
+                redis_cache_key, lock_timeout=self.POLL_CACHE_EXPIRY
+            ):
+                cache_result = PollWinners.read_poll_winner_id(poll_id)
+                if cache_result.is_ok():
+                    # print('INNER_CACHE_HIT', cache_result)
+                    return cache_result.unwrap(), GetPollWinnerStatus.CACHED
 
-            # compute the winner in a separate thread to not block
-            # the async event loop
-            loop = asyncio.get_event_loop()
-            with ThreadPoolExecutor() as executor:
-                poll_winner_id = await loop.run_in_executor(
-                    executor, self._determine_poll_winner, poll_id
-                )
+                # compute the winner in a separate thread to not block
+                # the async event loop
+                loop = asyncio.get_event_loop()
+                with ThreadPoolExecutor() as executor:
+                    poll_winner_id = await loop.run_in_executor(
+                        executor, self._determine_poll_winner, poll_id
+                    )
 
-            # Store computed winner in the db
-            PollWinners.build_from_fields(
-                poll_id=poll_id, option_id=poll_winner_id
-            ).get_or_create()
+                # Store computed winner in the db
+                PollWinners.build_from_fields(
+                    poll_id=poll_id, option_id=poll_winner_id
+                ).get_or_create()
+
+        except LockError:
+            return None, GetPollWinnerStatus.COMPUTING
 
         # print('CACHE_MISS', poll_winner_id)
         return poll_winner_id, GetPollWinnerStatus.NEWLY_COMPUTED
@@ -266,6 +272,14 @@ class BaseAPI(object):
         )
 
         return winning_option_id
+
+    @staticmethod
+    def get_duplicate_nums(nums: List[int]) -> List[int]:
+        num_count = defaultdict(int)
+        for num in nums:
+            num_count[num] += 1
+
+        return [num for num, count in num_count.items() if count > 1]
 
     @staticmethod
     def get_poll_voter(
@@ -587,12 +601,8 @@ class BaseAPI(object):
         ).exists()
 
     @classmethod
-    def is_poll_voter(cls, poll_id: int, user_id: UserID):
-        try:
-            cls.get_poll_voter(poll_id=poll_id, user_id=user_id)
-            return True
-        except PollVoters.DoesNotExist:
-            return False
+    def is_poll_voter(cls, poll_id: int, user_id: UserID) -> bool:
+        return cls.get_poll_voter(poll_id=poll_id, user_id=user_id).is_ok()
 
     @classmethod
     def get_poll_message(
@@ -917,7 +927,7 @@ class BaseAPI(object):
             error_message.add(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
             return Err(error_message)
 
-        user_id = user.get_int_id()
+        user_id = user.get_user_id()
         # verify that the user can vote for the poll
         # print('PRE_VERIFY', poll_id, user_id, username)
         verify_result = cls.verify_voter(poll_id, user_id, username)

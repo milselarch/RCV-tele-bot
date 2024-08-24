@@ -4,7 +4,7 @@ import peewee
 
 from peewee import Model
 from typing import (
-    Dict, Any, Tuple, Type, TypeVar, Generic, Iterable, TypeAlias, List
+    Dict, Any, Tuple, Type, TypeVar, Generic, Iterable, TypeAlias
 )
 
 from result import Result, Ok, Err
@@ -30,7 +30,11 @@ class ModelRowFields(object):
 
             assert value is not Empty
             if isinstance(field, peewee.ForeignKeyField):
-                self._fields[field.name] = value.id
+                if isinstance(value, Model):
+                    # noinspection PyUnresolvedReferences
+                    self._fields[field.name] = value.id
+                else:
+                    self._fields[field.name] = value
             else:
                 self._fields[field.name] = value
 
@@ -93,13 +97,17 @@ class BoundRowFields(ModelRowFields, Generic[T]):
             return Err(e)
 
     def select(self) -> peewee.ModelSelect:
+        def resolve_field(field_name: str):
+            return getattr(self.__base_model, field_name)
+
         if len(self._fields) > 0:
             field_keys = list(self._fields.keys())
-            query = field_keys[0] == self._fields[field_keys[0]]
+            query = True
 
-            for field in field_keys[1:]:
-                query &= field == self._fields[field]
+            for field_key in field_keys:
+                query &= resolve_field(field_key) == self._fields[field_key]
 
+            # print('QUERY', query, field_keys, resolve_field(field_keys[0]))
             result = self.__base_model.select().where(query)
         else:
             result = self.__base_model.select()
@@ -108,26 +116,4 @@ class BoundRowFields(ModelRowFields, Generic[T]):
 
     def insert(self):
         return self.__base_model.insert(**self._fields)
-
-
-class TypedRowsBuilder(Generic[T]):
-    def __init__(self, base_model: Type[T]):
-        self.base_model: Type[T] = base_model
-        self.items: List[BoundRowFields[T]] = []
-
-    def add(self, item: BoundRowFields[T]):
-        self.items.append(item)
-
-    def to_list(self) -> List[Dict[str, Any]]:
-        rows = [row_entry.to_dict() for row_entry in self.items]
-        return rows
-
-    def batch_insert(self):
-        return self.base_model.batch_insert(self.items)
-
-
-class BTypedModel(TypedModel, Generic[T]):
-    @classmethod
-    def safe_batch_insert(cls, row_entries: TypedRowsBuilder[T]):
-        return cls.insert_many(row_entries.to_list())
 
