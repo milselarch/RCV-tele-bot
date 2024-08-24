@@ -3,10 +3,10 @@ import argparse
 import uvicorn
 import dataclasses
 
-from starlette.middleware.cors import CORSMiddleware
-
 from load_config import *
 from BaseAPI import BaseAPI
+from database.database import UserID
+
 from fastapi import FastAPI, APIRouter
 from pydantic import BaseModel
 from typing import List, Optional
@@ -14,6 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from urllib.parse import parse_qs, unquote
 from starlette.responses import JSONResponse
+from starlette.middleware.cors import CORSMiddleware
 
 TELEGRAM_DATA_HEADER = 'telegram-data'
 
@@ -122,7 +123,7 @@ class VotingWebApp(BaseAPI):
         user_json_str = unquote(parsed_query['user'][0])
         user_info = json.loads(user_json_str)
 
-        user_id = int(user_info['id'])
+        user_id = UserID(user_info['id'])
         username = (user_info['username'])
         read_poll_result = self.read_poll_info(
             poll_id=payload.poll_id, user_id=user_id,
