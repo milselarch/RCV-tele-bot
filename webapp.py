@@ -5,7 +5,7 @@ import dataclasses
 
 from load_config import *
 from BaseAPI import BaseAPI
-from database.database import UserID
+from database.database import UserID, Users
 
 from fastapi import FastAPI, APIRouter
 from pydantic import BaseModel
@@ -123,8 +123,16 @@ class VotingWebApp(BaseAPI):
         user_json_str = unquote(parsed_query['user'][0])
         user_info = json.loads(user_json_str)
 
-        user_id = UserID(user_info['id'])
-        username = (user_info['username'])
+        tele_id = int(user_info['id'])
+        user_res = Users.get_from_tele_id(tele_id)
+        if user_res.is_err():
+            return JSONResponse(
+                status_code=400, content={'error': 'User not found'}
+            )
+
+        user = user_res.unwrap()
+        user_id = user.get_user_id()
+        username = user_info['username']
         read_poll_result = self.read_poll_info(
             poll_id=payload.poll_id, user_id=user_id,
             username=username
