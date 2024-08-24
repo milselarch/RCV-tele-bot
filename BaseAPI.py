@@ -9,7 +9,6 @@ import textwrap
 import dataclasses
 
 import RankedChoice
-import telegram
 import redis
 
 from enum import IntEnum
@@ -782,28 +781,6 @@ class BaseAPI(object):
             return Err(UserRegistrationStatus.USERNAME_TAKEN)
 
         return Ok(whitelist_entry)
-
-    @staticmethod
-    def extract_poll_id(
-        update: telegram.Update
-    ) -> Result[int, MessageBuilder]:
-        message: telegram.Message = update.message
-        raw_text = message.text.strip()
-        error_message = MessageBuilder()
-
-        if ' ' not in raw_text:
-            error_message.add('no poll id specified')
-            return Err(error_message)
-
-        raw_poll_id = raw_text[raw_text.index(' '):].strip()
-
-        try:
-            poll_id = int(raw_poll_id)
-        except ValueError:
-            error_message.add(f'invalid poll id: {raw_poll_id}')
-            return Err(error_message)
-
-        return Ok(poll_id)
 
     @staticmethod
     def generate_poll_info(
