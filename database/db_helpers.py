@@ -4,7 +4,7 @@ import peewee
 
 from peewee import Model
 from typing import (
-    Dict, Any, Tuple, Type, TypeVar, Generic, Iterable
+    Dict, Any, Tuple, Type, TypeVar, Generic, Iterable, TypeAlias, List
 )
 
 from result import Result, Ok, Err
@@ -14,7 +14,7 @@ class Empty(object):
     pass
 
 
-EmptyField: Type[Type[Empty]] = Type[Empty]
+EmptyField: TypeAlias = Type[Empty]
 
 
 class ModelRowFields(object):
@@ -70,7 +70,7 @@ class TypedModel(Model, Generic[M]):
 T = TypeVar('T', bound=TypedModel)
 
 
-class BoundModelRowFields(ModelRowFields, Generic[T]):
+class BoundRowFields(ModelRowFields, Generic[T]):
     def __init__(
         self, base_model: Type[T], fields: Dict[peewee.Field, Any]
     ):
@@ -110,4 +110,24 @@ class BoundModelRowFields(ModelRowFields, Generic[T]):
         return self.__base_model.insert(**self._fields)
 
 
+class TypedRowsBuilder(Generic[T]):
+    def __init__(self, base_model: Type[T]):
+        self.base_model: Type[T] = base_model
+        self.items: List[BoundRowFields[T]] = []
+
+    def add(self, item: BoundRowFields[T]):
+        self.items.append(item)
+
+    def to_list(self) -> List[Dict[str, Any]]:
+        rows = [row_entry.to_dict() for row_entry in self.items]
+        return rows
+
+    def batch_insert(self):
+        return self.base_model.batch_insert(self.items)
+
+
+class BTypedModel(TypedModel, Generic[T]):
+    @classmethod
+    def safe_batch_insert(cls, row_entries: TypedRowsBuilder[T]):
+        return cls.insert_many(row_entries.to_list())
 

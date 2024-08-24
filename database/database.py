@@ -7,7 +7,7 @@ from result import Result, Ok
 from load_config import YAML_CONFIG
 from typing import Self, Optional
 from database.db_helpers import (
-    TypedModel, BoundModelRowFields, Empty, EmptyField
+    BoundRowFields, Empty, EmptyField, BTypedModel
 )
 from peewee import (
     MySQLDatabase, BigIntegerField, CharField,
@@ -27,7 +27,7 @@ db = DB(
 )
 
 
-class BaseModel(TypedModel):
+class BaseModel(BTypedModel):
     class Meta:
         database = db
 
@@ -60,8 +60,8 @@ class Users(BaseModel):
         cls, user_id: int | EmptyField = Empty,
         tele_id: int | EmptyField = Empty,
         username: str | None | EmptyField = Empty
-    ) -> BoundModelRowFields[Self]:
-        return BoundModelRowFields(cls, {
+    ) -> BoundRowFields[Self]:
+        return BoundRowFields(cls, {
             cls.id: user_id, cls.tele_id: tele_id, cls.username: username
         })
 
@@ -116,8 +116,8 @@ class Polls(BaseModel):
         num_voters: int | EmptyField = Empty,
         open_registration: bool | EmptyField = Empty,
         max_voters: int | EmptyField = Empty
-    ) -> BoundModelRowFields[Self]:
-        return BoundModelRowFields(cls, {
+    ) -> BoundRowFields[Self]:
+        return BoundRowFields(cls, {
             cls.desc: desc, cls.creator: creator_id,
             cls.num_voters: num_voters,
             cls.open_registration: open_registration,
@@ -140,6 +140,15 @@ class ChatWhitelist(BaseModel):
             (('poll', 'chat_id'), True),
         )
 
+    @classmethod
+    def build_from_fields(
+        cls, poll_id: int | EmptyField = Empty,
+        chat_id: int | EmptyField = Empty
+    ) -> BoundRowFields[Self]:
+        return BoundRowFields(cls, {
+            cls.poll: poll_id, cls.chat_id: chat_id
+        })
+
 
 class PollVoters(BaseModel):
     id = AutoField(primary_key=True)
@@ -158,10 +167,10 @@ class PollVoters(BaseModel):
 
     @classmethod
     def build_from_fields(
-        cls, user_id: int | EmptyField = Empty,
+        cls, user_id: UserID | EmptyField = Empty,
         poll_id: int | EmptyField = Empty,
-    ) -> BoundModelRowFields[Self]:
-        return BoundModelRowFields(cls, {
+    ) -> BoundRowFields[Self]:
+        return BoundRowFields(cls, {
             cls.user: user_id, cls.poll: poll_id
         })
 
@@ -192,12 +201,33 @@ class UsernameWhitelist(BaseModel):
             (('poll', 'username'), True),
         )
 
+    @classmethod
+    def build_from_fields(
+        cls, username: str | EmptyField = Empty,
+        poll_id: int | EmptyField = Empty,
+        user_id: UserID | EmptyField = Empty
+    ) -> BoundRowFields[Self]:
+        return BoundRowFields(cls, {
+            cls.username: username, cls.poll: poll_id, cls.user: user_id
+        })
+
 
 class PollOptions(BaseModel):
     id = AutoField(primary_key=True)
     poll = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     option_name = CharField(max_length=255)
     option_number = IntegerField()
+
+    @classmethod
+    def build_from_fields(
+        cls, poll_id: int | EmptyField = Empty,
+        option_name: str | EmptyField = Empty,
+        option_number: int | EmptyField = Empty
+    ) -> BoundRowFields[Self]:
+        return BoundRowFields(cls, {
+            cls.poll: poll_id, cls.option_name: option_name,
+            cls.option_number: option_number
+        })
 
 
 class VoteRankings(BaseModel):
@@ -229,8 +259,8 @@ class PollWinners(BaseModel):
     def build_from_fields(
         cls, poll_id: int | EmptyField = Empty,
         option_id: int | EmptyField = Empty
-    ) -> BoundModelRowFields[Self]:
-        return BoundModelRowFields(cls, {
+    ) -> BoundRowFields[Self]:
+        return BoundRowFields(cls, {
             cls.poll: poll_id, cls.option: option_id
         })
 

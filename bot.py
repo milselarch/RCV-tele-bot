@@ -16,7 +16,7 @@ from requests.models import PreparedRequest
 from RankedChoice import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from database.database import UserID
-from database.db_helpers import EmptyField, Empty
+from database.db_helpers import EmptyField, Empty, BoundRowFields
 from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
 from typing import List, Tuple, Dict, Optional, Sequence, Iterable
 from LocksManager import PollsLockManager
@@ -749,42 +749,39 @@ class RankedChoiceBot(BaseAPI):
 
             new_poll_id: int = new_poll.id
             assert isinstance(new_poll_id, int)
-            chat_whitelist_rows = []
-            whitelisted_user_rows = []
-            poll_option_rows = []
-            poll_voter_rows = []
+            chat_whitelist_rows: List[BoundRowFields[ChatWhitelist]] = []
+            whitelist_user_rows: List[BoundRowFields[UsernameWhitelist]] = []
+            poll_option_rows: List[BoundRowFields[PollOptions]] = []
+            poll_voter_rows: List[BoundRowFields[PollVoters]] = []
 
-            # TODO: use build from fields instead
             # create poll options
             for k, poll_option in enumerate(poll_options):
                 poll_choice_number = k+1
-                poll_option_rows.append(self.kwargify(
+                poll_option_rows.append(PollOptions.build_from_fields(
                     poll_id=new_poll_id, option_name=poll_option,
                     option_number=poll_choice_number
                 ))
-            # TODO: use build from fields instead
             # whitelist voters in poll by username
             for raw_poll_user in whitelisted_usernames:
-                whitelisted_user_rows.append(self.kwargify(
+                row_fields = UsernameWhitelist.build_from_fields(
                     poll_id=new_poll_id, username=raw_poll_user
-                ))
-            # TODO: use build from fields instead
+                )
+                whitelist_user_rows.append(row_fields)
             # whitelist voters in poll by user id
             for poll_user_id in inserted_user_ids:
-                poll_voter_rows.append(self.kwargify(
-                    poll_id=new_poll_id, user=poll_user_id
+                poll_voter_rows.append(PollVoters.build_from_fields(
+                    poll_id=new_poll_id, user_id=poll_user_id
                 ))
-            # TODO: use build from fields instead
             # chat ids that are whitelisted for user self-registration
             for chat_id in whitelisted_chat_ids:
-                chat_whitelist_rows.append(self.kwargify(
+                chat_whitelist_rows.append(ChatWhitelist.build_from_fields(
                     poll_id=new_poll_id, chat_id=chat_id
                 ))
 
-            PollVoters.insert_many(poll_voter_rows).execute()
-            UsernameWhitelist.insert_many(whitelisted_user_rows).execute()
-            PollOptions.insert_many(poll_option_rows).execute()
-            ChatWhitelist.insert_many(chat_whitelist_rows).execute()
+            PollVoters.batch_insert(poll_voter_rows).execute()
+            UsernameWhitelist.batch_insert(whitelist_user_rows).execute()
+            PollOptions.batch_insert(poll_option_rows).execute()
+            ChatWhitelist.batch_insert(chat_whitelist_rows).execute()
 
         bot_username = context.bot.username
         poll_message = self.generate_poll_info(
