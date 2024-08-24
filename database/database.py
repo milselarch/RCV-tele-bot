@@ -23,13 +23,15 @@ class DB(ReconnectMixin, MySQLDatabase):
 db = DB(
     database='ranked_choice_voting',
     user=YAML_CONFIG['database']['user'],
-    password=YAML_CONFIG['database']['password']
+    password=YAML_CONFIG['database']['password'],
+    charset='utf8mb4'
 )
 
 
 class BaseModel(TypedModel):
     class Meta:
         database = db
+        table_settings = ['DEFAULT CHARSET=utf8mb4']
 
 
 class UserID(int):

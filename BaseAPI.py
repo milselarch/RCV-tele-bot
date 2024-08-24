@@ -794,12 +794,13 @@ class BaseAPI(object):
 
     @staticmethod
     def generate_poll_info(
-        poll_id, poll_question, poll_options, bot_username,
-        num_votes=0, num_voters=0, closed: bool = False
+        poll_id, poll_question, poll_options: list[str],
+        bot_username: str, num_votes: int = 0, num_voters: int = 0,
+        closed: bool = False
     ):
         close_tag = '(closed)' if closed else ''
         numbered_poll_options = [
-            f'{k + 1}. {poll_option}' for k, poll_option,
+            f'{k + 1}. {poll_option}' for k, poll_option
             in enumerate(poll_options)
         ]
 

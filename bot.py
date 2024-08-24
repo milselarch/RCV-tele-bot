@@ -123,6 +123,7 @@ class RankedChoiceBot(BaseAPI):
         commands_mapping = self.kwargify(
             start=self.start_handler,
             user_details=self.user_details_handler,
+            chat_details=self.chat_details_handler,
             create_poll=self.create_poll,
             create_group_poll=self.create_group_poll,
             register_user_id=self.register_user_by_tele_id,
@@ -175,6 +176,8 @@ class RankedChoiceBot(BaseAPI):
             'start', 'start bot'
         ), (
             'user_details', 'shows your username and user id'
+        ), (
+            'chat_details', 'shows chat id'
         ), (
             'create_poll', 'creates a new poll'
         ), (
@@ -524,6 +527,14 @@ class RankedChoiceBot(BaseAPI):
             username: {user.username}
         """))
 
+    @staticmethod
+    async def chat_details_handler(update: Update, *_):
+        """
+        returns current chat id
+        """
+        chat_id = update.message.chat.id
+        await update.message.reply_text(f"chat id: {chat_id}")
+
     async def has_voted(self, update: Update, *_, **__):
         """
         usage:
@@ -627,15 +638,26 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text("Creator user does not exist")
             return False
 
-        if ':' not in raw_text:
+        if '\n' not in raw_text:
+            await message.reply_text("poll creation format wrong")
+            return False
+        elif ':' not in raw_text:
             await message.reply_text("poll creation format wrong")
             return False
 
-        split_index = raw_text.index(':')
-        # first part of command is all the users that are in the poll
-        command_p1: str = raw_text[:split_index].strip()
-        # second part of command is the poll question + poll options
-        command_p2: str = raw_text[split_index + 1:].strip()
+        all_lines = raw_text.split('\n')
+        if ':' in all_lines[0]:
+            # separate poll voters (before :) from poll title and options
+            split_index = raw_text.index(':')
+            # first part of command is all the users that are in the poll
+            command_p1: str = raw_text[:split_index].strip()
+            # second part of command is the poll question + poll options
+            command_p2: str = raw_text[split_index + 1:].strip()
+        else:
+            # no : on first line to separate poll voters and
+            # poll title + questions
+            command_p1 = ''
+            command_p2 = raw_text
 
         lines = command_p2.split('\n')
         if len(lines) < 3:
