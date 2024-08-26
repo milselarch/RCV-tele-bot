@@ -5,7 +5,7 @@ import dataclasses
 
 from load_config import *
 from BaseAPI import BaseAPI
-from database.database import UserID, Users
+from database.database import Users
 
 from fastapi import FastAPI, APIRouter
 from pydantic import BaseModel
