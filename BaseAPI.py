@@ -7,7 +7,6 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-from collections import defaultdict
 
 import RankedChoice
 import redis
@@ -15,6 +14,7 @@ import redis
 from enum import IntEnum
 from typing_extensions import Any
 from RankedVote import RankedVote
+from collections import defaultdict
 from strenum import StrEnum
 
 from typing import List, Dict, Optional, Tuple
