@@ -1,50 +1,53 @@
-mod schema;
-mod models;
-
-use std::sync::Mutex;
-use diesel::{Connection, MysqlConnection};
+use std::collections::HashMap;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use lazy_static::lazy_static;
+use trie_rcv::{EliminationStrategies, RankedChoiceVoteTrie, RankedVote, VoteErrors};
 
-lazy_static! {
-    static ref DB_CONNECTION: Mutex<Option<MysqlConnection>> = Mutex::new(None);
+#[pyclass]
+struct VotesAggregator {
+    raw_votes: HashMap<u64, Vec<i32>>,
+    rcv: RankedChoiceVoteTrie
 }
-
-#[pyfunction]
-fn py_establish_connection(database_url: String) -> PyResult<String> {
-    let connection = MysqlConnection::establish(&database_url)
-        .map_err(|err| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-            format!("Error connecting to {}: {}", database_url, err))
-        )?;
-
-    let mut db_conn = DB_CONNECTION.lock().unwrap();
-    *db_conn = Some(connection);
-
-    Ok("Connection established successfully".to_string())
+impl VotesAggregator {
+    fn _flush_votes(&mut self) -> Result<bool, VoteErrors> {
+        let mut raw_votes_inserted = false;
+        for (_, raw_vote) in &self.raw_votes {
+            let cast_result = RankedVote::from_vector(raw_vote)?;
+            self.rcv.insert_vote(cast_result);
+            raw_votes_inserted = true
+        }
+        self.raw_votes.clear();
+        Ok(raw_votes_inserted)
+    }
 }
+#[pymethods]
+impl VotesAggregator {
+    #[new]
+    fn new() -> Self {
+        VotesAggregator {
+            raw_votes: Default::default(), rcv: Default::default()
+        }
+    }
 
-pub fn establish_connection(database_url: String) -> MysqlConnection {
-    MysqlConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
-}
+    fn flush_votes(&mut self) -> PyResult<bool> {
+        match self._flush_votes() {
+            Ok(result) => Ok(result),
+            Err(err) => Err(PyValueError::new_err(err.to_string()))
+        }
+    }
 
-#[pyfunction]
-fn determine_poll_winner(
-    database_url: String
-) -> PyResult<String> {
-    let connection = &mut establish_connection(database_url);
-    use crate::schema::vote_rankings::dsl::*;
-    use crate::schema::poll_voters::dsl::*;
+    fn insert_vote_ranking(&mut self, vote_id: u64, vote_ranking: i32) {
+        let vote = self.raw_votes.entry(vote_id).or_insert(vec![]);
+        vote.push(vote_ranking)
+    }
 
-    let results = vote_rankings
-        .inner_join(poll_voters.on(poll_voters::id.eq(vote_rankings::poll_voter)))
-        .filter(poll_voters::poll.eq(poll_id))
-        .order(vote_rankings::ranking.asc())
-        .select((vote_rankings::id, vote_rankings::ranking))
-        .load::<(i32, i32)>(connection)
-        .map_err(|err| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-            format!("Error querying votes: {}", err))
-        )?;
-
-    Ok("potato".to_string())
+    fn determine_winner(&mut self) -> PyResult<Option<u16>> {
+        self.rcv.set_elimination_strategy(EliminationStrategies::DowdallScoring);
+        let flush_result = self._flush_votes();
+        if flush_result.is_err() {
+            return Err(PyValueError::new_err(flush_result.unwrap_err().to_string()))
+        }
+        let winner = self.rcv.determine_winner();
+        Ok(winner)
+    }
 }

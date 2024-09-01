@@ -10,6 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.22.0"
-diesel = { version = "2.2.0", features = ["mysql"] }
-trie_rcv = "1.2.0"
-lazy_static = "1.5.0"
+trie_rcv = "1.2.1"

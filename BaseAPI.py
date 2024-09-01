@@ -239,15 +239,15 @@ class BaseAPI(object):
             return None
 
         num_poll_voters: int = num_poll_voters_result.unwrap()
-        # get votes for the poll sorted from
-        # the low ranking option (most favored)
+        # get votes for the poll sorted by PollVoter and from
+        # the lowest ranking option (most favored)
         # to the highest ranking option (least favored)
         votes = VoteRankings.select().join(
             PollVoters, on=(PollVoters.id == VoteRankings.poll_voter)
         ).where(
             PollVoters.poll == poll_id
         ).order_by(
-            VoteRankings.ranking.asc()
+            PollVoters.id, VoteRankings.ranking.asc()
         )
 
         vote_map = {}
