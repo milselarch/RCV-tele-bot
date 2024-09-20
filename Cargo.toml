@@ -1,13 +1,22 @@
 [package]
 name = "ranked-choice-vote"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "ranked_choice_vote"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = "0.22.0"
 trie_rcv = "1.2.1"
+pyo3 = { version = "0.21.2", features = ["extension-module"] }
+pyo3-stub-gen = "0.6.0"
+
+[package.metadata.maturin]
+name = "ranked_choice_vote"
+generate-pyi = true
+
+[[bin]]
+name = "stub_gen"
+path = "src/bin/stub_gen.rs"

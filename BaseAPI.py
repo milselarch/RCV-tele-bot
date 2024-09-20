@@ -7,14 +7,12 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-
-import RankedChoice
 import redis
 
 from enum import IntEnum
 from typing_extensions import Any
-from RankedVote import RankedVote
 from collections import defaultdict
+from ranked_choice_vote import ranked_choice_vote
 from strenum import StrEnum
 
 from typing import List, Dict, Optional, Tuple
@@ -104,6 +102,7 @@ class GetPollWinnerStatus(IntEnum):
     CACHED = 0
     NEWLY_COMPUTED = 1
     COMPUTING = 2
+    FAILED = 3
 
 
 @dataclasses.dataclass
@@ -201,6 +200,7 @@ class BaseAPI(object):
             async with await self.redis_lock_manager.lock(
                 redis_cache_key, lock_timeout=self.POLL_CACHE_EXPIRY
             ):
+                # TODO: manually refresh the lock before it expires
                 cache_result = PollWinners.read_poll_winner_id(poll_id)
                 if cache_result.is_ok():
                     # print('INNER_CACHE_HIT', cache_result)
@@ -247,30 +247,34 @@ class BaseAPI(object):
         ).where(
             PollVoters.poll == poll_id
         ).order_by(
-            PollVoters.id, VoteRankings.ranking.asc()
+            PollVoters.id, VoteRankings.ranking.asc()  # TODO: test ordering
         )
 
-        vote_map = {}
-        for vote in votes:
-            voter = vote.poll_voter
-            if voter not in vote_map:
-                vote_map[voter] = RankedVote()
+        prev_voter_id, num_votes_cast = None, 0
+        votes_aggregator = ranked_choice_vote.VotesAggregator()
 
-            option_row = vote.option
+        for vote_ranking in votes:
+            option_row = vote_ranking.option
+            voter_id = vote_ranking.poll_voter.id
+
+            if prev_voter_id != voter_id:
+                votes_aggregator.flush_votes()
+                prev_voter_id = voter_id
+                num_votes_cast += 1
+
             if option_row is None:
-                vote_value = vote.special_value
+                vote_value = vote_ranking.special_value
             else:
                 vote_value = option_row.id
 
             # print('VOTE_VAL', vote_value, int(vote_value))
-            vote_map[voter].add_next_choice(vote_value)
+            votes_aggregator.insert_vote_ranking(voter_id, vote_value)
 
-        vote_flat_map = list(vote_map.values())
-        # print('FLAT_MAP', vote_flat_map)
-        winning_option_id: Optional[int] = RankedChoice.ranked_choice_vote(
-            vote_flat_map, num_voters=num_poll_voters
-        )
-
+        votes_aggregator.flush_votes()
+        voters_without_votes = num_poll_voters - num_votes_cast
+        assert voters_without_votes >= 0
+        votes_aggregator.insert_empty_votes(voters_without_votes)
+        winning_option_id = votes_aggregator.determine_winner()
         return winning_option_id
 
     @staticmethod
