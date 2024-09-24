@@ -16,19 +16,19 @@ const WITHOLD_VOTE_VAL: i32 = SpecialVotes::WITHHOLD.to_int();
 #[gen_stub_pyclass]
 #[pyclass]
 pub struct VotesAggregator {
-    raw_votes: HashMap<u64, Vec<i32>>,
+    raw_votes_cache: HashMap<u64, Vec<i32>>,
     rcv: RankedChoiceVoteTrie
 }
 impl VotesAggregator {
     fn _flush_votes(&mut self) -> Result<bool, VoteErrors> {
         // convert raw votes into RankedVotes into the trie
         let mut raw_votes_inserted = false;
-        for (_, raw_vote) in &self.raw_votes {
+        for (_, raw_vote) in &self.raw_votes_cache {
             let cast_result = RankedVote::from_vector(raw_vote)?;
             self.rcv.insert_vote(cast_result);
             raw_votes_inserted = true
         }
-        self.raw_votes.clear();
+        self.raw_votes_cache.clear();
         Ok(raw_votes_inserted)
     }
 }
@@ -38,7 +38,7 @@ impl VotesAggregator {
     #[new]
     fn new() -> Self {
         VotesAggregator {
-            raw_votes: Default::default(), rcv: Default::default()
+            raw_votes_cache: Default::default(), rcv: Default::default()
         }
     }
 
@@ -49,8 +49,16 @@ impl VotesAggregator {
         }
     }
 
+    fn get_num_votes(&self) -> PyResult<u64> {
+        // return the total number of votes cast
+        Ok(
+            self.rcv.get_num_votes() +
+            self.raw_votes_cache.len() as u64
+        )
+    }
+
     fn insert_vote_ranking(&mut self, vote_id: u64, vote_ranking: i32) {
-        let vote = self.raw_votes.entry(vote_id).or_insert(vec![]);
+        let vote = self.raw_votes_cache.entry(vote_id).or_insert(vec![]);
         vote.push(vote_ranking)
     }
 

@@ -8,6 +8,9 @@ class VotesAggregator:
     def flush_votes(self) -> bool:
         ...
 
+    def get_num_votes(self) -> int:
+        ...
+
     def insert_vote_ranking(self, vote_id:int, vote_ranking:int) -> None:
         ...
 

@@ -9,7 +9,7 @@ name = "ranked_choice_vote"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-trie_rcv = "1.2.1"
+trie_rcv = "1.2.2"
 pyo3 = { version = "0.21.2", features = ["extension-module"] }
 pyo3-stub-gen = "0.6.0"
 
