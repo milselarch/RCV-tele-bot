@@ -13,7 +13,7 @@ from json import JSONDecodeError
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
-from RankedChoice import SpecialVotes
+from SpecialVotes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from database.database import UserID
 from database.db_helpers import EmptyField, Empty, BoundRowFields

@@ -7,6 +7,7 @@ import time
 import hashlib
 import textwrap
 import dataclasses
+import database
 import redis
 
 from enum import IntEnum
@@ -22,8 +23,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
 from database import (
-    Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings, db,
-    Users
+    Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
+    db, Users
 )
 from database.database import PollWinners, BaseModel, UserID
 from aioredlock import Aioredlock, LockError
@@ -120,6 +121,7 @@ class BaseAPI(object):
     POLL_CACHE_EXPIRY = 60
 
     def __init__(self):
+        database.initialize_db()
         self.redis_cache = redis.Redis()
         self.redis_lock_manager = Aioredlock()
 
