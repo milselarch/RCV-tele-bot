@@ -8,6 +8,7 @@ import hashlib
 import textwrap
 import dataclasses
 import database
+import aioredlock
 import redis
 
 from enum import IntEnum
@@ -117,7 +118,8 @@ class PollInfo(object):
 
 class BaseAPI(object):
     POLL_WINNER_KEY = "POLL_WINNER"
-    CACHE_LOCK_NAME = "REDIS_CACHE_LOCK"
+    POLL_WINNER_LOCK_KEY = "POLL_WINNER_LOCK"
+    # CACHE_LOCK_NAME = "REDIS_CACHE_LOCK"
     POLL_CACHE_EXPIRY = 60
 
     def __init__(self):
@@ -129,10 +131,10 @@ class BaseAPI(object):
     def _build_cache_key(header: str, key: str):
         return f"{header}:{key}"
 
-    def _build_poll_winner_cache_key(self, poll_id: int) -> str:
+    def _build_poll_winner_lock_cache_key(self, poll_id: int) -> str:
         assert isinstance(poll_id, int)
         return self._build_cache_key(
-            self.__class__.POLL_WINNER_KEY, str(poll_id)
+            self.__class__.POLL_WINNER_LOCK_KEY, str(poll_id)
         )
 
     @staticmethod
@@ -172,6 +174,15 @@ class BaseAPI(object):
         poll = result.unwrap()
         return Ok(poll.num_voters)
 
+    @staticmethod
+    async def refresh_lock(lock: aioredlock.Lock, interval: float):
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                await lock.extend()
+        except asyncio.CancelledError:
+            pass
+
     async def get_poll_winner(
         self, poll_id: int
     ) -> Tuple[Optional[int], GetPollWinnerStatus]:
@@ -191,37 +202,52 @@ class BaseAPI(object):
             # print('CACHE_HIT', cache_result)
             return cache_result.unwrap(), GetPollWinnerStatus.CACHED
 
-        redis_cache_key = self._build_poll_winner_cache_key(poll_id)
+        redis_lock_key = self._build_poll_winner_lock_cache_key(poll_id)
         # print('CACHE_KEY', redis_cache_key)
-        if await self.redis_lock_manager.is_locked(redis_cache_key):
+        if await self.redis_lock_manager.is_locked(redis_lock_key):
+            print('PRE_LOCKED')
             return None, GetPollWinnerStatus.COMPUTING
 
         try:
             # prevents race conditions where multiple computations
             # are run concurrently for the same poll
             async with await self.redis_lock_manager.lock(
-                redis_cache_key, lock_timeout=self.POLL_CACHE_EXPIRY
-            ):
-                # TODO: manually refresh the lock before it expires
-                cache_result = PollWinners.read_poll_winner_id(poll_id)
-                if cache_result.is_ok():
-                    # print('INNER_CACHE_HIT', cache_result)
-                    return cache_result.unwrap(), GetPollWinnerStatus.CACHED
+                redis_lock_key, lock_timeout=self.POLL_CACHE_EXPIRY
+            ) as lock:
+                # Start a task to refresh the lock periodically
+                refresh_task = asyncio.create_task(self.refresh_lock(
+                    lock, self.POLL_CACHE_EXPIRY / 2
+                ))
 
-                # compute the winner in a separate thread to not block
-                # the async event loop
-                loop = asyncio.get_event_loop()
-                with ThreadPoolExecutor() as executor:
-                    poll_winner_id = await loop.run_in_executor(
-                        executor, self._determine_poll_winner, poll_id
-                    )
+                try:
+                    # TODO: manually refresh the lock before it expires
+                    cache_result = PollWinners.read_poll_winner_id(poll_id)
+                    if cache_result.is_ok():
+                        print('INNER_CACHE_HIT', cache_result)
+                        return cache_result.unwrap(), GetPollWinnerStatus.CACHED
 
-                # Store computed winner in the db
-                PollWinners.build_from_fields(
-                    poll_id=poll_id, option_id=poll_winner_id
-                ).get_or_create()
+                    # compute the winner in a separate thread to not block
+                    # the async event loop
+                    loop = asyncio.get_event_loop()
+                    with ThreadPoolExecutor() as executor:
+                        print('COMPUTE_START')
+                        time.sleep(120)
+                        poll_winner_id = await loop.run_in_executor(
+                            executor, self._determine_poll_winner, poll_id
+                        )
+                        print('COMPUTE_END')
+
+                    # Store computed winner in the db
+                    PollWinners.build_from_fields(
+                        poll_id=poll_id, option_id=poll_winner_id
+                    ).get_or_create()
+                finally:
+                    # Cancel the refresh task
+                    refresh_task.cancel()
+                    await refresh_task
 
         except LockError:
+            print('LOCK_ERROR')
             return None, GetPollWinnerStatus.COMPUTING
 
         # print('CACHE_MISS', poll_winner_id)
