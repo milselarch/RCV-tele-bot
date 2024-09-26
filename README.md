@@ -103,7 +103,14 @@ Project was built using `Python3.12`
    (venv) $ python -m pip install -r requirements.txt
    (venv) $ python -m database.py
    ```
-5. Install and run Redis cache
+5. Setup `pyo3` ranked choice voting algorithm integration  
+   5.1. Install rust dependencies  
+   `sudo apt install rustc cargo`  
+   5.2. Generate python stubs  
+   `cargo run --bin stub_gen`  
+   5.3. Build the rust library  
+   `maturin develop --bindings pyo3 --release`
+6. Install and run Redis cache
     - `sudo apt update`
     - `sudo apt install redis-server -y`
     - `sudo vim /etc/redis/redis.conf`
@@ -111,19 +118,15 @@ Project was built using `Python3.12`
     - `sudo systemctl restart redis`
     - `sudo systemctl status redis`
     - `sudo systemctl enable --now redis-server`
-6. Run the bot
+7. Run the bot
    ```shell
    (venv) $ python bot.py
    ```
-7. Run the webapp backend server  
-   7.1. development  
-    ```shell
-   (venv) $ python webapp.py --port <YOUR_PORT_NUMBER>
-   ```
-   7.2. production (requires ASGI configuration as well)
-   ```shell
-   (venv) $ uvicorn webapp:app --host 0.0.0.0 --port <YOUR_PORT_NUMBER>
-   ```
+8. Run the webapp backend server  
+   8.1. development    
+   `python webapp.py --port <YOUR_PORT_NUMBER>`  
+   8.2. production (requires ASGI configuration as well)  
+   `uvicorn webapp:app --host 0.0.0.0 --port <YOUR_PORT_NUMBER>`
 
 ### Database Schema
 Database ORM definition can be found in `database.py`

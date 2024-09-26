@@ -12,7 +12,7 @@ from database.db_helpers import (
 from peewee import (
     MySQLDatabase, BigIntegerField, CharField,
     IntegerField, AutoField, TextField, DateTimeField,
-    BooleanField, ForeignKeyField, SQL, BigAutoField
+    BooleanField, ForeignKeyField, SQL, BigAutoField, Proxy
 )
 
 
@@ -20,17 +20,34 @@ class DB(ReconnectMixin, MySQLDatabase):
     pass
 
 
-db = DB(
-    database='ranked_choice_voting',
-    user=YAML_CONFIG['database']['user'],
-    password=YAML_CONFIG['database']['password'],
-    charset='utf8mb4'
-)
+database_proxy = Proxy()
+initialised_db: DB | None = None
+
+
+def initialize_db(db: DB | None = None):
+    if db is None:
+        db = DB(
+            database='ranked_choice_voting',
+            user=YAML_CONFIG['database']['user'],
+            password=YAML_CONFIG['database']['password'],
+            charset='utf8mb4'
+        )
+
+    database_proxy.initialize(db)
+    global initialised_db
+    initialised_db = db
+
+    # Create tables (if they don't exist)
+    database_proxy.connect()
+    database_proxy.create_tables([
+        Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
+        PollOptions, VoteRankings, PollWinners
+    ], safe=True)
 
 
 class BaseModel(TypedModel):
     class Meta:
-        database = db
+        database = database_proxy
         table_settings = ['DEFAULT CHARSET=utf8mb4']
 
 
@@ -48,7 +65,7 @@ class Users(BaseModel):
     subscription_tier = IntegerField(default=0)
 
     class Meta:
-        database = db
+        database = database_proxy
         indexes = (
             # Non-unique index for usernames
             # telegram usernames have to be unique, however because
@@ -136,7 +153,7 @@ class ChatWhitelist(BaseModel):
     broadcasted = BooleanField(default=False)
 
     class Meta:
-        database = db
+        database = database_proxy
         indexes = (
             # Unique multi-column index for poll_id-chat_id pairs
             (('poll', 'chat_id'), True),
@@ -161,7 +178,7 @@ class PollVoters(BaseModel):
     voted = BooleanField(default=False)
 
     class Meta:
-        database = db
+        database = database_proxy
         indexes = (
             # Unique multi-column index for poll_id-user_id pairs
             (('poll', 'user'), True),
@@ -197,7 +214,7 @@ class UsernameWhitelist(BaseModel):
     )
 
     class Meta:
-        database = db
+        database = database_proxy
         indexes = (
             # Unique multi-column index for poll_id-username pairs
             (('poll', 'username'), True),
@@ -281,10 +298,7 @@ class PollWinners(BaseModel):
         return Ok(winning_option_id)
 
 
-# Create tables (if they don't exist)
-db.connect()
-db.create_tables([
-    Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
-    PollOptions, VoteRankings, PollWinners
-], safe=True)
+if __name__ == '__main__':
+    # Create tables (if they don't exist)
+    initialize_db()
 
