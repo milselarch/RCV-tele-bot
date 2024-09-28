@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 
+# noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok
 from load_config import YAML_CONFIG
