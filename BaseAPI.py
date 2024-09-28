@@ -7,22 +7,14 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-<<<<<<< HEAD
-import RankedChoice
-=======
 import database
 import aioredlock
->>>>>>> 155267d292ee82b0dba5fb7a519adc5922ddbcbe
 import redis
 
 from enum import IntEnum
 from typing_extensions import Any
 from collections import defaultdict
-<<<<<<< HEAD
-from RankedVote import RankedVote
-=======
 from ranked_choice_vote import ranked_choice_vote
->>>>>>> 155267d292ee82b0dba5fb7a519adc5922ddbcbe
 from strenum import StrEnum
 
 from typing import List, Dict, Optional, Tuple
