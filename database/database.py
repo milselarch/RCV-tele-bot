@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime
+import os
+import sys
 
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
@@ -299,7 +301,8 @@ class PollWinners(BaseModel):
         return Ok(winning_option_id)
 
 
-if __name__ == '__main__':
+# database should be connected if called from pem db migrations
+called_from_pem = os.path.basename(sys.argv[0]) == 'pem'
+if (__name__ == '__main__') or called_from_pem:
     # Create tables (if they don't exist)
     initialize_db()
-
