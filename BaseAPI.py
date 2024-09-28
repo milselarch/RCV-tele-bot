@@ -7,13 +7,22 @@ import time
 import hashlib
 import textwrap
 import dataclasses
+<<<<<<< HEAD
 import RankedChoice
+=======
+import database
+import aioredlock
+>>>>>>> 155267d292ee82b0dba5fb7a519adc5922ddbcbe
 import redis
 
 from enum import IntEnum
 from typing_extensions import Any
 from collections import defaultdict
+<<<<<<< HEAD
 from RankedVote import RankedVote
+=======
+from ranked_choice_vote import ranked_choice_vote
+>>>>>>> 155267d292ee82b0dba5fb7a519adc5922ddbcbe
 from strenum import StrEnum
 
 from typing import List, Dict, Optional, Tuple
@@ -23,8 +32,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from MessageBuilder import MessageBuilder
 from SpecialVotes import SpecialVotes
 from database import (
-    Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings, db,
-    Users
+    Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
+    db, Users
 )
 from database.database import PollWinners, BaseModel, UserID
 from aioredlock import Aioredlock, LockError
@@ -103,6 +112,7 @@ class GetPollWinnerStatus(IntEnum):
     CACHED = 0
     NEWLY_COMPUTED = 1
     COMPUTING = 2
+    FAILED = 3
 
 
 @dataclasses.dataclass
@@ -116,10 +126,12 @@ class PollInfo(object):
 
 class BaseAPI(object):
     POLL_WINNER_KEY = "POLL_WINNER"
-    CACHE_LOCK_NAME = "REDIS_CACHE_LOCK"
+    POLL_WINNER_LOCK_KEY = "POLL_WINNER_LOCK"
+    # CACHE_LOCK_NAME = "REDIS_CACHE_LOCK"
     POLL_CACHE_EXPIRY = 60
 
     def __init__(self):
+        database.initialize_db()
         self.redis_cache = redis.Redis()
         self.redis_lock_manager = Aioredlock()
 
@@ -127,10 +139,10 @@ class BaseAPI(object):
     def _build_cache_key(header: str, key: str):
         return f"{header}:{key}"
 
-    def _build_poll_winner_cache_key(self, poll_id: int) -> str:
+    def _build_poll_winner_lock_cache_key(self, poll_id: int) -> str:
         assert isinstance(poll_id, int)
         return self._build_cache_key(
-            self.__class__.POLL_WINNER_KEY, str(poll_id)
+            self.__class__.POLL_WINNER_LOCK_KEY, str(poll_id)
         )
 
     @staticmethod
@@ -170,6 +182,16 @@ class BaseAPI(object):
         poll = result.unwrap()
         return Ok(poll.num_voters)
 
+    @staticmethod
+    async def refresh_lock(lock: aioredlock.Lock, interval: float):
+        try:
+            while True:
+                print('WAIT')
+                await asyncio.sleep(interval)
+                await lock.extend()
+        except asyncio.CancelledError:
+            pass
+
     async def get_poll_winner(
         self, poll_id: int
     ) -> Tuple[Optional[int], GetPollWinnerStatus]:
@@ -178,6 +200,8 @@ class BaseAPI(object):
         Attempts to get poll winner from cache if it exists,
         otherwise will run the ranked choice voting computation
         and write to the redis cache before returning
+        # TODO: test that redis lock refresh works
+
         :param poll_id:
         :return:
         poll winner, status of poll winner computation
@@ -189,36 +213,48 @@ class BaseAPI(object):
             # print('CACHE_HIT', cache_result)
             return cache_result.unwrap(), GetPollWinnerStatus.CACHED
 
-        redis_cache_key = self._build_poll_winner_cache_key(poll_id)
+        redis_lock_key = self._build_poll_winner_lock_cache_key(poll_id)
         # print('CACHE_KEY', redis_cache_key)
-        if await self.redis_lock_manager.is_locked(redis_cache_key):
+        if await self.redis_lock_manager.is_locked(redis_lock_key):
+            # print('PRE_LOCKED')
             return None, GetPollWinnerStatus.COMPUTING
 
         try:
             # prevents race conditions where multiple computations
             # are run concurrently for the same poll
             async with await self.redis_lock_manager.lock(
-                redis_cache_key, lock_timeout=self.POLL_CACHE_EXPIRY
-            ):
-                cache_result = PollWinners.read_poll_winner_id(poll_id)
-                if cache_result.is_ok():
-                    # print('INNER_CACHE_HIT', cache_result)
-                    return cache_result.unwrap(), GetPollWinnerStatus.CACHED
+                redis_lock_key, lock_timeout=self.POLL_CACHE_EXPIRY
+            ) as lock:
+                # Start a task to refresh the lock periodically
+                refresh_task = asyncio.create_task(self.refresh_lock(
+                    lock, self.POLL_CACHE_EXPIRY / 2
+                ))
 
-                # compute the winner in a separate thread to not block
-                # the async event loop
-                loop = asyncio.get_event_loop()
-                with ThreadPoolExecutor() as executor:
-                    poll_winner_id = await loop.run_in_executor(
-                        executor, self._determine_poll_winner, poll_id
-                    )
+                try:
+                    cache_result = PollWinners.read_poll_winner_id(poll_id)
+                    if cache_result.is_ok():
+                        # print('INNER_CACHE_HIT', cache_result)
+                        return cache_result.unwrap(), GetPollWinnerStatus.CACHED
 
-                # Store computed winner in the db
-                PollWinners.build_from_fields(
-                    poll_id=poll_id, option_id=poll_winner_id
-                ).get_or_create()
+                    # compute the winner in a separate thread to not block
+                    # the async event loop
+                    loop = asyncio.get_event_loop()
+                    with ThreadPoolExecutor() as executor:
+                        poll_winner_id = await loop.run_in_executor(
+                            executor, self._determine_poll_winner, poll_id
+                        )
+
+                    # Store computed winner in the db
+                    PollWinners.build_from_fields(
+                        poll_id=poll_id, option_id=poll_winner_id
+                    ).get_or_create()
+                finally:
+                    # Cancel the refresh task
+                    refresh_task.cancel()
+                    await refresh_task
 
         except LockError:
+            # print('LOCK_ERROR')
             return None, GetPollWinnerStatus.COMPUTING
 
         # print('CACHE_MISS', poll_winner_id)
@@ -238,38 +274,42 @@ class BaseAPI(object):
             return None
 
         num_poll_voters: int = num_poll_voters_result.unwrap()
-        # get votes for the poll sorted from
-        # the low ranking option (most favored)
+        # get votes for the poll sorted by PollVoter and from
+        # the lowest ranking option (most favored)
         # to the highest ranking option (least favored)
         votes = VoteRankings.select().join(
             PollVoters, on=(PollVoters.id == VoteRankings.poll_voter)
         ).where(
             PollVoters.poll == poll_id
         ).order_by(
-            VoteRankings.ranking.asc()
+            PollVoters.id, VoteRankings.ranking.asc()  # TODO: test ordering
         )
 
-        vote_map = {}
-        for vote in votes:
-            voter = vote.poll_voter
-            if voter not in vote_map:
-                vote_map[voter] = RankedVote()
+        prev_voter_id, num_votes_cast = None, 0
+        votes_aggregator = ranked_choice_vote.VotesAggregator()
 
-            option_row = vote.option
+        for vote_ranking in votes:
+            option_row = vote_ranking.option
+            voter_id = vote_ranking.poll_voter.id
+
+            if prev_voter_id != voter_id:
+                votes_aggregator.flush_votes()
+                prev_voter_id = voter_id
+                num_votes_cast += 1
+
             if option_row is None:
-                vote_value = vote.special_value
+                vote_value = vote_ranking.special_value
             else:
                 vote_value = option_row.id
 
             # print('VOTE_VAL', vote_value, int(vote_value))
-            vote_map[voter].add_next_choice(vote_value)
+            votes_aggregator.insert_vote_ranking(voter_id, vote_value)
 
-        vote_flat_map = list(vote_map.values())
-        # print('FLAT_MAP', vote_flat_map)
-        winning_option_id: Optional[int] = RankedChoice.ranked_choice_vote(
-            vote_flat_map, num_voters=num_poll_voters
-        )
-
+        votes_aggregator.flush_votes()
+        voters_without_votes = num_poll_voters - num_votes_cast
+        assert voters_without_votes >= 0
+        votes_aggregator.insert_empty_votes(voters_without_votes)
+        winning_option_id = votes_aggregator.determine_winner()
         return winning_option_id
 
     @staticmethod

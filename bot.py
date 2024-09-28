@@ -13,7 +13,7 @@ from json import JSONDecodeError
 from result import Ok, Err, Result
 from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
-from RankedChoice import SpecialVotes
+from SpecialVotes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from database.database import UserID
 from database.db_helpers import EmptyField, Empty, BoundRowFields
@@ -23,7 +23,7 @@ from LocksManager import PollsLockManager
 
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
-    PollOptions, VoteRankings, db, ChatWhitelist
+    PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
 )
 from BaseAPI import (
     BaseAPI, UserRegistrationStatus, PollInfo, SubscriptionTiers,
@@ -1134,11 +1134,12 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = extract_result.unwrap()
-        cache_key = self._build_poll_winner_cache_key(poll_id)
 
         with db.atomic():
+            PollWinners.delete().where(
+                PollWinners.poll == poll_id
+            ).execute()
             # remove cached result for poll winner
-            self.redis_cache.delete(cache_key)
             Polls.update({Polls.closed: closed}).where(
                 Polls.id == poll_id
             ).execute()
@@ -2043,7 +2044,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(textwrap.dedent(f"""
                 Poll winner computation in progress
                 Please check again later
-             """))
+            """))
         elif winning_option_id is not None:
             winning_options = PollOptions.select().where(
                 PollOptions.id == winning_option_id
