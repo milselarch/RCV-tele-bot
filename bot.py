@@ -54,6 +54,9 @@ logger = logging.getLogger(__name__)
 
 
 class RankedChoiceBot(BaseAPI):
+    # how long before the delete poll button expires
+    DELETE_POLL_BUTTON_EXPIRY = 60
+
     def __init__(self, config_path='config.yml'):
         super().__init__()
         self.config_path = config_path
@@ -436,11 +439,15 @@ class RankedChoiceBot(BaseAPI):
 
         elif command == CallbackCommands.DELETE:
             poll_id = int(callback_data['poll_id'])
+            init_stamp = int(callback_data.get('stamp', 0))
+            if time.time() - init_stamp > self.DELETE_POLL_BUTTON_EXPIRY:
+                await query.answer("Delete button has expired")
+                return False
+
+            poll_query = (Polls.id == poll_id) & (Polls.creator == user_id)
             # TODO: write test to check that only poll creator can delete poll
-            poll = Polls.get_or_none(
-                (Polls.id == poll_id) &
-                (Polls.creator == user_id)
-            )
+            poll = Polls.get_or_none(poll_query)
+
             if poll is None:
                 await query.answer(f"Poll #{poll_id} does not exist")
                 return False
@@ -456,9 +463,14 @@ class RankedChoiceBot(BaseAPI):
                 await query.answer(f"Poll #{poll_id} must be closed first")
                 return False
 
-            Polls.delete().where(Polls.id == poll_id).execute()
-            # TODO: remove delete button after deletion is complete
+            Polls.delete().where(poll_query).execute()
             await query.answer(f"Poll #{poll_id} deleted")
+            # remove delete button after deletion is complete
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id,
+                text=f'Poll #{poll_id} ({poll.desc}) deleted',
+                reply_markup=None
+            )
             return True
 
         else:
@@ -1373,6 +1385,7 @@ class RankedChoiceBot(BaseAPI):
 
     @staticmethod
     async def view_all_polls(update: Update, *_, **__):
+        # TODO: show voted / voters count + open / close status for each poll
         message: Message = update.message
         tele_user: TeleUser = update.message.from_user
 
@@ -1781,10 +1794,17 @@ class RankedChoiceBot(BaseAPI):
     @classmethod
     async def delete_poll(cls, update: Update, *_, **__):
         message: Message = update.message
-        user = message.from_user
-        user_id = user.id
+        tele_user = message.from_user
+        user_tele_id = tele_user.id
 
-        if user_id is None:
+        try:
+            user = Users.build_from_fields(tele_id=user_tele_id).get()
+            user_id = user.get_user_id()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        if user_tele_id is None:
             await message.reply_text("user not found")
             return False
 
@@ -1793,23 +1813,48 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text('no poll ID specified')
             return False
 
-        raw_text = raw_text[raw_text.index(' ') + 1:].strip()
-        try:
-            poll_id = int(raw_text)
-        except ValueError:
-            await message.reply_text(f'invalid poll ID: {raw_text}')
+        raw_command_args = raw_text[raw_text.index(' ') + 1:].strip()
+        print(f'{raw_command_args=}')
+        # captures [int id] [optional --force or —force]
+        args_pattern = r'^([0-9]+)\s*(\s(?:--|—)force)?$'
+        matches = re.match(args_pattern, raw_command_args)
+        if matches is None:
+            await message.reply_text('invalid command arguments')
             return False
 
-        poll = Polls.get_or_none(Polls.id == poll_id)
+        match_groups = matches.groups()
+
+        try:
+            raw_poll_id, raw_force_arg = match_groups
+        except ValueError:
+            await message.reply_text('Unexpected error while parsing command')
+            return False
+
+        force_delete = raw_force_arg is not None
+
+        try:
+            poll_id = int(raw_poll_id)
+        except ValueError:
+            await message.reply_text(f'invalid poll ID: {raw_command_args}')
+            return False
+
+        poll_query = (Polls.id == poll_id) & (Polls.creator == user_id)
+        poll = Polls.get_or_none(poll_query)
+
         if poll is None:
             await message.reply_text(f'poll #{poll_id} not found')
             return False
+        elif force_delete:
+            Polls.delete().where(poll_query).execute()
+            await message.reply_text(f'Poll #{poll_id} ({poll.desc}) deleted')
+            return True
         elif not poll.closed:
             await message.reply_text(f'poll #{poll_id} must be closed first')
             return False
 
         callback_data = json.dumps(cls.kwargify(
-            poll_id=poll_id, command=str(CallbackCommands.DELETE)
+            poll_id=poll_id, command=str(CallbackCommands.DELETE),
+            stamp=int(time.time())
         ))
         markup_layout = [[InlineKeyboardButton(
             text=f'Delete poll #{poll_id}', callback_data=callback_data
@@ -1820,6 +1865,7 @@ class RankedChoiceBot(BaseAPI):
             f'Confirm poll #{poll_id} deletion',
             reply_markup=reply_markup
         )
+        return True
 
     @staticmethod
     async def show_help(update: Update, *_, **__):
@@ -1894,7 +1940,11 @@ class RankedChoiceBot(BaseAPI):
            ——————————————————
            /about - view miscellaneous information about the bot
            /view_polls - view all polls created by you
+           ——————————————————
            /delete_poll {poll_id} - delete poll by poll_id
+           use /delete_poll --force to force delete the poll without 
+           confirmation, regardless of whether poll is open or closed
+           ——————————————————
            /help - view commands available to the bot
            """))
 
