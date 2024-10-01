@@ -18,9 +18,11 @@ from bot_middleware import track_errors, admin_only
 from database.database import UserID
 from database.db_helpers import EmptyField, Empty, BoundRowFields
 from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
-from typing import List, Tuple, Dict, Optional, Sequence, Iterable, Coroutine, Awaitable, Callable
 from LocksManager import PollsLockManager
 
+from typing import (
+    List, Tuple, Dict, Optional, Sequence, Iterable, Awaitable, Callable
+)
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
     PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
@@ -85,8 +87,7 @@ class RankedChoiceBot(BaseAPI):
                 if update.message is not None:
                     respond_callback = update.message.reply_text
                 elif update.callback_query is not None:
-                    query = update.callback_query
-                    respond_callback = query.answer
+                    respond_callback = update.callback_query.answer
                 else:
                     logger.error(f'NO USER FOUND FOR ENDPOINT {func}')
                     return False
