@@ -18,7 +18,7 @@ from bot_middleware import track_errors, admin_only
 from database.database import UserID
 from database.db_helpers import EmptyField, Empty, BoundRowFields
 from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
-from typing import List, Tuple, Dict, Optional, Sequence, Iterable
+from typing import List, Tuple, Dict, Optional, Sequence, Iterable, Coroutine, Awaitable, Callable
 from LocksManager import PollsLockManager
 
 from database import (
@@ -69,11 +69,8 @@ class RankedChoiceBot(BaseAPI):
         self.webhook_url = None
 
     @staticmethod
-    def record_username_wrapper(func, include_self=True):
-        """
-        updates user id to username mapping
-        """
-        def caller(self, update: Update, *args, **kwargs):
+    def users_middleware(func: Callable[..., Awaitable], include_self=True):
+        async def caller(self, update: Update, *args, **kwargs):
             # print("SELF", self)
             if update.callback_query is not None:
                 query = update.callback_query
@@ -84,23 +81,37 @@ class RankedChoiceBot(BaseAPI):
             else:
                 tele_user = None
 
-            if tele_user is not None:
-                assert isinstance(tele_user, TeleUser)
-                chat_username: str = tele_user.username
-                tele_id = tele_user.id
-                # print('UPDATE_USER', user.id, chat_username)
+            if tele_user is None:
+                if update.message is not None:
+                    respond_callback = update.message.reply_text
+                elif update.callback_query is not None:
+                    query = update.callback_query
+                    respond_callback = query.answer
+                else:
+                    logger.error(f'NO USER FOUND FOR ENDPOINT {func}')
+                    return False
 
-                Users.build_from_fields(
-                    tele_id=tele_id, username=chat_username
-                ).insert().on_conflict(
-                    preserve=[Users.tele_id],
-                    update={Users.username: chat_username}
-                ).execute()
+                await respond_callback("User not found")
 
+            tele_id = tele_user.id
+            chat_username: str = tele_user.username
+            assert isinstance(tele_user, TeleUser)
+            user, _ = Users.build_from_fields(tele_id=tele_id).get_or_create()
+            # don't allow deleted users to interact with the bot
+            if user.deleted_at is not None:
+                await tele_user.send_message("User has been deleted")
+                return False
+
+            # update user tele id to username mapping
+            if user.username != chat_username:
+                user.username = chat_username
+                user.save()
+
+            # TODO: get user db entry and pass to inner func
             if include_self:
-                return func(self, update, *args, **kwargs)
+                return await func(self, update, *args, **kwargs)
             else:
-                return func(update, *args, **kwargs)
+                return await func(update, *args, **kwargs)
 
         if not include_self:
             return lambda *args, **kwargs: caller(None, *args, **kwargs)
@@ -109,7 +120,7 @@ class RankedChoiceBot(BaseAPI):
 
     @classmethod
     def wrap_command_handler(cls, handler):
-        return track_errors(cls.record_username_wrapper(
+        return track_errors(cls.users_middleware(
             handler, include_self=False
         ))
 
@@ -143,6 +154,7 @@ class RankedChoiceBot(BaseAPI):
             view_voters=self.view_poll_voters,
             about=self.show_about,
             delete_poll=self.delete_poll,
+            delete_account=self.delete_account,
             help=self.show_help,
 
             vote_admin=self.vote_for_poll_admin,
@@ -167,6 +179,11 @@ class RankedChoiceBot(BaseAPI):
         ))
         self.app.add_handler(CallbackQueryHandler(
             self.inline_keyboard_handler
+        ))
+        # catch-all to handle all other messages
+        self.app.add_handler(MessageHandler(
+            filters.Regex(r'.*') & filters.TEXT,
+            self.handle_other_messages
         ))
 
         # self.app.add_error_handler(self.error_handler)
@@ -326,9 +343,17 @@ class RankedChoiceBot(BaseAPI):
          """))
 
     @track_errors
-    @record_username_wrapper
+    @users_middleware
     async def handle_unknown_command(self, update: Update, _):
         await update.message.reply_text("Command not found")
+
+    @track_errors
+    @users_middleware
+    async def handle_other_messages(self, update: Update, _):
+        # TODO: implement callback contexts voting and poll creation
+        await update.message.reply_text(
+            "Message support is still in development"
+        )
 
     def generate_poll_url(self, poll_id: int, tele_user: TeleUser) -> str:
         req = PreparedRequest()
@@ -371,7 +396,7 @@ class RankedChoiceBot(BaseAPI):
         return markup_layout
 
     @track_errors
-    @record_username_wrapper
+    @users_middleware
     async def inline_keyboard_handler(
         self, update: Update, context: CallbackContext
     ):
@@ -1866,6 +1891,11 @@ class RankedChoiceBot(BaseAPI):
             reply_markup=reply_markup
         )
         return True
+
+    @classmethod
+    def delete_account(cls, update: Update, *_, **__):
+        # TODO: implement this
+        raise NotImplementedError
 
     @staticmethod
     async def show_help(update: Update, *_, **__):

@@ -66,6 +66,7 @@ class Users(BaseModel):
     username = CharField(max_length=255, default=None, null=True)
     credits = IntegerField(default=0)
     subscription_tier = IntegerField(default=0)
+    deleted_at = DateTimeField(default=None, null=True)
 
     class Meta:
         database = database_proxy
