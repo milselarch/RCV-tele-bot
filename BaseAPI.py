@@ -3,19 +3,25 @@ import hmac
 import json
 import secrets
 import string
+
+import telegram
 import time
 import hashlib
 import textwrap
 import dataclasses
+
+from telegram.ext import ApplicationBuilder
+
 import database
 import aioredlock
+import ranked_choice_vote
 import redis
 
 from enum import IntEnum
 from typing_extensions import Any
 from collections import defaultdict
-from ranked_choice_vote import ranked_choice_vote
 from strenum import StrEnum
+from load_config import TELEGRAM_BOT_TOKEN
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
@@ -126,6 +132,21 @@ class BaseAPI(object):
         database.initialize_db()
         self.redis_cache = redis.Redis()
         self.redis_lock_manager = Aioredlock()
+
+    @staticmethod
+    def __get_telegram_token():
+        # TODO: move methods using tele token to a separate class
+        return TELEGRAM_BOT_TOKEN
+
+    @classmethod
+    def create_tele_bot(cls):
+        return telegram.Bot(token=cls.__get_telegram_token())
+
+    @classmethod
+    def create_application_builder(cls):
+        builder = ApplicationBuilder()
+        builder.token(cls.__get_telegram_token())
+        return builder
 
     @staticmethod
     def _build_cache_key(header: str, key: str):
@@ -865,10 +886,11 @@ class BaseAPI(object):
 
         return data_check_string
 
-    @staticmethod
+    @classmethod
     def sign_data_check_string(
-        data_check_string: str, bot_token: str
+        cls, data_check_string: str
     ) -> str:
+        bot_token = cls.__get_telegram_token()
         secret_key = hmac.new(
             key=b"WebAppData", msg=bot_token.encode(),
             digestmod=hashlib.sha256

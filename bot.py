@@ -11,17 +11,22 @@ import re
 
 from json import JSONDecodeError
 from result import Ok, Err, Result
+# noinspection PyProtectedMember
+from telegram.ext._utils.types import CCT, RT
+from telegram.ext.filters import BaseFilter
 from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
+
+from ModifiedTeleUpdate import ModifiedTeleUpdate
 from SpecialVotes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from database.database import UserID
 from database.db_helpers import EmptyField, Empty, BoundRowFields
-from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
+from load_config import WEBHOOK_URL
 from LocksManager import PollsLockManager
 
 from typing import (
-    List, Tuple, Dict, Optional, Sequence, Iterable, Awaitable, Callable
+    List, Tuple, Dict, Optional, Sequence, Iterable, Callable, Coroutine, Any
 )
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
@@ -32,12 +37,12 @@ from BaseAPI import (
     CallbackCommands, GetPollWinnerStatus
 )
 from telegram import (
-    Update, Message, WebAppInfo, ReplyKeyboardMarkup,
+    Message, WebAppInfo, ReplyKeyboardMarkup,
     KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton,
-    User as TeleUser
+    User as TeleUser, Update as BaseTeleUpdate
 )
 from telegram.ext import (
-    CommandHandler, ApplicationBuilder, ContextTypes,
+    CommandHandler, ContextTypes,
     MessageHandler, filters, CallbackContext, CallbackQueryHandler,
     Application
 )
@@ -71,15 +76,23 @@ class RankedChoiceBot(BaseAPI):
         self.webhook_url = None
 
     @staticmethod
-    def users_middleware(func: Callable[..., Awaitable], include_self=True):
-        async def caller(self, update: Update, *args, **kwargs):
+    def users_middleware(
+        func: Callable[..., Coroutine], include_self=True
+    ) -> Callable[[BaseTeleUpdate, ...], Coroutine]:
+        async def caller(
+            self, update: BaseTeleUpdate | CallbackContext,
+            *args, **kwargs
+        ):
             # print("SELF", self)
-            if update.callback_query is not None:
-                query = update.callback_query
-                tele_user = query.from_user
-            elif update.message is not None:
+            # print('UPDATE', update, args, kwargs)
+            is_tele_update = isinstance(update, BaseTeleUpdate)
+
+            if update.message is not None:
                 message: Message = update.message
                 tele_user = message.from_user
+            elif is_tele_update and update.callback_query is not None:
+                query = update.callback_query
+                tele_user = query.from_user
             else:
                 tele_user = None
 
@@ -108,16 +121,19 @@ class RankedChoiceBot(BaseAPI):
                 user.username = chat_username
                 user.save()
 
-            # TODO: get user db entry and pass to inner func
+            modified_tele_update = ModifiedTeleUpdate(
+                update=update, user=user
+            )
+
             if include_self:
-                return await func(self, update, *args, **kwargs)
+                return await func(self, modified_tele_update, *args, **kwargs)
             else:
-                return await func(update, *args, **kwargs)
+                return await func(modified_tele_update, *args, **kwargs)
 
-        if not include_self:
-            return lambda *args, **kwargs: caller(None, *args, **kwargs)
+        def caller_without_self(update: BaseTeleUpdate, *args, **kwargs):
+            return caller(None, update, *args, **kwargs)
 
-        return caller
+        return caller if include_self else caller_without_self
 
     @classmethod
     def wrap_command_handler(cls, handler):
@@ -126,11 +142,10 @@ class RankedChoiceBot(BaseAPI):
         ))
 
     def start_bot(self):
-        self.bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+        self.bot = self.create_tele_bot()
         self.webhook_url = WEBHOOK_URL
 
-        builder = ApplicationBuilder()
-        builder.token(TELEGRAM_BOT_TOKEN)
+        builder = self.create_application_builder()
         builder.concurrent_updates(MAX_CONCURRENT_UPDATES)
         builder.post_init(self.post_init)
         self.app = builder.build()
@@ -171,24 +186,26 @@ class RankedChoiceBot(BaseAPI):
             wrap_func=self.wrap_command_handler
         )
         # catch-all to handle responses to unknown commands
-        self.app.add_handler(MessageHandler(
-            filters.Regex(r'^/') & filters.COMMAND,
+        self.register_message_handler(
+            self.app, filters.Regex(r'^/') & filters.COMMAND,
             self.handle_unknown_command
-        ))
-        self.app.add_handler(MessageHandler(
-            filters.StatusUpdate.WEB_APP_DATA, self.web_app_handler
-        ))
-        self.app.add_handler(CallbackQueryHandler(
-            self.inline_keyboard_handler
-        ))
+        )
+        # handle web app updates
+        self.register_message_handler(
+            self.app, filters.StatusUpdate.WEB_APP_DATA,
+            self.web_app_handler
+        )
         # catch-all to handle all other messages
-        self.app.add_handler(MessageHandler(
-            filters.Regex(r'.*') & filters.TEXT,
+        self.register_message_handler(
+            self.app, filters.Regex(r'.*') & filters.TEXT,
             self.handle_other_messages
-        ))
+        )
+        self.register_callback_handler(
+            self.app, self.inline_keyboard_handler
+        )
 
         # self.app.add_error_handler(self.error_handler)
-        self.app.run_polling(allowed_updates=Update.ALL_TYPES)
+        self.app.run_polling(allowed_updates=BaseTeleUpdate.ALL_TYPES)
 
     @staticmethod
     async def post_init(application: Application):
@@ -295,7 +312,7 @@ class RankedChoiceBot(BaseAPI):
         )
 
     @track_errors
-    async def web_app_handler(self, update: Update, _):
+    async def web_app_handler(self, update: ModifiedTeleUpdate, _):
         message: Message = update.message
         payload = json.loads(update.effective_message.web_app_data.data)
 
@@ -344,13 +361,11 @@ class RankedChoiceBot(BaseAPI):
          """))
 
     @track_errors
-    @users_middleware
-    async def handle_unknown_command(self, update: Update, _):
+    async def handle_unknown_command(self, update: ModifiedTeleUpdate, _):
         await update.message.reply_text("Command not found")
 
     @track_errors
-    @users_middleware
-    async def handle_other_messages(self, update: Update, _):
+    async def handle_other_messages(self, update: ModifiedTeleUpdate, _):
         # TODO: implement callback contexts voting and poll creation
         await update.message.reply_text(
             "Message support is still in development"
@@ -369,7 +384,7 @@ class RankedChoiceBot(BaseAPI):
             auth_date=auth_date, query_id=query_id, user=user_info
         )
         validation_hash = self.sign_data_check_string(
-            data_check_string=data_check_string, bot_token=TELEGRAM_BOT_TOKEN
+            data_check_string=data_check_string
         )
 
         params = {
@@ -397,9 +412,8 @@ class RankedChoiceBot(BaseAPI):
         return markup_layout
 
     @track_errors
-    @users_middleware
     async def inline_keyboard_handler(
-        self, update: Update, context: CallbackContext
+        self, update: ModifiedTeleUpdate, context: CallbackContext
     ):
         """
         callback method for buttons in chat group messages
@@ -554,7 +568,7 @@ class RankedChoiceBot(BaseAPI):
         return query.exists()
 
     @staticmethod
-    async def user_details_handler(update: Update, *_):
+    async def user_details_handler(update: ModifiedTeleUpdate, *_):
         """
         returns current user id and username
         """
@@ -566,14 +580,14 @@ class RankedChoiceBot(BaseAPI):
         """))
 
     @staticmethod
-    async def chat_details_handler(update: Update, *_):
+    async def chat_details_handler(update: ModifiedTeleUpdate, *_):
         """
         returns current chat id
         """
         chat_id = update.message.chat.id
         await update.message.reply_text(f"chat id: {chat_id}")
 
-    async def has_voted(self, update: Update, *_, **__):
+    async def has_voted(self, update: ModifiedTeleUpdate, *_, **__):
         """
         usage:
         /has_voted {poll_id}
@@ -884,7 +898,9 @@ class RankedChoiceBot(BaseAPI):
             poll_message, reply_markup=reply_markup
         )
 
-    async def register_user_by_tele_id(self, update: Update, *_, **__):
+    async def register_user_by_tele_id(
+        self, update: ModifiedTeleUpdate, *_, **__
+    ):
         """
         registers a user by user_tele_id for a poll
         /whitelist_user_id {poll_id} {user_tele_id}
@@ -954,21 +970,21 @@ class RankedChoiceBot(BaseAPI):
         return True
 
     async def whitelist_chat_registration(
-        self, update: Update, *_, **__
+        self, update: ModifiedTeleUpdate, *_, **__
     ):
         return await self.set_chat_registration_status(
             update=update, whitelist=True
         )
 
     async def blacklist_chat_registration(
-        self, update: Update, *_, **__
+        self, update: ModifiedTeleUpdate, *_, **__
     ):
         return await self.set_chat_registration_status(
             update=update, whitelist=False
         )
 
     async def set_chat_registration_status(
-        self, update: Update, whitelist: bool
+        self, update: ModifiedTeleUpdate, whitelist: bool
     ) -> bool:
         message = update.message
         tele_user: TeleUser | None = message.from_user
@@ -1030,7 +1046,7 @@ class RankedChoiceBot(BaseAPI):
             )
             return True
 
-    async def view_votes(self, update: Update, *_, **__):
+    async def view_votes(self, update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         extract_result = self.extract_poll_id(update)
 
@@ -1161,8 +1177,8 @@ class RankedChoiceBot(BaseAPI):
         await self._set_poll_status(update, True)
 
     @admin_only
-    async def _set_poll_status(self, update: Update, closed=True):
-        assert isinstance(update, Update)
+    async def _set_poll_status(self, update: ModifiedTeleUpdate, closed=True):
+        assert isinstance(update, ModifiedTeleUpdate)
         message = update.message
         extract_result = self.extract_poll_id(update)
 
@@ -1185,12 +1201,14 @@ class RankedChoiceBot(BaseAPI):
         await message.reply_text(f'poll {poll_id} has been unclosed')
 
     @admin_only
-    async def lookup_from_username_admin(self, update: Update, *_, **__):
+    async def lookup_from_username_admin(
+        self, update: ModifiedTeleUpdate, *_, **__
+    ):
         """
         /lookup_from_username_admin {username}
         Looks up user_ids for users with a matching username
         """
-        assert isinstance(update, Update)
+        assert isinstance(update, ModifiedTeleUpdate)
         message = update.message
         raw_text = message.text.strip()
 
@@ -1208,7 +1226,7 @@ class RankedChoiceBot(BaseAPI):
         """))
 
     @admin_only
-    async def insert_user_admin(self, update: Update, *_, **__):
+    async def insert_user_admin(self, update: ModifiedTeleUpdate, *_, **__):
         """
         Inserts a user with the given user_id and username into
         the Users table
@@ -1266,11 +1284,13 @@ class RankedChoiceBot(BaseAPI):
             )
 
     @admin_only
-    async def lookup_from_username_admin(self, update: Update, *_, **__):
+    async def lookup_from_username_admin(
+        self, update: ModifiedTeleUpdate, *_, **__
+    ):
         """
         Looks up user_ids for users with a matching username
         """
-        assert isinstance(update, Update)
+        assert isinstance(update, ModifiedTeleUpdate)
         message = update.message
         raw_text = message.text.strip()
 
@@ -1288,7 +1308,7 @@ class RankedChoiceBot(BaseAPI):
         """))
 
     @admin_only
-    async def insert_user_admin(self, update: Update, *_, **__):
+    async def insert_user_admin(self, update: ModifiedTeleUpdate, *_, **__):
         """
         Inserts a user with the given user_id and username into
         the Users table
@@ -1410,7 +1430,7 @@ class RankedChoiceBot(BaseAPI):
         return True
 
     @staticmethod
-    async def view_all_polls(update: Update, *_, **__):
+    async def view_all_polls(update: ModifiedTeleUpdate, *_, **__):
         # TODO: show voted / voters count + open / close status for each poll
         message: Message = update.message
         tele_user: TeleUser = update.message.from_user
@@ -1525,7 +1545,7 @@ class RankedChoiceBot(BaseAPI):
             return await message.reply_text('Poll has no winner')
 
     @admin_only
-    async def vote_for_poll_admin(self, update: Update, *_, **__):
+    async def vote_for_poll_admin(self, update: ModifiedTeleUpdate, *_, **__):
         """
         telegram command formats:
         /vote_admin {username} {poll_id}: {option_1} > ... > {option_n}
@@ -1807,7 +1827,7 @@ class RankedChoiceBot(BaseAPI):
         return Ok((poll_id, rankings))
 
     @staticmethod
-    async def show_about(update: Update, *_, **__):
+    async def show_about(update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         await message.reply_text(textwrap.dedent(f"""
             Version {__VERSION__}
@@ -1818,7 +1838,7 @@ class RankedChoiceBot(BaseAPI):
         """))
 
     @classmethod
-    async def delete_poll(cls, update: Update, *_, **__):
+    async def delete_poll(cls, update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         tele_user = message.from_user
         user_tele_id = tele_user.id
@@ -1894,12 +1914,12 @@ class RankedChoiceBot(BaseAPI):
         return True
 
     @classmethod
-    def delete_account(cls, update: Update, *_, **__):
+    def delete_account(cls, update: ModifiedTeleUpdate, *_, **__):
         # TODO: implement this
         raise NotImplementedError
 
     @staticmethod
-    async def show_help(update: Update, *_, **__):
+    async def show_help(update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         await message.reply_text(textwrap.dedent("""
            /start - start bot
@@ -2136,9 +2156,29 @@ class RankedChoiceBot(BaseAPI):
         else:
             return await message.reply_text('Poll has no winner')
 
+    @classmethod
+    def register_message_handler(
+        cls, dispatcher: Application, message_filter: BaseFilter,
+        callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
+    ):
+        dispatcher.add_handler(MessageHandler(
+            message_filter, cls.users_middleware(callback, include_self=False)
+        ))
+
+    @classmethod
+    def register_callback_handler(
+        cls, dispatcher: Application,
+        callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
+    ):
+        dispatcher.add_handler(CallbackQueryHandler(
+            cls.users_middleware(callback, include_self=False)
+        ))
+
     @staticmethod
     def register_commands(
-        dispatcher, commands_mapping, wrap_func=lambda func: func
+        dispatcher: Application,
+        commands_mapping,
+        wrap_func=lambda func: func
     ):
         for command_name in commands_mapping:
             handler = commands_mapping[command_name]
@@ -2149,7 +2189,7 @@ class RankedChoiceBot(BaseAPI):
 
     @staticmethod
     def extract_poll_id(
-        update: telegram.Update
+        update: ModifiedTeleUpdate
     ) -> Result[int, MessageBuilder]:
         message: telegram.Message = update.message
         error_message = MessageBuilder()
