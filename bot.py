@@ -150,7 +150,7 @@ class RankedChoiceBot(BaseAPI):
         builder.post_init(self.post_init)
         self.app = builder.build()
 
-        commands_mapping = self.kwargify(
+        commands_mapping = dict(
             start=self.start_handler,
             user_details=self.user_details_handler,
             chat_details=self.chat_details_handler,
@@ -182,8 +182,7 @@ class RankedChoiceBot(BaseAPI):
 
         # on different commands - answer in Telegram
         self.register_commands(
-            self.app, commands_mapping=commands_mapping,
-            wrap_func=self.wrap_command_handler
+            self.app, commands_mapping=commands_mapping
         )
         # catch-all to handle responses to unknown commands
         self.register_message_handler(
@@ -2174,15 +2173,16 @@ class RankedChoiceBot(BaseAPI):
             cls.users_middleware(callback, include_self=False)
         ))
 
-    @staticmethod
+    @classmethod
     def register_commands(
-        dispatcher: Application,
-        commands_mapping,
-        wrap_func=lambda func: func
+        cls, dispatcher: Application,
+        commands_mapping: Dict[
+            str, Callable[[ModifiedTeleUpdate, ...], Coroutine]
+        ],
     ):
         for command_name in commands_mapping:
             handler = commands_mapping[command_name]
-            wrapped_handler = wrap_func(handler)
+            wrapped_handler = cls.wrap_command_handler(handler)
             dispatcher.add_handler(CommandHandler(
                 command_name, wrapped_handler
             ))
