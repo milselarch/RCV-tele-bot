@@ -134,18 +134,28 @@ class Polls(BaseModel):
 
     @classmethod
     def build_from_fields(
-        cls, desc: str | EmptyField = Empty,
+        cls, poll_id: int | EmptyField = Empty,
+        desc: str | EmptyField = Empty,
         creator_id: UserID | EmptyField = Empty,
         num_voters: int | EmptyField = Empty,
         open_registration: bool | EmptyField = Empty,
         max_voters: int | EmptyField = Empty
     ) -> BoundRowFields[Self]:
         return BoundRowFields(cls, {
-            cls.desc: desc, cls.creator: creator_id,
+            cls.id: poll_id, cls.desc: desc, cls.creator: creator_id,
             cls.num_voters: num_voters,
             cls.open_registration: open_registration,
             cls.max_voters: max_voters
         })
+
+    @classmethod
+    def get_as_creator(cls, poll_id: int, user_id: UserID) -> Polls:
+        # TODO: wrap this in a Result with an enum error type
+        #   (not found, unauthorized, etc) and use this in
+        #   register_user_by_tele_id
+        return cls.build_from_fields(
+            poll_id=poll_id, creator_id=user_id
+        ).get()
 
 
 # whitelisted group chats from which users are

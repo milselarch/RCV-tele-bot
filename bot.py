@@ -259,7 +259,7 @@ class RankedChoiceBot(BaseAPI):
         )])
 
     async def start_handler(
-        self, update, context: ContextTypes.DEFAULT_TYPE
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         # Send a message when the command /start is issued.
         message = update.message
@@ -281,14 +281,8 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = int(pattern_match.group(1))
-        tele_user: TeleUser = update.message.from_user
-        user_tele_id = tele_user.id
-
-        try:
-            user = Users.build_from_fields(tele_id=user_tele_id).get()
-        except Users.DoesNotExist:
-            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
-            return False
+        tele_user: TeleUser = message.from_user
+        user: Users = update.user
 
         user_id = user.get_user_id()
         view_poll_result = self.get_poll_message(
@@ -572,7 +566,7 @@ class RankedChoiceBot(BaseAPI):
         returns current user id and username
         """
         # when command /user_details is invoked
-        user = update.message.from_user
+        user: TeleUser = update.message.from_user
         await update.message.reply_text(textwrap.dedent(f"""
             user id: {user.id}
             username: {user.username}
@@ -626,7 +620,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text("you haven't voted")
 
     async def create_group_poll(
-        self, update, context: ContextTypes.DEFAULT_TYPE
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         """
         /create_group_poll @username_1 @username_2 ... @username_n:
@@ -650,7 +644,7 @@ class RankedChoiceBot(BaseAPI):
         )
 
     async def create_poll(
-        self, update, context: ContextTypes.DEFAULT_TYPE,
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
         open_registration: bool = False,
         whitelisted_chat_ids: Sequence[int] = ()
     ):
@@ -673,14 +667,8 @@ class RankedChoiceBot(BaseAPI):
         creator_tele_id = creator_user.id
         assert isinstance(creator_tele_id, int)
         raw_text = message.text.strip()
-        # print('CHAT_IDS', whitelisted_chat_ids)
+        user_entry: Users = update.user
 
-        user_res = Users.get_from_tele_id(creator_tele_id)
-        if user_res.is_err():
-            await message.reply_text("Creator user does not exist")
-            return False
-
-        user_entry: Users = user_res.unwrap()
         try:
             subscription_tier = SubscriptionTiers(
                 user_entry.subscription_tier
@@ -905,12 +893,12 @@ class RankedChoiceBot(BaseAPI):
         /whitelist_user_id {poll_id} {user_tele_id}
         """
         message: Message = update.message
-        user = message.from_user
+        tele_user = message.from_user
         raw_text = message.text.strip()
         pattern = re.compile(r'^\S+\s+([1-9]\d*)\s+([1-9]\d*)$')
         matches = pattern.match(raw_text)
 
-        if user is None:
+        if tele_user is None:
             await message.reply_text(f'user not found')
             return False
         if matches is None:
@@ -923,10 +911,12 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = int(capture_groups[0])
-        user_tele_id = int(capture_groups[1])
+        target_user_tele_id = int(capture_groups[1])
 
         try:
-            user = Users.build_from_fields(tele_id=user_tele_id).get()
+            target_user = Users.build_from_fields(
+                tele_id=target_user_tele_id
+            ).get()
         except Users.DoesNotExist:
             await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
             return False
@@ -937,7 +927,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'poll {poll_id} does not exist')
             return False
 
-        user_id = user.get_user_id()
+        user_id = target_user.get_user_id()
         creator_id: UserID = poll.get_creator().get_user_id()
         if creator_id != user_id:
             await message.reply_text(
@@ -965,7 +955,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(response_text)
             return False
 
-        await message.reply_text(f'User #{user_tele_id} registered')
+        await message.reply_text(f'User #{target_user_tele_id} registered')
         return True
 
     async def whitelist_chat_registration(
