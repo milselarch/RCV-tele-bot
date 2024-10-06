@@ -23,7 +23,7 @@ from collections import defaultdict
 from strenum import StrEnum
 from load_config import TELEGRAM_BOT_TOKEN
 
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Literal
 from result import Ok, Err, Result
 from concurrent.futures import ThreadPoolExecutor
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -127,6 +127,8 @@ class BaseAPI(object):
     POLL_WINNER_LOCK_KEY = "POLL_WINNER_LOCK"
     # CACHE_LOCK_NAME = "REDIS_CACHE_LOCK"
     POLL_CACHE_EXPIRY = 60
+    DELETION_TOKEN_EXPIRY = 60 * 5
+    SHORT_HASH_LENGTH = 6
 
     def __init__(self):
         database.initialize_db()
@@ -137,6 +139,33 @@ class BaseAPI(object):
     def __get_telegram_token():
         # TODO: move methods using tele token to a separate class
         return TELEGRAM_BOT_TOKEN
+
+    def generate_delete_token(self, user: Users):
+        stamp = int(time.time())
+        hex_stamp = hex(stamp)[2:].upper()
+        user_id = user.get_user_id()
+        hash_input = f'{user_id}:{stamp}'
+
+        signed_message = self.sign_message(hash_input).upper()
+        short_signed_message = signed_message[:self.SHORT_HASH_LENGTH]
+        return f'{hex_stamp}:{short_signed_message}'
+
+    def validate_delete_token(
+        self, user: Users, stamp: int, short_hash: str
+    ) -> Result[bool, str]:
+        current_stamp = int(time.time())
+        if abs(current_stamp - stamp) > self.DELETION_TOKEN_EXPIRY:
+            return Err('Token expired')
+
+        user_id = user.get_user_id()
+        hash_input = f'{user_id}:{stamp}'
+        signed_message = self.sign_message(hash_input).upper()
+        short_signed_message = signed_message[:self.SHORT_HASH_LENGTH]
+
+        if short_signed_message != short_hash:
+            return Err('Invalid token')
+
+        return Ok(True)
 
     @classmethod
     def create_tele_bot(cls):
@@ -899,7 +928,19 @@ class BaseAPI(object):
         validation_hash = hmac.new(
             secret_key, data_check_string.encode(), hashlib.sha256
         ).hexdigest()
+        return validation_hash
 
+    @classmethod
+    def sign_message(cls, message: str) -> str:
+        bot_token = cls.__get_telegram_token()
+        secret_key = hmac.new(
+            key=b"SIGN_MESSAGE", msg=bot_token.encode(),
+            digestmod=hashlib.sha256
+        ).digest()
+
+        validation_hash = hmac.new(
+            secret_key, message.encode(), hashlib.sha256
+        ).hexdigest()
         return validation_hash
 
     @staticmethod

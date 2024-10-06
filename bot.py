@@ -9,13 +9,14 @@ import textwrap
 import asyncio
 import re
 
-from json import JSONDecodeError
+from peewee import JOIN
 from result import Ok, Err, Result
 # noinspection PyProtectedMember
 from telegram.ext._utils.types import CCT, RT
 from telegram.ext.filters import BaseFilter
 from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
+from json import JSONDecodeError
 
 from ModifiedTeleUpdate import ModifiedTeleUpdate
 from SpecialVotes import SpecialVotes
@@ -254,6 +255,8 @@ class RankedChoiceBot(BaseAPI):
             'about', 'miscellaneous info about the bot'
         ), (
             'delete_poll', 'delete a poll'
+        ), (
+            'delete_account', 'delete your user account'
         ), (
             'help', 'view commands available to the bot'
         )])
@@ -1902,10 +1905,52 @@ class RankedChoiceBot(BaseAPI):
         )
         return True
 
-    @classmethod
-    def delete_account(cls, update: ModifiedTeleUpdate, *_, **__):
-        # TODO: implement this
-        raise NotImplementedError
+    @track_errors
+    async def delete_account(self, update: ModifiedTeleUpdate, *_, **__):
+        deletion_token_res = self.get_raw_command_args(update)
+
+        if deletion_token_res.is_err():
+            # deletion token not provided, send deletion instructions
+            delete_token = self.generate_delete_token(update.user)
+            return await update.message.reply_text(textwrap.dedent(f"""
+                Deleting your account will accomplish the following:
+                - all polls you've created will be deleted
+                - all votes you've cast for any ongoing polls
+                  will be replaced with an abstain vote
+                - all votes you've cast for any closed polls will
+                  be decoupled from your user account
+                - your username will be removed from your user account
+                - your user account will be marked as deleted and you
+                  will not be able to create new polls or vote using
+                  your account moving forward
+                - your user account will be removed from the database
+                  28 days after being marked for deletion 
+                
+                Confirm account deletion by running the delete command 
+                with the provided deletion token:
+                ——————————————————
+                /delete_account {delete_token}
+            """))
+
+        deletion_token = deletion_token_res.unwrap()
+        match_pattern = f'^[0-9A-F]+:[0-9A-F]+$'
+        if re.match(match_pattern, deletion_token) is None:
+            return await update.message.reply_text('Invalid deletion token')
+
+        hex_stamp, short_hash = deletion_token.split(':')
+        deletion_stamp = int(hex_stamp, 16)
+        validation_result = self.validate_delete_token(
+            user=update.user, stamp=deletion_stamp, short_hash=short_hash
+        )
+
+        # TODO: actually implement deletion
+        if validation_result.is_err():
+            err_message = validation_result.err()
+            return await update.message.reply_text(err_message)
+        else:
+            return await update.message.reply_text(
+                'Account deleted successfully'
+            )
 
     @staticmethod
     async def show_help(update: ModifiedTeleUpdate, *_, **__):
@@ -2035,7 +2080,8 @@ class RankedChoiceBot(BaseAPI):
 
         vote_count = read_vote_count_result.unwrap()
         poll_voters: Iterable[PollVoters] = PollVoters.select().join(
-            Users, on=(PollVoters.user == Users.id)
+            Users, on=(PollVoters.user == Users.id),
+            join_type=JOIN.LEFT_OUTER
         ).where(
             PollVoters.poll == poll_id
         )
@@ -2051,6 +2097,7 @@ class RankedChoiceBot(BaseAPI):
         recorded_user_ids: set[int] = set()
 
         for voter in poll_voters:
+            # TODO: check if user has been deleted
             username: Optional[str] = voter.user.username
             voter_user = voter.get_voter_user()
             user_tele_id = voter_user.get_tele_id()
@@ -2178,9 +2225,9 @@ class RankedChoiceBot(BaseAPI):
             ))
 
     @staticmethod
-    def extract_poll_id(
+    def get_raw_command_args(
         update: ModifiedTeleUpdate
-    ) -> Result[int, MessageBuilder]:
+    ) -> Result[str, MessageBuilder]:
         message: telegram.Message = update.message
         error_message = MessageBuilder()
 
@@ -2193,7 +2240,19 @@ class RankedChoiceBot(BaseAPI):
             error_message.add('no poll id specified')
             return Err(error_message)
 
-        raw_poll_id = raw_text[raw_text.index(' '):].strip()
+        raw_command_args = raw_text[raw_text.index(' '):].strip()
+        return Ok(raw_command_args)
+
+    @classmethod
+    def extract_poll_id(
+        cls, update: ModifiedTeleUpdate
+    ) -> Result[int, MessageBuilder]:
+        raw_args_res = cls.get_raw_command_args(update)
+        if raw_args_res.is_err():
+            return raw_args_res
+
+        raw_poll_id = raw_args_res.unwrap()
+        error_message = MessageBuilder()
 
         try:
             poll_id = int(raw_poll_id)
