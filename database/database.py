@@ -123,6 +123,7 @@ class Polls(BaseModel):
     num_voters = IntegerField(default=0)
     # number of registered votes in the poll
     num_votes = IntegerField(default=0)
+    deleted_voters = IntegerField(default=0)
 
     def get_creator(self) -> Users:
         # TODO: do a unit test for this
@@ -188,7 +189,9 @@ class PollVoters(BaseModel):
     # poll that voter is eligible to vote for
     poll = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     # telegram user id of voter
-    user = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
+    user = ForeignKeyField(
+        Users, to_field='id', null=True, on_delete='CASCADE'
+    )
     voted = BooleanField(default=False)
 
     class Meta:
