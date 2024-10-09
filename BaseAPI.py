@@ -23,7 +23,7 @@ from collections import defaultdict
 from strenum import StrEnum
 from load_config import TELEGRAM_BOT_TOKEN
 
-from typing import List, Dict, Optional, Tuple, Literal
+from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
 from concurrent.futures import ThreadPoolExecutor
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import multiprocessing
 import time
 
 import telegram
 import textwrap
 import asyncio
+import datetime
 import re
 
 from peewee import JOIN
@@ -17,6 +19,7 @@ from telegram.ext.filters import BaseFilter
 from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
 from json import JSONDecodeError
+from datetime import datetime as Datetime
 
 from ModifiedTeleUpdate import ModifiedTeleUpdate
 from SpecialVotes import SpecialVotes
@@ -64,10 +67,13 @@ logger = logging.getLogger(__name__)
 class RankedChoiceBot(BaseAPI):
     # how long before the delete poll button expires
     DELETE_POLL_BUTTON_EXPIRY = 60
+    DELETE_USERS_BACKLOG = datetime.timedelta(days=28)
+    FLUSH_USERS_INTERVAL = 600
 
     def __init__(self, config_path='config.yml'):
         super().__init__()
         self.config_path = config_path
+        self.scheduled_processes = []
         self.bot = None
         self.app = None
 
@@ -75,6 +81,21 @@ class RankedChoiceBot(BaseAPI):
         self.poll_option_max_length = 100
         self.poll_locks_manager = PollsLockManager()
         self.webhook_url = None
+
+    @classmethod
+    def run_flush_deleted_users(cls):
+        asyncio.run(cls.flush_deleted_users())
+
+    @classmethod
+    async def flush_deleted_users(cls):
+        # TODO: write tests for this
+        while True:
+            deletion_cutoff = Datetime.now() - cls.DELETE_USERS_BACKLOG
+            Users.delete().where(
+                Users.deleted_at < deletion_cutoff
+            ).execute()
+
+            await asyncio.sleep(cls.FLUSH_USERS_INTERVAL)
 
     @staticmethod
     def users_middleware(
@@ -142,9 +163,21 @@ class RankedChoiceBot(BaseAPI):
             handler, include_self=False
         ))
 
+    def schedule_tasks(self, tasks: List[Callable[[], None]]):
+        assert len(self.scheduled_processes) == 0
+
+        for task in tasks:
+            process = multiprocessing.Process(target=task)
+            self.scheduled_processes.append(process)
+            process.start()
+
     def start_bot(self):
+        assert self.bot is None
         self.bot = self.create_tele_bot()
         self.webhook_url = WEBHOOK_URL
+        self.schedule_tasks([
+            self.run_flush_deleted_users
+        ])
 
         builder = self.create_application_builder()
         builder.concurrent_updates(MAX_CONCURRENT_UPDATES)
@@ -206,6 +239,10 @@ class RankedChoiceBot(BaseAPI):
 
         # self.app.add_error_handler(self.error_handler)
         self.app.run_polling(allowed_updates=BaseTeleUpdate.ALL_TYPES)
+        print('<<< BOT POLLING LOOP ENDED >>>')
+        for process in self.scheduled_processes:
+            process.terminate()
+            process.join()
 
     @staticmethod
     async def post_init(application: Application):
@@ -1444,13 +1481,17 @@ class RankedChoiceBot(BaseAPI):
         polls = Polls.select().where(Polls.creator == user_id)
         poll_descriptions = []
 
+        if len(polls) == 0:
+            await message.reply_text("No polls found")
+            return False
+
         for poll in polls:
             poll_descriptions.append(
                 f'#{poll.id}: {poll.desc}'
             )
 
         await message.reply_text(
-            'Polls created:\n' + '\n'.join(poll_descriptions)
+            'Polls found:\n' + '\n'.join(poll_descriptions)
         )
 
     async def vote_and_report(
@@ -1937,20 +1978,34 @@ class RankedChoiceBot(BaseAPI):
         if re.match(match_pattern, deletion_token) is None:
             return await update.message.reply_text('Invalid deletion token')
 
+        user: Users = update.user
         hex_stamp, short_hash = deletion_token.split(':')
         deletion_stamp = int(hex_stamp, 16)
         validation_result = self.validate_delete_token(
-            user=update.user, stamp=deletion_stamp, short_hash=short_hash
+            user=user, stamp=deletion_stamp, short_hash=short_hash
         )
-
         # TODO: actually implement deletion
         if validation_result.is_err():
             err_message = validation_result.err()
             return await update.message.reply_text(err_message)
-        else:
-            return await update.message.reply_text(
-                'Account deleted successfully'
+
+        with db.atomic():
+            poll_registrations = PollVoters.select().where(
+                PollVoters.user == user.id
+            ).join(
+                VoteRankings, on=(PollVoters.id == VoteRankings.poll_voter),
+                join_type=JOIN.LEFT_OUTER
             )
+
+            for poll_voter in poll_registrations:
+                print('REGISTRATIONS', poll_voter)
+
+            # user.deleted_at = Datetime.now()
+            # user.save()
+
+        return await update.message.reply_text(
+            'Account deleted successfully'
+        )
 
     @staticmethod
     async def show_help(update: ModifiedTeleUpdate, *_, **__):
