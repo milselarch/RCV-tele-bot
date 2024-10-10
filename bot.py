@@ -1957,10 +1957,10 @@ class RankedChoiceBot(BaseAPI):
                 Deleting your account will accomplish the following:
                 - all polls you've created will be deleted
                 - all votes you've cast for any ongoing polls
-                  will be replaced with an abstain vote
+                  will be deleted, and you will be deregistered
+                  as a voter from said ongoing polls
                 - all votes you've cast for any closed polls will
                   be decoupled from your user account
-                - your username will be removed from your user account
                 - your user account will be marked as deleted and you
                   will not be able to create new polls or vote using
                   your account moving forward
@@ -1979,6 +1979,7 @@ class RankedChoiceBot(BaseAPI):
             return await update.message.reply_text('Invalid deletion token')
 
         user: Users = update.user
+        user_id = user.get_user_id()
         hex_stamp, short_hash = deletion_token.split(':')
         deletion_stamp = int(hex_stamp, 16)
         validation_result = self.validate_delete_token(
@@ -1990,18 +1991,26 @@ class RankedChoiceBot(BaseAPI):
             return await update.message.reply_text(err_message)
 
         with db.atomic():
-            poll_registrations = PollVoters.select().where(
-                PollVoters.user == user.id
-            ).join(
-                VoteRankings, on=(PollVoters.id == VoteRankings.poll_voter),
-                join_type=JOIN.LEFT_OUTER
+            # delete all polls created by the user
+            Polls.delete().where(Polls.creator == user_id).execute()
+            user.deleted_at = Datetime.now()  # mark as deleted
+            user.save()
+
+            poll_registrations: Iterable[PollVoters] = (
+                PollVoters.select().where(PollVoters.user == user_id)
             )
+            for poll_registration in poll_registrations:
+                poll: Polls = poll_registration.poll
 
-            for poll_voter in poll_registrations:
-                print('REGISTRATIONS', poll_voter)
-
-            # user.deleted_at = Datetime.now()
-            # user.save()
+                if poll.closed:
+                    # decouple poll voter from user
+                    poll_registration.user = None
+                    poll_registration.save()
+                else:
+                    # delete poll voter and increment deleted voters count
+                    poll.deleted_voters += 1
+                    poll_registration.delete_instance()
+                    poll.save()
 
         return await update.message.reply_text(
             'Account deleted successfully'
