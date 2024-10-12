@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import os
 import sys
@@ -104,6 +105,22 @@ class Users(BaseModel):
         return cls.build_from_fields(tele_id=tele_id).safe_get()
 
 
+@dataclasses.dataclass
+class PollMetadata(object):
+    id: int
+    question: str
+    num_voters: int
+    num_deleted: int
+    num_votes: int
+
+    open_registration: bool
+    closed: bool
+
+    @property
+    def num_active_voters(self) -> int:
+        return self.num_voters - self.num_deleted
+
+
 # stores poll metadata (description, open time, etc etc)
 class Polls(BaseModel):
     id = AutoField(primary_key=True)
@@ -120,10 +137,19 @@ class Polls(BaseModel):
     creator = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
     max_voters = IntegerField(default=10)
     # number of registered voters in the poll
+    # TODO: rename to raw_num_voters or _num_voters to make it clear
+    #   that this number includes deleted voters as well
     num_voters = IntegerField(default=0)
     # number of registered votes in the poll
     num_votes = IntegerField(default=0)
+    # TODO: rename to num_deleted_voters
     deleted_voters = IntegerField(default=0)
+
+    @property
+    def num_active_voters(self) -> int:
+        assert isinstance(self.num_voters, int)
+        assert isinstance(self.deleted_voters, int)
+        return self.num_voters - self.deleted_voters
 
     def get_creator(self) -> Users:
         # TODO: do a unit test for this
@@ -132,6 +158,16 @@ class Polls(BaseModel):
 
     def get_creator_id(self) -> UserID:
         return self.get_creator().get_user_id()
+
+    @classmethod
+    def read_poll_metadata(cls, poll_id: int) -> PollMetadata:
+        poll = cls.select().where(cls.id == poll_id).get()
+        return PollMetadata(
+            id=poll.id, question=poll.desc,
+            num_voters=poll.num_voters, num_votes=poll.num_votes,
+            open_registration=poll.open_registration,
+            closed=poll.closed, num_deleted=poll.deleted_voters
+        )
 
     @classmethod
     def build_from_fields(

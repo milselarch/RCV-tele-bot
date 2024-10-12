@@ -383,9 +383,10 @@ class RankedChoiceBot(BaseAPI):
             message=message, poll_id=poll_id
         )
 
-    async def send_post_vote_reply(self, message: Message, poll_id: int):
-        poll_metadata = self._read_poll_metadata(poll_id)
-        num_voters = poll_metadata.num_voters
+    @classmethod
+    async def send_post_vote_reply(cls, message: Message, poll_id: int):
+        poll_metadata = Polls.read_poll_metadata(poll_id)
+        num_voters = poll_metadata.num_active_voters
         num_votes = poll_metadata.num_votes
 
         await message.reply_text(textwrap.dedent(f"""
@@ -561,7 +562,7 @@ class RankedChoiceBot(BaseAPI):
         """
         poll_id = poll_info.metadata.id
         bot_username = context.bot.username
-        voter_count = poll_info.metadata.num_voters
+        voter_count = poll_info.metadata.num_active_voters
         poll_locks = await self.poll_locks_manager.get_poll_locks(
             poll_id=poll_id
         )
@@ -812,9 +813,11 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         assert len(set(duplicate_tele_ids)) == len(duplicate_tele_ids)
-        num_voters = len(poll_user_tele_ids) + len(whitelisted_usernames)
+        initial_num_voters = (
+            len(poll_user_tele_ids) + len(whitelisted_usernames)
+        )
         max_voters = subscription_tier.get_max_voters()
-        if num_voters > max_voters:
+        if initial_num_voters > max_voters:
             await message.reply_text(f'Whitelisted voters exceeds limit')
             return False
 
@@ -825,7 +828,7 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         creator_id = user.get_user_id()
-        assert num_voters <= max_voters
+        assert initial_num_voters <= max_voters
         num_user_created_polls = self.count_polls_created(creator_id)
         poll_creation_limit = subscription_tier.get_max_polls()
         limit_reached_text = textwrap.dedent(f"""
@@ -859,7 +862,7 @@ class RankedChoiceBot(BaseAPI):
 
             new_poll = Polls.build_from_fields(
                 desc=poll_question, creator_id=creator_id,
-                num_voters=num_voters, open_registration=open_registration,
+                num_voters=initial_num_voters, open_registration=open_registration,
                 max_voters=subscription_tier.get_max_voters()
             ).create()
 
@@ -903,7 +906,7 @@ class RankedChoiceBot(BaseAPI):
         poll_message = self.generate_poll_info(
             new_poll_id, poll_question, poll_options,
             bot_username=bot_username, closed=False,
-            num_voters=num_voters
+            num_voters=initial_num_voters
         )
 
         chat_type = update.message.chat.type
@@ -1958,7 +1961,7 @@ class RankedChoiceBot(BaseAPI):
                 - all polls you've created will be deleted
                 - all votes you've cast for any ongoing polls
                   will be deleted, and you will be deregistered
-                  as a voter from said ongoing polls
+                  from these ongoing polls
                 - all votes you've cast for any closed polls will
                   be decoupled from your user account
                 - your user account will be marked as deleted and you

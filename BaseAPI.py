@@ -33,7 +33,7 @@ from database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
     db, Users
 )
-from database.database import PollWinners, BaseModel, UserID
+from database.database import PollWinners, BaseModel, UserID, PollMetadata
 from aioredlock import Aioredlock, LockError
 
 
@@ -93,17 +93,6 @@ class UserRegistrationStatus(StrEnum):
 class PollMessage(object):
     text: str
     reply_markup: Optional[InlineKeyboardMarkup]
-
-
-@dataclasses.dataclass
-class PollMetadata(object):
-    id: int
-    question: str
-    num_voters: int
-    num_votes: int
-
-    open_registration: bool
-    closed: bool
 
 
 class GetPollWinnerStatus(IntEnum):
@@ -216,13 +205,15 @@ class BaseAPI(object):
         return Ok(poll)
 
     @classmethod
-    def get_num_poll_voters(cls, poll_id: int) -> Result[int, MessageBuilder]:
+    def get_num_active_poll_voters(
+        cls, poll_id: int
+    ) -> Result[int, MessageBuilder]:
         result = cls.fetch_poll(poll_id)
         if result.is_err():
             return result
 
         poll = result.unwrap()
-        return Ok(poll.num_voters)
+        return Ok(poll.num_active_voters)
 
     @staticmethod
     async def refresh_lock(lock: aioredlock.Lock, interval: float):
@@ -311,7 +302,7 @@ class BaseAPI(object):
         :return:
         ID of winning option, or None if there's no winner
         """
-        num_poll_voters_result = cls.get_num_poll_voters(poll_id)
+        num_poll_voters_result = cls.get_num_active_poll_voters(poll_id)
         if num_poll_voters_result.is_err():
             return None
 
@@ -533,7 +524,7 @@ class BaseAPI(object):
                 return Err(UserRegistrationStatus.POLL_NOT_FOUND)
 
             # print('NUM_VOTES', poll.num_voters, poll.max_voters)
-            voter_limit_reached = (poll.num_voters >= poll.max_voters)
+            voter_limit_reached = (poll.num_active_voters >= poll.max_voters)
             if ignore_voter_limit:
                 voter_limit_reached = False
 
@@ -719,7 +710,7 @@ class BaseAPI(object):
             poll_metadata.id, poll_metadata.question,
             poll_info.poll_options, closed=poll_metadata.closed,
             bot_username=bot_username,
-            num_voters=poll_metadata.num_voters,
+            num_voters=poll_metadata.num_active_voters,
             num_votes=poll_metadata.num_votes
         )
 
@@ -765,18 +756,8 @@ class BaseAPI(object):
         return Ok(cls._read_poll_info(poll_id=poll_id))
 
     @classmethod
-    def _read_poll_metadata(cls, poll_id: int) -> PollMetadata:
-        poll = Polls.select().where(Polls.id == poll_id).get()
-        return PollMetadata(
-            id=poll.id, question=poll.desc,
-            num_voters=poll.num_voters, num_votes=poll.num_votes,
-            open_registration=poll.open_registration,
-            closed=poll.closed
-        )
-
-    @classmethod
     def _read_poll_info(cls, poll_id: int) -> PollInfo:
-        poll_metadata = cls._read_poll_metadata(poll_id)
+        poll_metadata = Polls.read_poll_metadata(poll_id)
         poll_option_rows = PollOptions.select().where(
             PollOptions.poll == poll_id
         ).order_by(PollOptions.option_number)
