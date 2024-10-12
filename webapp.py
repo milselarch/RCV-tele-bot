@@ -65,9 +65,7 @@ class VerifyMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(content=content, status_code=401)
         """
 
-        user_params = self.check_authorization(
-            telegram_data_header, TELEGRAM_BOT_TOKEN
-        )
+        user_params = self.check_authorization(telegram_data_header)
 
         if user_params is None:
             content = {'detail': 'Unauthorized'}
@@ -92,14 +90,12 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         return data_check_string, signature, params
 
     @classmethod
-    def check_authorization(
-        cls, init_data: str, bot_token: str
-    ) -> Optional[dict]:
+    def check_authorization(cls, init_data: str) -> Optional[dict]:
         parse_result = cls.parse_auth_string(init_data)
         # print('PARSE_RESULT', parse_result)
         data_check_string, signature, params = parse_result
         validation_hash = BaseAPI.sign_data_check_string(
-            data_check_string=data_check_string, bot_token=bot_token
+            data_check_string=data_check_string
         )
 
         # print('VALIDATION_HASH', validation_hash, signature)
