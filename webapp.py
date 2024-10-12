@@ -45,7 +45,10 @@ class VerifyMiddleware(BaseHTTPMiddleware):
             content = {'detail': 'Missing telegram-data header'}
             return JSONResponse(content=content, status_code=401)
 
+        # TODO: expire old auth tokens as new ones are created
         """
+        # This is commented out cause its not very intuitive for
+        # the webapp button to just expire after 24 hours
         if PRODUCTION_MODE:
             # only allow auth headers that were created in the last 24 hours
             parsed_query = parse_qs(telegram_data_header)
@@ -129,8 +132,12 @@ class VotingWebApp(BaseAPI):
             return JSONResponse(
                 status_code=400, content={'error': 'User not found'}
             )
-
         user = user_res.unwrap()
+        if user.is_deleted():
+            return JSONResponse(
+                status_code=403, content={'error': 'User is deleted'}
+            )
+
         user_id = user.get_user_id()
         username = user_info['username']
         read_poll_result = self.read_poll_info(
@@ -144,7 +151,7 @@ class VotingWebApp(BaseAPI):
                 status_code=500, content={'error': error.get_content()}
             )
 
-        poll_info = read_poll_result.ok()
+        poll_info = read_poll_result.unwrap()
         return dataclasses.asdict(poll_info)
 
 

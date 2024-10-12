@@ -79,6 +79,9 @@ class Users(BaseModel):
             (('username',), False),
         )
 
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
     @classmethod
     def build_from_fields(
         cls, user_id: int | EmptyField = Empty,
