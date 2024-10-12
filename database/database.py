@@ -109,7 +109,7 @@ class Users(BaseModel):
 class PollMetadata(object):
     id: int
     question: str
-    num_voters: int
+    _num_voters: int
     num_deleted: int
     num_votes: int
 
@@ -118,7 +118,7 @@ class PollMetadata(object):
 
     @property
     def num_active_voters(self) -> int:
-        return self.num_voters - self.num_deleted
+        return self._num_voters - self.num_deleted
 
 
 # stores poll metadata (description, open time, etc etc)
@@ -164,7 +164,7 @@ class Polls(BaseModel):
         poll = cls.select().where(cls.id == poll_id).get()
         return PollMetadata(
             id=poll.id, question=poll.desc,
-            num_voters=poll.num_voters, num_votes=poll.num_votes,
+            _num_voters=poll.num_voters, num_votes=poll.num_votes,
             open_registration=poll.open_registration,
             closed=poll.closed, num_deleted=poll.deleted_voters
         )
