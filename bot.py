@@ -51,7 +51,7 @@ from telegram.ext import (
     Application
 )
 
-__VERSION__ = '1.1.0'
+__VERSION__ = '1.1.1'
 ID_PATTERN = re.compile(r"^[1-9]\d*$")
 MAX_DISPLAY_VOTE_COUNT = 30
 MAX_CONCURRENT_UPDATES = 256
