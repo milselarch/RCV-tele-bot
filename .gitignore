@@ -125,6 +125,7 @@ celerybeat.pid
 # config files
 *.yml
 !config.example.yml
+!.github/**/*.yml
 
 # Environments
 .env

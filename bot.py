@@ -2,25 +2,36 @@ from __future__ import annotations
 
 import json
 import logging
+import multiprocessing
 import time
 
 import telegram
 import textwrap
 import asyncio
+import datetime
 import re
 
-from json import JSONDecodeError
+from peewee import JOIN
 from result import Ok, Err, Result
+# noinspection PyProtectedMember
+from telegram.ext._utils.types import CCT, RT
+from telegram.ext.filters import BaseFilter
 from MessageBuilder import MessageBuilder
 from requests.models import PreparedRequest
+from json import JSONDecodeError
+from datetime import datetime as Datetime
+
+from ModifiedTeleUpdate import ModifiedTeleUpdate
 from SpecialVotes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from database.database import UserID
 from database.db_helpers import EmptyField, Empty, BoundRowFields
-from load_config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
-from typing import List, Tuple, Dict, Optional, Sequence, Iterable
+from load_config import WEBHOOK_URL
 from LocksManager import PollsLockManager
 
+from typing import (
+    List, Tuple, Dict, Optional, Sequence, Iterable, Callable, Coroutine, Any
+)
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
     PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
@@ -30,17 +41,17 @@ from BaseAPI import (
     CallbackCommands, GetPollWinnerStatus
 )
 from telegram import (
-    Update, Message, WebAppInfo, ReplyKeyboardMarkup,
+    Message, WebAppInfo, ReplyKeyboardMarkup,
     KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton,
-    User as TeleUser
+    User as TeleUser, Update as BaseTeleUpdate
 )
 from telegram.ext import (
-    CommandHandler, ApplicationBuilder, ContextTypes,
+    CommandHandler, ContextTypes,
     MessageHandler, filters, CallbackContext, CallbackQueryHandler,
     Application
 )
 
-__VERSION__ = '1.1.0'
+__VERSION__ = '1.1.1'
 ID_PATTERN = re.compile(r"^[1-9]\d*$")
 MAX_DISPLAY_VOTE_COUNT = 30
 MAX_CONCURRENT_UPDATES = 256
@@ -56,10 +67,13 @@ logger = logging.getLogger(__name__)
 class RankedChoiceBot(BaseAPI):
     # how long before the delete poll button expires
     DELETE_POLL_BUTTON_EXPIRY = 60
+    DELETE_USERS_BACKLOG = datetime.timedelta(days=28)
+    FLUSH_USERS_INTERVAL = 600
 
     def __init__(self, config_path='config.yml'):
         super().__init__()
         self.config_path = config_path
+        self.scheduled_processes = []
         self.bot = None
         self.app = None
 
@@ -68,62 +82,109 @@ class RankedChoiceBot(BaseAPI):
         self.poll_locks_manager = PollsLockManager()
         self.webhook_url = None
 
+    @classmethod
+    def run_flush_deleted_users(cls):
+        asyncio.run(cls.flush_deleted_users())
+
+    @classmethod
+    async def flush_deleted_users(cls):
+        # TODO: write tests for this
+        while True:
+            deletion_cutoff = Datetime.now() - cls.DELETE_USERS_BACKLOG
+            Users.delete().where(
+                Users.deleted_at < deletion_cutoff
+            ).execute()
+
+            await asyncio.sleep(cls.FLUSH_USERS_INTERVAL)
+
     @staticmethod
-    def record_username_wrapper(func, include_self=True):
-        """
-        updates user id to username mapping
-        """
-        def caller(self, update: Update, *args, **kwargs):
+    def users_middleware(
+        func: Callable[..., Coroutine], include_self=True
+    ) -> Callable[[BaseTeleUpdate, ...], Coroutine]:
+        async def caller(
+            self, update: BaseTeleUpdate | CallbackContext,
+            *args, **kwargs
+        ):
             # print("SELF", self)
-            if update.callback_query is not None:
-                query = update.callback_query
-                tele_user = query.from_user
-            elif update.message is not None:
+            # print('UPDATE', update, args, kwargs)
+            is_tele_update = isinstance(update, BaseTeleUpdate)
+
+            if update.message is not None:
                 message: Message = update.message
                 tele_user = message.from_user
+            elif is_tele_update and update.callback_query is not None:
+                query = update.callback_query
+                tele_user = query.from_user
             else:
                 tele_user = None
 
-            if tele_user is not None:
-                assert isinstance(tele_user, TeleUser)
-                chat_username: str = tele_user.username
-                tele_id = tele_user.id
-                # print('UPDATE_USER', user.id, chat_username)
+            if tele_user is None:
+                if update.message is not None:
+                    respond_callback = update.message.reply_text
+                elif update.callback_query is not None:
+                    respond_callback = update.callback_query.answer
+                else:
+                    logger.error(f'NO USER FOUND FOR ENDPOINT {func}')
+                    return False
 
-                Users.build_from_fields(
-                    tele_id=tele_id, username=chat_username
-                ).insert().on_conflict(
-                    preserve=[Users.tele_id],
-                    update={Users.username: chat_username}
-                ).execute()
+                await respond_callback("User not found")
+
+            tele_id = tele_user.id
+            chat_username: str = tele_user.username
+            assert isinstance(tele_user, TeleUser)
+            user, _ = Users.build_from_fields(tele_id=tele_id).get_or_create()
+            # don't allow deleted users to interact with the bot
+            if user.deleted_at is not None:
+                await tele_user.send_message("User has been deleted")
+                return False
+
+            # update user tele id to username mapping
+            if user.username != chat_username:
+                user.username = chat_username
+                user.save()
+
+            modified_tele_update = ModifiedTeleUpdate(
+                update=update, user=user
+            )
 
             if include_self:
-                return func(self, update, *args, **kwargs)
+                return await func(self, modified_tele_update, *args, **kwargs)
             else:
-                return func(update, *args, **kwargs)
+                return await func(modified_tele_update, *args, **kwargs)
 
-        if not include_self:
-            return lambda *args, **kwargs: caller(None, *args, **kwargs)
+        def caller_without_self(update: BaseTeleUpdate, *args, **kwargs):
+            return caller(None, update, *args, **kwargs)
 
-        return caller
+        return caller if include_self else caller_without_self
 
     @classmethod
     def wrap_command_handler(cls, handler):
-        return track_errors(cls.record_username_wrapper(
+        return track_errors(cls.users_middleware(
             handler, include_self=False
         ))
 
-    def start_bot(self):
-        self.bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-        self.webhook_url = WEBHOOK_URL
+    def schedule_tasks(self, tasks: List[Callable[[], None]]):
+        assert len(self.scheduled_processes) == 0
 
-        builder = ApplicationBuilder()
-        builder.token(TELEGRAM_BOT_TOKEN)
+        for task in tasks:
+            process = multiprocessing.Process(target=task)
+            self.scheduled_processes.append(process)
+            process.start()
+
+    def start_bot(self):
+        assert self.bot is None
+        self.bot = self.create_tele_bot()
+        self.webhook_url = WEBHOOK_URL
+        self.schedule_tasks([
+            self.run_flush_deleted_users
+        ])
+
+        builder = self.create_application_builder()
         builder.concurrent_updates(MAX_CONCURRENT_UPDATES)
         builder.post_init(self.post_init)
         self.app = builder.build()
 
-        commands_mapping = self.kwargify(
+        commands_mapping = dict(
             start=self.start_handler,
             user_details=self.user_details_handler,
             chat_details=self.chat_details_handler,
@@ -143,6 +204,7 @@ class RankedChoiceBot(BaseAPI):
             view_voters=self.view_poll_voters,
             about=self.show_about,
             delete_poll=self.delete_poll,
+            delete_account=self.delete_account,
             help=self.show_help,
 
             vote_admin=self.vote_for_poll_admin,
@@ -154,23 +216,33 @@ class RankedChoiceBot(BaseAPI):
 
         # on different commands - answer in Telegram
         self.register_commands(
-            self.app, commands_mapping=commands_mapping,
-            wrap_func=self.wrap_command_handler
+            self.app, commands_mapping=commands_mapping
         )
         # catch-all to handle responses to unknown commands
-        self.app.add_handler(MessageHandler(
-            filters.Regex(r'^/') & filters.COMMAND,
+        self.register_message_handler(
+            self.app, filters.Regex(r'^/') & filters.COMMAND,
             self.handle_unknown_command
-        ))
-        self.app.add_handler(MessageHandler(
-            filters.StatusUpdate.WEB_APP_DATA, self.web_app_handler
-        ))
-        self.app.add_handler(CallbackQueryHandler(
-            self.inline_keyboard_handler
-        ))
+        )
+        # handle web app updates
+        self.register_message_handler(
+            self.app, filters.StatusUpdate.WEB_APP_DATA,
+            self.web_app_handler
+        )
+        # catch-all to handle all other messages
+        self.register_message_handler(
+            self.app, filters.Regex(r'.*') & filters.TEXT,
+            self.handle_other_messages
+        )
+        self.register_callback_handler(
+            self.app, self.inline_keyboard_handler
+        )
 
         # self.app.add_error_handler(self.error_handler)
-        self.app.run_polling(allowed_updates=Update.ALL_TYPES)
+        self.app.run_polling(allowed_updates=BaseTeleUpdate.ALL_TYPES)
+        print('<<< BOT POLLING LOOP ENDED >>>')
+        for process in self.scheduled_processes:
+            process.terminate()
+            process.join()
 
     @staticmethod
     async def post_init(application: Application):
@@ -221,11 +293,13 @@ class RankedChoiceBot(BaseAPI):
         ), (
             'delete_poll', 'delete a poll'
         ), (
+            'delete_account', 'delete your user account'
+        ), (
             'help', 'view commands available to the bot'
         )])
 
     async def start_handler(
-        self, update, context: ContextTypes.DEFAULT_TYPE
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         # Send a message when the command /start is issued.
         message = update.message
@@ -247,14 +321,8 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = int(pattern_match.group(1))
-        tele_user: TeleUser = update.message.from_user
-        user_tele_id = tele_user.id
-
-        try:
-            user = Users.build_from_fields(tele_id=user_tele_id).get()
-        except Users.DoesNotExist:
-            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
-            return False
+        tele_user: TeleUser = message.from_user
+        user: Users = update.user
 
         user_id = user.get_user_id()
         view_poll_result = self.get_poll_message(
@@ -277,7 +345,7 @@ class RankedChoiceBot(BaseAPI):
         )
 
     @track_errors
-    async def web_app_handler(self, update: Update, _):
+    async def web_app_handler(self, update: ModifiedTeleUpdate, _):
         message: Message = update.message
         payload = json.loads(update.effective_message.web_app_data.data)
 
@@ -315,9 +383,10 @@ class RankedChoiceBot(BaseAPI):
             message=message, poll_id=poll_id
         )
 
-    async def send_post_vote_reply(self, message: Message, poll_id: int):
-        poll_metadata = self._read_poll_metadata(poll_id)
-        num_voters = poll_metadata.num_voters
+    @classmethod
+    async def send_post_vote_reply(cls, message: Message, poll_id: int):
+        poll_metadata = Polls.read_poll_metadata(poll_id)
+        num_voters = poll_metadata.num_active_voters
         num_votes = poll_metadata.num_votes
 
         await message.reply_text(textwrap.dedent(f"""
@@ -326,9 +395,15 @@ class RankedChoiceBot(BaseAPI):
          """))
 
     @track_errors
-    @record_username_wrapper
-    async def handle_unknown_command(self, update: Update, _):
+    async def handle_unknown_command(self, update: ModifiedTeleUpdate, _):
         await update.message.reply_text("Command not found")
+
+    @track_errors
+    async def handle_other_messages(self, update: ModifiedTeleUpdate, _):
+        # TODO: implement callback contexts voting and poll creation
+        await update.message.reply_text(
+            "Message support is still in development"
+        )
 
     def generate_poll_url(self, poll_id: int, tele_user: TeleUser) -> str:
         req = PreparedRequest()
@@ -343,7 +418,7 @@ class RankedChoiceBot(BaseAPI):
             auth_date=auth_date, query_id=query_id, user=user_info
         )
         validation_hash = self.sign_data_check_string(
-            data_check_string=data_check_string, bot_token=TELEGRAM_BOT_TOKEN
+            data_check_string=data_check_string
         )
 
         params = {
@@ -371,9 +446,8 @@ class RankedChoiceBot(BaseAPI):
         return markup_layout
 
     @track_errors
-    @record_username_wrapper
     async def inline_keyboard_handler(
-        self, update: Update, context: CallbackContext
+        self, update: ModifiedTeleUpdate, context: CallbackContext
     ):
         """
         callback method for buttons in chat group messages
@@ -488,7 +562,7 @@ class RankedChoiceBot(BaseAPI):
         """
         poll_id = poll_info.metadata.id
         bot_username = context.bot.username
-        voter_count = poll_info.metadata.num_voters
+        voter_count = poll_info.metadata.num_active_voters
         poll_locks = await self.poll_locks_manager.get_poll_locks(
             poll_id=poll_id
         )
@@ -528,26 +602,26 @@ class RankedChoiceBot(BaseAPI):
         return query.exists()
 
     @staticmethod
-    async def user_details_handler(update: Update, *_):
+    async def user_details_handler(update: ModifiedTeleUpdate, *_):
         """
         returns current user id and username
         """
         # when command /user_details is invoked
-        user = update.message.from_user
+        user: TeleUser = update.message.from_user
         await update.message.reply_text(textwrap.dedent(f"""
             user id: {user.id}
             username: {user.username}
         """))
 
     @staticmethod
-    async def chat_details_handler(update: Update, *_):
+    async def chat_details_handler(update: ModifiedTeleUpdate, *_):
         """
         returns current chat id
         """
         chat_id = update.message.chat.id
         await update.message.reply_text(f"chat id: {chat_id}")
 
-    async def has_voted(self, update: Update, *_, **__):
+    async def has_voted(self, update: ModifiedTeleUpdate, *_, **__):
         """
         usage:
         /has_voted {poll_id}
@@ -587,7 +661,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text("you haven't voted")
 
     async def create_group_poll(
-        self, update, context: ContextTypes.DEFAULT_TYPE
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         """
         /create_group_poll @username_1 @username_2 ... @username_n:
@@ -611,7 +685,7 @@ class RankedChoiceBot(BaseAPI):
         )
 
     async def create_poll(
-        self, update, context: ContextTypes.DEFAULT_TYPE,
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
         open_registration: bool = False,
         whitelisted_chat_ids: Sequence[int] = ()
     ):
@@ -634,14 +708,8 @@ class RankedChoiceBot(BaseAPI):
         creator_tele_id = creator_user.id
         assert isinstance(creator_tele_id, int)
         raw_text = message.text.strip()
-        # print('CHAT_IDS', whitelisted_chat_ids)
+        user_entry: Users = update.user
 
-        user_res = Users.get_from_tele_id(creator_tele_id)
-        if user_res.is_err():
-            await message.reply_text("Creator user does not exist")
-            return False
-
-        user_entry: Users = user_res.unwrap()
         try:
             subscription_tier = SubscriptionTiers(
                 user_entry.subscription_tier
@@ -745,9 +813,11 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         assert len(set(duplicate_tele_ids)) == len(duplicate_tele_ids)
-        num_voters = len(poll_user_tele_ids) + len(whitelisted_usernames)
+        initial_num_voters = (
+            len(poll_user_tele_ids) + len(whitelisted_usernames)
+        )
         max_voters = subscription_tier.get_max_voters()
-        if num_voters > max_voters:
+        if initial_num_voters > max_voters:
             await message.reply_text(f'Whitelisted voters exceeds limit')
             return False
 
@@ -758,7 +828,7 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         creator_id = user.get_user_id()
-        assert num_voters <= max_voters
+        assert initial_num_voters <= max_voters
         num_user_created_polls = self.count_polls_created(creator_id)
         poll_creation_limit = subscription_tier.get_max_polls()
         limit_reached_text = textwrap.dedent(f"""
@@ -792,7 +862,7 @@ class RankedChoiceBot(BaseAPI):
 
             new_poll = Polls.build_from_fields(
                 desc=poll_question, creator_id=creator_id,
-                num_voters=num_voters, open_registration=open_registration,
+                num_voters=initial_num_voters, open_registration=open_registration,
                 max_voters=subscription_tier.get_max_voters()
             ).create()
 
@@ -836,7 +906,7 @@ class RankedChoiceBot(BaseAPI):
         poll_message = self.generate_poll_info(
             new_poll_id, poll_question, poll_options,
             bot_username=bot_username, closed=False,
-            num_voters=num_voters
+            num_voters=initial_num_voters
         )
 
         chat_type = update.message.chat.type
@@ -858,18 +928,20 @@ class RankedChoiceBot(BaseAPI):
             poll_message, reply_markup=reply_markup
         )
 
-    async def register_user_by_tele_id(self, update: Update, *_, **__):
+    async def register_user_by_tele_id(
+        self, update: ModifiedTeleUpdate, *_, **__
+    ):
         """
         registers a user by user_tele_id for a poll
         /whitelist_user_id {poll_id} {user_tele_id}
         """
         message: Message = update.message
-        user = message.from_user
+        tele_user = message.from_user
         raw_text = message.text.strip()
         pattern = re.compile(r'^\S+\s+([1-9]\d*)\s+([1-9]\d*)$')
         matches = pattern.match(raw_text)
 
-        if user is None:
+        if tele_user is None:
             await message.reply_text(f'user not found')
             return False
         if matches is None:
@@ -882,10 +954,12 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = int(capture_groups[0])
-        user_tele_id = int(capture_groups[1])
+        target_user_tele_id = int(capture_groups[1])
 
         try:
-            user = Users.build_from_fields(tele_id=user_tele_id).get()
+            target_user = Users.build_from_fields(
+                tele_id=target_user_tele_id
+            ).get()
         except Users.DoesNotExist:
             await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
             return False
@@ -896,7 +970,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'poll {poll_id} does not exist')
             return False
 
-        user_id = user.get_user_id()
+        user_id = target_user.get_user_id()
         creator_id: UserID = poll.get_creator().get_user_id()
         if creator_id != user_id:
             await message.reply_text(
@@ -924,25 +998,25 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(response_text)
             return False
 
-        await message.reply_text(f'User #{user_tele_id} registered')
+        await message.reply_text(f'User #{target_user_tele_id} registered')
         return True
 
     async def whitelist_chat_registration(
-        self, update: Update, *_, **__
+        self, update: ModifiedTeleUpdate, *_, **__
     ):
         return await self.set_chat_registration_status(
             update=update, whitelist=True
         )
 
     async def blacklist_chat_registration(
-        self, update: Update, *_, **__
+        self, update: ModifiedTeleUpdate, *_, **__
     ):
         return await self.set_chat_registration_status(
             update=update, whitelist=False
         )
 
     async def set_chat_registration_status(
-        self, update: Update, whitelist: bool
+        self, update: ModifiedTeleUpdate, whitelist: bool
     ) -> bool:
         message = update.message
         tele_user: TeleUser | None = message.from_user
@@ -1004,7 +1078,7 @@ class RankedChoiceBot(BaseAPI):
             )
             return True
 
-    async def view_votes(self, update: Update, *_, **__):
+    async def view_votes(self, update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         extract_result = self.extract_poll_id(update)
 
@@ -1135,8 +1209,8 @@ class RankedChoiceBot(BaseAPI):
         await self._set_poll_status(update, True)
 
     @admin_only
-    async def _set_poll_status(self, update: Update, closed=True):
-        assert isinstance(update, Update)
+    async def _set_poll_status(self, update: ModifiedTeleUpdate, closed=True):
+        assert isinstance(update, ModifiedTeleUpdate)
         message = update.message
         extract_result = self.extract_poll_id(update)
 
@@ -1159,12 +1233,14 @@ class RankedChoiceBot(BaseAPI):
         await message.reply_text(f'poll {poll_id} has been unclosed')
 
     @admin_only
-    async def lookup_from_username_admin(self, update: Update, *_, **__):
+    async def lookup_from_username_admin(
+        self, update: ModifiedTeleUpdate, *_, **__
+    ):
         """
         /lookup_from_username_admin {username}
         Looks up user_ids for users with a matching username
         """
-        assert isinstance(update, Update)
+        assert isinstance(update, ModifiedTeleUpdate)
         message = update.message
         raw_text = message.text.strip()
 
@@ -1182,7 +1258,7 @@ class RankedChoiceBot(BaseAPI):
         """))
 
     @admin_only
-    async def insert_user_admin(self, update: Update, *_, **__):
+    async def insert_user_admin(self, update: ModifiedTeleUpdate, *_, **__):
         """
         Inserts a user with the given user_id and username into
         the Users table
@@ -1240,11 +1316,13 @@ class RankedChoiceBot(BaseAPI):
             )
 
     @admin_only
-    async def lookup_from_username_admin(self, update: Update, *_, **__):
+    async def lookup_from_username_admin(
+        self, update: ModifiedTeleUpdate, *_, **__
+    ):
         """
         Looks up user_ids for users with a matching username
         """
-        assert isinstance(update, Update)
+        assert isinstance(update, ModifiedTeleUpdate)
         message = update.message
         raw_text = message.text.strip()
 
@@ -1262,7 +1340,7 @@ class RankedChoiceBot(BaseAPI):
         """))
 
     @admin_only
-    async def insert_user_admin(self, update: Update, *_, **__):
+    async def insert_user_admin(self, update: ModifiedTeleUpdate, *_, **__):
         """
         Inserts a user with the given user_id and username into
         the Users table
@@ -1384,7 +1462,7 @@ class RankedChoiceBot(BaseAPI):
         return True
 
     @staticmethod
-    async def view_all_polls(update: Update, *_, **__):
+    async def view_all_polls(update: ModifiedTeleUpdate, *_, **__):
         # TODO: show voted / voters count + open / close status for each poll
         message: Message = update.message
         tele_user: TeleUser = update.message.from_user
@@ -1406,13 +1484,17 @@ class RankedChoiceBot(BaseAPI):
         polls = Polls.select().where(Polls.creator == user_id)
         poll_descriptions = []
 
+        if len(polls) == 0:
+            await message.reply_text("No polls found")
+            return False
+
         for poll in polls:
             poll_descriptions.append(
                 f'#{poll.id}: {poll.desc}'
             )
 
         await message.reply_text(
-            'Polls created:\n' + '\n'.join(poll_descriptions)
+            'Polls found:\n' + '\n'.join(poll_descriptions)
         )
 
     async def vote_and_report(
@@ -1499,7 +1581,7 @@ class RankedChoiceBot(BaseAPI):
             return await message.reply_text('Poll has no winner')
 
     @admin_only
-    async def vote_for_poll_admin(self, update: Update, *_, **__):
+    async def vote_for_poll_admin(self, update: ModifiedTeleUpdate, *_, **__):
         """
         telegram command formats:
         /vote_admin {username} {poll_id}: {option_1} > ... > {option_n}
@@ -1781,7 +1863,7 @@ class RankedChoiceBot(BaseAPI):
         return Ok((poll_id, rankings))
 
     @staticmethod
-    async def show_about(update: Update, *_, **__):
+    async def show_about(update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         await message.reply_text(textwrap.dedent(f"""
             Version {__VERSION__}
@@ -1792,7 +1874,7 @@ class RankedChoiceBot(BaseAPI):
         """))
 
     @classmethod
-    async def delete_poll(cls, update: Update, *_, **__):
+    async def delete_poll(cls, update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         tele_user = message.from_user
         user_tele_id = tele_user.id
@@ -1867,8 +1949,84 @@ class RankedChoiceBot(BaseAPI):
         )
         return True
 
+    @track_errors
+    async def delete_account(self, update: ModifiedTeleUpdate, *_, **__):
+        deletion_token_res = self.get_raw_command_args(update)
+
+        if deletion_token_res.is_err():
+            # deletion token not provided, send deletion instructions
+            delete_token = self.generate_delete_token(update.user)
+            return await update.message.reply_text(textwrap.dedent(f"""
+                Deleting your account will accomplish the following:
+                - all polls you've created will be deleted
+                - all votes you've cast for any ongoing polls
+                  will be deleted, and you will be deregistered
+                  from these ongoing polls
+                - all votes you've cast for any closed polls will
+                  be decoupled from your user account
+                - your user account will be marked as deleted and you
+                  will not be able to create new polls or vote using
+                  your account moving forward
+                - your user account will be removed from the database
+                  28 days after being marked for deletion 
+                
+                Confirm account deletion by running the delete command 
+                with the provided deletion token:
+                ——————————————————
+                /delete_account {delete_token}
+            """))
+
+        deletion_token = deletion_token_res.unwrap()
+        match_pattern = f'^[0-9A-F]+:[0-9A-F]+$'
+        if re.match(match_pattern, deletion_token) is None:
+            return await update.message.reply_text('Invalid deletion token')
+
+        user: Users = update.user
+        user_id = user.get_user_id()
+        hex_stamp, short_hash = deletion_token.split(':')
+        deletion_stamp = int(hex_stamp, 16)
+        validation_result = self.validate_delete_token(
+            user=user, stamp=deletion_stamp, short_hash=short_hash
+        )
+        if validation_result.is_err():
+            err_message = validation_result.err()
+            return await update.message.reply_text(err_message)
+
+        try:
+            with db.atomic():
+                # delete all polls created by the user
+                Polls.delete().where(Polls.creator == user_id).execute()
+                user.deleted_at = Datetime.now()  # mark as deleted
+                user.save()
+
+                poll_registrations: Iterable[PollVoters] = (
+                    PollVoters.select().where(PollVoters.user == user_id)
+                )
+                for poll_registration in poll_registrations:
+                    poll: Polls = poll_registration.poll
+
+                    if poll.closed:
+                        # decouple poll voter from user
+                        poll_registration.user = None
+                        poll_registration.save()
+                    else:
+                        # delete poll voter and increment deleted voters count
+                        poll.deleted_voters += 1
+                        poll_registration.delete_instance()
+                        poll.save()
+
+        except Exception as e:
+            await update.message.reply_text(
+                'Unexpected error occurred during account deletion'
+            )
+            raise e
+
+        return await update.message.reply_text(
+            'Account deleted successfully'
+        )
+
     @staticmethod
-    async def show_help(update: Update, *_, **__):
+    async def show_help(update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         await message.reply_text(textwrap.dedent("""
            /start - start bot
@@ -1932,8 +2090,8 @@ class RankedChoiceBot(BaseAPI):
            ——————————————————
            /view_votes {poll_id}
            View all the votes entered for the poll 
-           with the specified poll_id. This can only be done
-           after the poll has been closed first
+           with the specified poll_id. 
+           This can only be done after the poll has been closed first
            ——————————————————
            /view_voters {poll_id}
            Show which voters have voted and which have not
@@ -1942,8 +2100,12 @@ class RankedChoiceBot(BaseAPI):
            /view_polls - view all polls created by you
            ——————————————————
            /delete_poll {poll_id} - delete poll by poll_id
-           use /delete_poll --force to force delete the poll without 
+           Use /delete_poll --force to force delete the poll without 
            confirmation, regardless of whether poll is open or closed
+           ——————————————————
+           /delete_account
+           /delete_account {deletion_token}
+           Delete your user account (this cannot be undone)
            ——————————————————
            /help - view commands available to the bot
            """))
@@ -1995,7 +2157,8 @@ class RankedChoiceBot(BaseAPI):
 
         vote_count = read_vote_count_result.unwrap()
         poll_voters: Iterable[PollVoters] = PollVoters.select().join(
-            Users, on=(PollVoters.user == Users.id)
+            Users, on=(PollVoters.user == Users.id),
+            join_type=JOIN.LEFT_OUTER
         ).where(
             PollVoters.poll == poll_id
         )
@@ -2011,6 +2174,7 @@ class RankedChoiceBot(BaseAPI):
         recorded_user_ids: set[int] = set()
 
         for voter in poll_voters:
+            # TODO: check if user has been deleted
             username: Optional[str] = voter.user.username
             voter_user = voter.get_voter_user()
             user_tele_id = voter_user.get_tele_id()
@@ -2105,21 +2269,42 @@ class RankedChoiceBot(BaseAPI):
         else:
             return await message.reply_text('Poll has no winner')
 
-    @staticmethod
+    @classmethod
+    def register_message_handler(
+        cls, dispatcher: Application, message_filter: BaseFilter,
+        callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
+    ):
+        dispatcher.add_handler(MessageHandler(
+            message_filter, cls.users_middleware(callback, include_self=False)
+        ))
+
+    @classmethod
+    def register_callback_handler(
+        cls, dispatcher: Application,
+        callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
+    ):
+        dispatcher.add_handler(CallbackQueryHandler(
+            cls.users_middleware(callback, include_self=False)
+        ))
+
+    @classmethod
     def register_commands(
-        dispatcher, commands_mapping, wrap_func=lambda func: func
+        cls, dispatcher: Application,
+        commands_mapping: Dict[
+            str, Callable[[ModifiedTeleUpdate, ...], Coroutine]
+        ],
     ):
         for command_name in commands_mapping:
             handler = commands_mapping[command_name]
-            wrapped_handler = wrap_func(handler)
+            wrapped_handler = cls.wrap_command_handler(handler)
             dispatcher.add_handler(CommandHandler(
                 command_name, wrapped_handler
             ))
 
     @staticmethod
-    def extract_poll_id(
-        update: telegram.Update
-    ) -> Result[int, MessageBuilder]:
+    def get_raw_command_args(
+        update: ModifiedTeleUpdate
+    ) -> Result[str, MessageBuilder]:
         message: telegram.Message = update.message
         error_message = MessageBuilder()
 
@@ -2132,7 +2317,19 @@ class RankedChoiceBot(BaseAPI):
             error_message.add('no poll id specified')
             return Err(error_message)
 
-        raw_poll_id = raw_text[raw_text.index(' '):].strip()
+        raw_command_args = raw_text[raw_text.index(' '):].strip()
+        return Ok(raw_command_args)
+
+    @classmethod
+    def extract_poll_id(
+        cls, update: ModifiedTeleUpdate
+    ) -> Result[int, MessageBuilder]:
+        raw_args_res = cls.get_raw_command_args(update)
+        if raw_args_res.is_err():
+            return raw_args_res
+
+        raw_poll_id = raw_args_res.unwrap()
+        error_message = MessageBuilder()
 
         try:
             poll_id = int(raw_poll_id)

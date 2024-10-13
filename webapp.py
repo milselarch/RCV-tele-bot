@@ -45,7 +45,10 @@ class VerifyMiddleware(BaseHTTPMiddleware):
             content = {'detail': 'Missing telegram-data header'}
             return JSONResponse(content=content, status_code=401)
 
+        # TODO: expire old auth tokens as new ones are created
         """
+        # This is commented out cause its not very intuitive for
+        # the webapp button to just expire after 24 hours
         if PRODUCTION_MODE:
             # only allow auth headers that were created in the last 24 hours
             parsed_query = parse_qs(telegram_data_header)
@@ -62,9 +65,7 @@ class VerifyMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(content=content, status_code=401)
         """
 
-        user_params = self.check_authorization(
-            telegram_data_header, TELEGRAM_BOT_TOKEN
-        )
+        user_params = self.check_authorization(telegram_data_header)
 
         if user_params is None:
             content = {'detail': 'Unauthorized'}
@@ -89,14 +90,12 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         return data_check_string, signature, params
 
     @classmethod
-    def check_authorization(
-        cls, init_data: str, bot_token: str
-    ) -> Optional[dict]:
+    def check_authorization(cls, init_data: str) -> Optional[dict]:
         parse_result = cls.parse_auth_string(init_data)
         # print('PARSE_RESULT', parse_result)
         data_check_string, signature, params = parse_result
         validation_hash = BaseAPI.sign_data_check_string(
-            data_check_string=data_check_string, bot_token=bot_token
+            data_check_string=data_check_string
         )
 
         # print('VALIDATION_HASH', validation_hash, signature)
@@ -129,8 +128,12 @@ class VotingWebApp(BaseAPI):
             return JSONResponse(
                 status_code=400, content={'error': 'User not found'}
             )
-
         user = user_res.unwrap()
+        if user.is_deleted():
+            return JSONResponse(
+                status_code=403, content={'error': 'User is deleted'}
+            )
+
         user_id = user.get_user_id()
         username = user_info['username']
         read_poll_result = self.read_poll_info(
@@ -144,7 +147,7 @@ class VotingWebApp(BaseAPI):
                 status_code=500, content={'error': error.get_content()}
             )
 
-        poll_info = read_poll_result.ok()
+        poll_info = read_poll_result.unwrap()
         return dataclasses.asdict(poll_info)
 
 

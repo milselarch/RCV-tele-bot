@@ -3,19 +3,25 @@ import hmac
 import json
 import secrets
 import string
+
+import telegram
 import time
 import hashlib
 import textwrap
 import dataclasses
+
+from telegram.ext import ApplicationBuilder
+
 import database
 import aioredlock
+import ranked_choice_vote
 import redis
 
 from enum import IntEnum
 from typing_extensions import Any
 from collections import defaultdict
-from ranked_choice_vote import ranked_choice_vote
 from strenum import StrEnum
+from load_config import TELEGRAM_BOT_TOKEN
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
@@ -27,7 +33,7 @@ from database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
     db, Users
 )
-from database.database import PollWinners, BaseModel, UserID
+from database.database import PollWinners, BaseModel, UserID, PollMetadata
 from aioredlock import Aioredlock, LockError
 
 
@@ -89,17 +95,6 @@ class PollMessage(object):
     reply_markup: Optional[InlineKeyboardMarkup]
 
 
-@dataclasses.dataclass
-class PollMetadata(object):
-    id: int
-    question: str
-    num_voters: int
-    num_votes: int
-
-    open_registration: bool
-    closed: bool
-
-
 class GetPollWinnerStatus(IntEnum):
     CACHED = 0
     NEWLY_COMPUTED = 1
@@ -121,11 +116,55 @@ class BaseAPI(object):
     POLL_WINNER_LOCK_KEY = "POLL_WINNER_LOCK"
     # CACHE_LOCK_NAME = "REDIS_CACHE_LOCK"
     POLL_CACHE_EXPIRY = 60
+    DELETION_TOKEN_EXPIRY = 60 * 5
+    SHORT_HASH_LENGTH = 6
 
     def __init__(self):
         database.initialize_db()
         self.redis_cache = redis.Redis()
         self.redis_lock_manager = Aioredlock()
+
+    @staticmethod
+    def __get_telegram_token():
+        # TODO: move methods using tele token to a separate class
+        return TELEGRAM_BOT_TOKEN
+
+    def generate_delete_token(self, user: Users):
+        stamp = int(time.time())
+        hex_stamp = hex(stamp)[2:].upper()
+        user_id = user.get_user_id()
+        hash_input = f'{user_id}:{stamp}'
+
+        signed_message = self.sign_message(hash_input).upper()
+        short_signed_message = signed_message[:self.SHORT_HASH_LENGTH]
+        return f'{hex_stamp}:{short_signed_message}'
+
+    def validate_delete_token(
+        self, user: Users, stamp: int, short_hash: str
+    ) -> Result[bool, str]:
+        current_stamp = int(time.time())
+        if abs(current_stamp - stamp) > self.DELETION_TOKEN_EXPIRY:
+            return Err('Token expired')
+
+        user_id = user.get_user_id()
+        hash_input = f'{user_id}:{stamp}'
+        signed_message = self.sign_message(hash_input).upper()
+        short_signed_message = signed_message[:self.SHORT_HASH_LENGTH]
+
+        if short_signed_message != short_hash:
+            return Err('Invalid token')
+
+        return Ok(True)
+
+    @classmethod
+    def create_tele_bot(cls):
+        return telegram.Bot(token=cls.__get_telegram_token())
+
+    @classmethod
+    def create_application_builder(cls):
+        builder = ApplicationBuilder()
+        builder.token(cls.__get_telegram_token())
+        return builder
 
     @staticmethod
     def _build_cache_key(header: str, key: str):
@@ -166,13 +205,15 @@ class BaseAPI(object):
         return Ok(poll)
 
     @classmethod
-    def get_num_poll_voters(cls, poll_id: int) -> Result[int, MessageBuilder]:
+    def get_num_active_poll_voters(
+        cls, poll_id: int
+    ) -> Result[int, MessageBuilder]:
         result = cls.fetch_poll(poll_id)
         if result.is_err():
             return result
 
         poll = result.unwrap()
-        return Ok(poll.num_voters)
+        return Ok(poll.num_active_voters)
 
     @staticmethod
     async def refresh_lock(lock: aioredlock.Lock, interval: float):
@@ -261,7 +302,7 @@ class BaseAPI(object):
         :return:
         ID of winning option, or None if there's no winner
         """
-        num_poll_voters_result = cls.get_num_poll_voters(poll_id)
+        num_poll_voters_result = cls.get_num_active_poll_voters(poll_id)
         if num_poll_voters_result.is_err():
             return None
 
@@ -483,7 +524,7 @@ class BaseAPI(object):
                 return Err(UserRegistrationStatus.POLL_NOT_FOUND)
 
             # print('NUM_VOTES', poll.num_voters, poll.max_voters)
-            voter_limit_reached = (poll.num_voters >= poll.max_voters)
+            voter_limit_reached = (poll.num_active_voters >= poll.max_voters)
             if ignore_voter_limit:
                 voter_limit_reached = False
 
@@ -669,7 +710,7 @@ class BaseAPI(object):
             poll_metadata.id, poll_metadata.question,
             poll_info.poll_options, closed=poll_metadata.closed,
             bot_username=bot_username,
-            num_voters=poll_metadata.num_voters,
+            num_voters=poll_metadata.num_active_voters,
             num_votes=poll_metadata.num_votes
         )
 
@@ -715,18 +756,8 @@ class BaseAPI(object):
         return Ok(cls._read_poll_info(poll_id=poll_id))
 
     @classmethod
-    def _read_poll_metadata(cls, poll_id: int) -> PollMetadata:
-        poll = Polls.select().where(Polls.id == poll_id).get()
-        return PollMetadata(
-            id=poll.id, question=poll.desc,
-            num_voters=poll.num_voters, num_votes=poll.num_votes,
-            open_registration=poll.open_registration,
-            closed=poll.closed
-        )
-
-    @classmethod
     def _read_poll_info(cls, poll_id: int) -> PollInfo:
-        poll_metadata = cls._read_poll_metadata(poll_id)
+        poll_metadata = Polls.read_poll_metadata(poll_id)
         poll_option_rows = PollOptions.select().where(
             PollOptions.poll == poll_id
         ).order_by(PollOptions.option_number)
@@ -865,10 +896,11 @@ class BaseAPI(object):
 
         return data_check_string
 
-    @staticmethod
+    @classmethod
     def sign_data_check_string(
-        data_check_string: str, bot_token: str
+        cls, data_check_string: str
     ) -> str:
+        bot_token = cls.__get_telegram_token()
         secret_key = hmac.new(
             key=b"WebAppData", msg=bot_token.encode(),
             digestmod=hashlib.sha256
@@ -877,7 +909,19 @@ class BaseAPI(object):
         validation_hash = hmac.new(
             secret_key, data_check_string.encode(), hashlib.sha256
         ).hexdigest()
+        return validation_hash
 
+    @classmethod
+    def sign_message(cls, message: str) -> str:
+        bot_token = cls.__get_telegram_token()
+        secret_key = hmac.new(
+            key=b"SIGN_MESSAGE", msg=bot_token.encode(),
+            digestmod=hashlib.sha256
+        ).digest()
+
+        validation_hash = hmac.new(
+            secret_key, message.encode(), hashlib.sha256
+        ).hexdigest()
         return validation_hash
 
     @staticmethod

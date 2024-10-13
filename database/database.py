@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import os
 import sys
@@ -66,6 +67,7 @@ class Users(BaseModel):
     username = CharField(max_length=255, default=None, null=True)
     credits = IntegerField(default=0)
     subscription_tier = IntegerField(default=0)
+    deleted_at = DateTimeField(default=None, null=True)
 
     class Meta:
         database = database_proxy
@@ -76,6 +78,9 @@ class Users(BaseModel):
             # it possible there will be collisions here regardless
             (('username',), False),
         )
+
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
 
     @classmethod
     def build_from_fields(
@@ -103,6 +108,22 @@ class Users(BaseModel):
         return cls.build_from_fields(tele_id=tele_id).safe_get()
 
 
+@dataclasses.dataclass
+class PollMetadata(object):
+    id: int
+    question: str
+    _num_voters: int
+    num_deleted: int
+    num_votes: int
+
+    open_registration: bool
+    closed: bool
+
+    @property
+    def num_active_voters(self) -> int:
+        return self._num_voters - self.num_deleted
+
+
 # stores poll metadata (description, open time, etc etc)
 class Polls(BaseModel):
     id = AutoField(primary_key=True)
@@ -119,9 +140,19 @@ class Polls(BaseModel):
     creator = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
     max_voters = IntegerField(default=10)
     # number of registered voters in the poll
+    # TODO: rename to raw_num_voters or _num_voters to make it clear
+    #   that this number includes deleted voters as well
     num_voters = IntegerField(default=0)
     # number of registered votes in the poll
     num_votes = IntegerField(default=0)
+    # TODO: rename to num_deleted_voters
+    deleted_voters = IntegerField(default=0)
+
+    @property
+    def num_active_voters(self) -> int:
+        assert isinstance(self.num_voters, int)
+        assert isinstance(self.deleted_voters, int)
+        return self.num_voters - self.deleted_voters
 
     def get_creator(self) -> Users:
         # TODO: do a unit test for this
@@ -132,19 +163,39 @@ class Polls(BaseModel):
         return self.get_creator().get_user_id()
 
     @classmethod
+    def read_poll_metadata(cls, poll_id: int) -> PollMetadata:
+        poll = cls.select().where(cls.id == poll_id).get()
+        return PollMetadata(
+            id=poll.id, question=poll.desc,
+            _num_voters=poll.num_voters, num_votes=poll.num_votes,
+            open_registration=poll.open_registration,
+            closed=poll.closed, num_deleted=poll.deleted_voters
+        )
+
+    @classmethod
     def build_from_fields(
-        cls, desc: str | EmptyField = Empty,
+        cls, poll_id: int | EmptyField = Empty,
+        desc: str | EmptyField = Empty,
         creator_id: UserID | EmptyField = Empty,
         num_voters: int | EmptyField = Empty,
         open_registration: bool | EmptyField = Empty,
         max_voters: int | EmptyField = Empty
     ) -> BoundRowFields[Self]:
         return BoundRowFields(cls, {
-            cls.desc: desc, cls.creator: creator_id,
+            cls.id: poll_id, cls.desc: desc, cls.creator: creator_id,
             cls.num_voters: num_voters,
             cls.open_registration: open_registration,
             cls.max_voters: max_voters
         })
+
+    @classmethod
+    def get_as_creator(cls, poll_id: int, user_id: UserID) -> Polls:
+        # TODO: wrap this in a Result with an enum error type
+        #   (not found, unauthorized, etc) and use this in
+        #   register_user_by_tele_id
+        return cls.build_from_fields(
+            poll_id=poll_id, creator_id=user_id
+        ).get()
 
 
 # whitelisted group chats from which users are
@@ -177,7 +228,9 @@ class PollVoters(BaseModel):
     # poll that voter is eligible to vote for
     poll = ForeignKeyField(Polls, to_field='id', on_delete='CASCADE')
     # telegram user id of voter
-    user = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
+    user = ForeignKeyField(
+        Users, to_field='id', null=True, on_delete='CASCADE'
+    )
     voted = BooleanField(default=False)
 
     class Meta:
