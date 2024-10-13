@@ -4,7 +4,7 @@ settings:
 database:
   name: ranked_choice_voting
   user: rcv_user
-  password: your_mysql_password
+  password: YOUR_DATABASE_PASSWORD
   host: localhost
 telegram:
   bot_token: YOUR_BOT_TOKEN
