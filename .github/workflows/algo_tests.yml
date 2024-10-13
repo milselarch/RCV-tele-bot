@@ -22,4 +22,4 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest tests/enum_test.py tests/test_ranked_vote.py
+        python -m pytest tests/enum_test.py tests/test_ranked_vote.py
