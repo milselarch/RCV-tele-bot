@@ -1993,27 +1993,34 @@ class RankedChoiceBot(BaseAPI):
             err_message = validation_result.err()
             return await update.message.reply_text(err_message)
 
-        with db.atomic():
-            # delete all polls created by the user
-            Polls.delete().where(Polls.creator == user_id).execute()
-            user.deleted_at = Datetime.now()  # mark as deleted
-            user.save()
+        try:
+            with db.atomic():
+                # delete all polls created by the user
+                Polls.delete().where(Polls.creator == user_id).execute()
+                user.deleted_at = Datetime.now()  # mark as deleted
+                user.save()
 
-            poll_registrations: Iterable[PollVoters] = (
-                PollVoters.select().where(PollVoters.user == user_id)
+                poll_registrations: Iterable[PollVoters] = (
+                    PollVoters.select().where(PollVoters.user == user_id)
+                )
+                for poll_registration in poll_registrations:
+                    poll: Polls = poll_registration.poll
+
+                    if poll.closed:
+                        # decouple poll voter from user
+                        poll_registration.user = None
+                        poll_registration.save()
+                    else:
+                        # delete poll voter and increment deleted voters count
+                        poll.deleted_voters += 1
+                        poll_registration.delete_instance()
+                        poll.save()
+
+        except Exception as e:
+            await update.message.reply_text(
+                'Unexpected error occurred during account deletion'
             )
-            for poll_registration in poll_registrations:
-                poll: Polls = poll_registration.poll
-
-                if poll.closed:
-                    # decouple poll voter from user
-                    poll_registration.user = None
-                    poll_registration.save()
-                else:
-                    # delete poll voter and increment deleted voters count
-                    poll.deleted_voters += 1
-                    poll_registration.delete_instance()
-                    poll.save()
+            raise e
 
         return await update.message.reply_text(
             'Account deleted successfully'
