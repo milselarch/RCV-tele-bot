@@ -1988,7 +1988,6 @@ class RankedChoiceBot(BaseAPI):
         validation_result = self.validate_delete_token(
             user=user, stamp=deletion_stamp, short_hash=short_hash
         )
-        # TODO: actually implement deletion
         if validation_result.is_err():
             err_message = validation_result.err()
             return await update.message.reply_text(err_message)
