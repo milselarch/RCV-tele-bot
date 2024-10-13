@@ -2084,8 +2084,8 @@ class RankedChoiceBot(BaseAPI):
            ——————————————————
            /view_votes {poll_id}
            View all the votes entered for the poll 
-           with the specified poll_id. This can only be done
-           after the poll has been closed first
+           with the specified poll_id. 
+           This can only be done after the poll has been closed first
            ——————————————————
            /view_voters {poll_id}
            Show which voters have voted and which have not
@@ -2094,8 +2094,12 @@ class RankedChoiceBot(BaseAPI):
            /view_polls - view all polls created by you
            ——————————————————
            /delete_poll {poll_id} - delete poll by poll_id
-           use /delete_poll --force to force delete the poll without 
+           Use /delete_poll --force to force delete the poll without 
            confirmation, regardless of whether poll is open or closed
+           ——————————————————
+           /delete_account
+           /delete_account {deletion_token}
+           Delete your user account (this cannot be undone)
            ——————————————————
            /help - view commands available to the bot
            """))
