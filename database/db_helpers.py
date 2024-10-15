@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import peewee
 
 from peewee import Model
@@ -116,4 +118,3 @@ class BoundRowFields(ModelRowFields, Generic[T]):
 
     def insert(self):
         return self.__base_model.insert(**self._fields)
-

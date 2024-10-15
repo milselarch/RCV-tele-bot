@@ -10,18 +10,18 @@ import hashlib
 import textwrap
 import dataclasses
 
-from telegram.ext import ApplicationBuilder
+from jsonfield.jsonfield import JSONField
 
 import database
 import aioredlock
-import ranked_choice_vote
-import redis
 
 from enum import IntEnum
 from typing_extensions import Any
 from collections import defaultdict
 from strenum import StrEnum
 from load_config import TELEGRAM_BOT_TOKEN
+from telegram.ext import ApplicationBuilder
+from PyVotesCounter import PyVotesCounter
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
@@ -121,8 +121,16 @@ class BaseAPI(object):
 
     def __init__(self):
         database.initialize_db()
-        self.redis_cache = redis.Redis()
-        self.redis_lock_manager = Aioredlock()
+        self.redis_lock_manager = self.create_redis_lock_manager()
+
+    @staticmethod
+    def create_redis_lock_manager(
+        connections: list[dict[str, str | int]] | None = None
+    ):
+        if connections is not None:
+            return Aioredlock(connections)
+        else:
+            return Aioredlock()
 
     @staticmethod
     def __get_telegram_token():
@@ -319,7 +327,7 @@ class BaseAPI(object):
         )
 
         prev_voter_id, num_votes_cast = None, 0
-        votes_aggregator = ranked_choice_vote.VotesAggregator()
+        votes_aggregator = PyVotesCounter()
 
         for vote_ranking in votes:
             option_row = vote_ranking.option

@@ -353,10 +353,11 @@ dependencies = [
 
 [[package]]
 name = "ranked-choice-vote"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "pyo3",
  "pyo3-stub-gen",
+ "serde",
  "trie_rcv",
 ]
 

@@ -3,3 +3,5 @@ from .database import (
     VoteRankings, database_proxy as db, Users, ChatWhitelist,
     PollWinners, initialize_db
 )
+
+import test_database

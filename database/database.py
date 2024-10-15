@@ -5,18 +5,20 @@ import datetime
 import os
 import sys
 
+from jsonfield.jsonfield import JSONField
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok
+
 from load_config import YAML_CONFIG
-from typing import Self, Optional
+from typing import Self, Optional, Type
 from database.db_helpers import (
     BoundRowFields, Empty, EmptyField, TypedModel
 )
 from peewee import (
     MySQLDatabase, BigIntegerField, CharField,
     IntegerField, AutoField, TextField, DateTimeField,
-    BooleanField, ForeignKeyField, SQL, BigAutoField, Proxy
+    BooleanField, ForeignKeyField, SQL, BigAutoField, Proxy, Database,
 )
 
 
@@ -28,7 +30,24 @@ database_proxy = Proxy()
 initialised_db: DB | None = None
 
 
-def initialize_db(db: DB | None = None):
+class BaseModel(TypedModel):
+    class Meta:
+        database = database_proxy
+        table_settings = ['DEFAULT CHARSET=utf8mb4']
+
+
+class UserID(int):
+    pass
+
+
+def get_tables() -> list[Type[BaseModel]]:
+    return [
+        Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
+        PollOptions, VoteRankings, PollWinners
+    ]
+
+
+def initialize_db(db: Database | None = None):
     if db is None:
         db = DB(
             database='ranked_choice_voting',
@@ -43,20 +62,7 @@ def initialize_db(db: DB | None = None):
 
     # Create tables (if they don't exist)
     database_proxy.connect()
-    database_proxy.create_tables([
-        Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
-        PollOptions, VoteRankings, PollWinners
-    ], safe=True)
-
-
-class BaseModel(TypedModel):
-    class Meta:
-        database = database_proxy
-        table_settings = ['DEFAULT CHARSET=utf8mb4']
-
-
-class UserID(int):
-    pass
+    database_proxy.create_tables(get_tables(), safe=True)
 
 
 # maps telegram user ids to their usernames
@@ -352,6 +358,18 @@ class PollWinners(BaseModel):
 
         winning_option_id = int(winning_option.id)
         return Ok(winning_option_id)
+
+
+class CallbackContextState(BaseModel):
+    id = BigAutoField(primary_key=True)
+    user = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
+    chat_id = BigIntegerField(null=False)  # telegram chat ID
+    state = JSONField(null=False)
+
+    indexes = (
+        # Unique multi-column index for user-chat_id pairs
+        (('user', 'chat_id'), True),
+    )
 
 
 # database should be connected if called from pem db migrations

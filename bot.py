@@ -400,7 +400,7 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def handle_other_messages(self, update: ModifiedTeleUpdate, _):
-        # TODO: implement callback contexts voting and poll creation
+        # TODO: implement callback contexts.rs voting and poll creation
         await update.message.reply_text(
             "Message support is still in development"
         )
