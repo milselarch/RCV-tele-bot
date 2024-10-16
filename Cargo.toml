@@ -13,6 +13,7 @@ trie_rcv = "1.2.2"
 pyo3 = { version = "0.21.2", features = ["extension-module"] }
 pyo3-stub-gen = "0.6.0"
 serde = "1.0.210"
+serde_json = "1.0.128"
 
 [package.metadata.maturin]
 name = "ranked_choice_vote"

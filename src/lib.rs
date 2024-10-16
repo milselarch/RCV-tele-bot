@@ -1,3 +1,5 @@
+mod contexts;
+
 use std::collections::HashMap;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
