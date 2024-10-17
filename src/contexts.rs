@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use trie_rcv::{RankedVote};
 
 // https://stackoverflow.com/questions/42584368
 pub trait Error: Debug + Display {
@@ -40,39 +40,117 @@ impl ContextTypes {
     }
 }
 
+trait Jsonable: Serialize + Deserialize<'static> {}
+pub trait Context{
+    fn process(
+        &self, raw_context_state: &str
+    ) -> Result<dyn Jsonable, ContextError>;
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct VoteCreationState {
-    poll_id: i32,
-    raw_votes: Vec<i32>,
+    poll_id: u64,
+    raw_vote: Vec<i32>,
 }
+
+pub struct VoteCreationContext {
+    max_vote_options: u64
+}
+impl VoteCreationContext {
+    pub fn new(max_options: u64) -> VoteCreationContext {
+        VoteCreationContext {
+            max_vote_options: max_options
+        }
+    }
+
+    fn init(&self, poll_id: u64) -> String {
+        let poll_state = VoteCreationState {
+            poll_id, raw_vote: vec![]
+        };
+        serde_json::to_string(&poll_state).unwrap()
+    }
+
+    fn process(
+        raw_context_state: &str
+    ) -> Result<VoteCreationState, ContextError> {
+         let poll_state_res: Result<
+            VoteCreationState, serde_json::Error
+        > = serde_json::from_str(raw_context_state);
+
+        match poll_state_res {
+            Ok(poll_state) => Ok(poll_state),
+            Err(e) => Err(ContextError {
+                description: "INVALID POLL STATE".to_string(),
+                cause: Some(Box::new(e))
+            })
+        }
+    }
+
+    fn transition(
+        &self, raw_context_state: &str, option: i32
+    ) -> Result<String, ContextError> {
+        /*
+        parses the raw context state into a PollCreationState
+        and adds in the new option and returns the new state
+        if its valid
+        */
+        let mut poll_state = self.process(raw_context_state)?;
+        poll_state.raw_vote.push(option);
+
+        if poll_state.raw_vote.len() > self.max_vote_options as usize {
+            return Err(ContextError {
+                description: "Ranked vote is too long".to_string(),
+                cause: None
+            })
+        }
+        // check that the options form a valid ranked vote
+        let cast_result = RankedVote::from_vector(&poll_state.raw_vote);
+        if cast_result.is_err() {
+            return Err(ContextError {
+                description: "Ranked vote is invalid".to_string(),
+                cause: Some(Box::new(cast_result.err().unwrap()))
+            })
+        }
+
+        Ok(serde_json::to_string(&poll_state).unwrap())
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct PollCreationState {
     poll_title: String,
     options: Vec<String>
 }
 
-pub trait Context{
-    fn transition(
-        &self, raw_context_state: &str
-    ) -> Result<String, ContextError>;
+pub struct PollCreationContext {
+    max_options: u64
 }
+impl PollCreationContext {
+    pub fn new(max_options: u64) -> PollCreationContext {
+        PollCreationContext {
+            max_options
+        }
+    }
 
-pub struct PollCreationContext {}
-impl Context for PollCreationContext {
-    fn transition(
-        &self, raw_context_state: &str
-    ) -> Result<String, ContextError> {
-        let poll_state: Result<
+    fn init(&self, poll_title: String) -> String {
+        let poll_state = PollCreationState {
+            poll_title, options: vec![]
+        };
+        serde_json::to_string(&poll_state).unwrap()
+    }
+
+    fn process(
+        raw_context_state: &str
+    ) -> Result<PollCreationState, ContextError> {
+        let poll_state_res: Result<
             PollCreationState, serde_json::Error
         > = serde_json::from_str(raw_context_state);
 
-        match poll_state {
-            Ok(poll_state) => {
-                // Do something with the poll state
-                Ok("SUCCESS".to_string())
-            }
-            Err(_) => Err(ContextError {
-                description: "INVALID POLL STATE".to_string(), cause: None
+        match poll_state_res {
+            Ok(poll_state) => Ok(poll_state),
+            Err(e) => Err(ContextError {
+                description: "INVALID POLL STATE".to_string(),
+                cause: Some(Box::new(e))
             })
         }
     }

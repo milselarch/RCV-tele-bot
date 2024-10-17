@@ -9,7 +9,8 @@ use pyo3_stub_gen::{
 };
 
 use trie_rcv::{
-    EliminationStrategies, RankedChoiceVoteTrie, RankedVote, SpecialVotes, VoteErrors
+    EliminationStrategies, RankedChoiceVoteTrie,
+    RankedVote, SpecialVotes, VoteErrors
 };
 
 const WITHOLD_VOTE_VAL: i32 = SpecialVotes::WITHHOLD.to_int();
