@@ -9,6 +9,7 @@ pub trait Error: Debug + Display {
     fn source(&self) -> Option<&(dyn Error + 'static)>;
 }
 
+#[derive(Debug)]
 pub struct ContextError {
     description: String,
     cause: Option<Box<dyn Error>>,
@@ -40,13 +41,6 @@ impl ContextTypes {
     }
 }
 
-trait Jsonable: Serialize + Deserialize<'static> {}
-pub trait Context{
-    fn process(
-        &self, raw_context_state: &str
-    ) -> Result<dyn Jsonable, ContextError>;
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 struct VoteCreationState {
     poll_id: u64,
@@ -63,7 +57,7 @@ impl VoteCreationContext {
         }
     }
 
-    fn init(&self, poll_id: u64) -> String {
+    pub fn spawn(&self, poll_id: u64) -> String {
         let poll_state = VoteCreationState {
             poll_id, raw_vote: vec![]
         };
@@ -79,14 +73,14 @@ impl VoteCreationContext {
 
         match poll_state_res {
             Ok(poll_state) => Ok(poll_state),
-            Err(e) => Err(ContextError {
+            Err(_) => Err(ContextError {
                 description: "INVALID POLL STATE".to_string(),
-                cause: Some(Box::new(e))
+                cause: None
             })
         }
     }
 
-    fn transition(
+    pub fn transition(
         &self, raw_context_state: &str, option: i32
     ) -> Result<String, ContextError> {
         /*
@@ -94,7 +88,7 @@ impl VoteCreationContext {
         and adds in the new option and returns the new state
         if its valid
         */
-        let mut poll_state = self.process(raw_context_state)?;
+        let mut poll_state = VoteCreationContext::process(raw_context_state)?;
         poll_state.raw_vote.push(option);
 
         if poll_state.raw_vote.len() > self.max_vote_options as usize {
@@ -108,7 +102,7 @@ impl VoteCreationContext {
         if cast_result.is_err() {
             return Err(ContextError {
                 description: "Ranked vote is invalid".to_string(),
-                cause: Some(Box::new(cast_result.err().unwrap()))
+                cause: None
             })
         }
 
@@ -132,7 +126,7 @@ impl PollCreationContext {
         }
     }
 
-    fn init(&self, poll_title: String) -> String {
+    pub fn spawn(&self, poll_title: String) -> String {
         let poll_state = PollCreationState {
             poll_title, options: vec![]
         };
@@ -150,9 +144,29 @@ impl PollCreationContext {
             Ok(poll_state) => Ok(poll_state),
             Err(e) => Err(ContextError {
                 description: "INVALID POLL STATE".to_string(),
-                cause: Some(Box::new(e))
+                cause: None
             })
         }
+    }
+
+    pub fn transition(
+        &self, raw_context_state: &str, option: String
+    ) -> Result<String, ContextError> {
+        /*
+        parses the raw context state into a PollCreationState
+        and adds in the new option and returns the new state
+        if its valid
+        */
+        let mut poll_state = PollCreationContext::process(raw_context_state)?;
+        poll_state.options.push(option);
+
+        if poll_state.options.len() > self.max_options as usize {
+            return Err(ContextError {
+                description: "Too many options".to_string(),
+                cause: None
+            })
+        }
+        Ok(serde_json::to_string(&poll_state).unwrap())
     }
 }
 

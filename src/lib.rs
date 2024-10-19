@@ -90,6 +90,56 @@ impl VotesAggregator {
     }
 }
 
+#[gen_stub_pyclass]
+#[pyclass]
+pub struct VoteCreationContextBuilder {
+    max_vote_options: u64
+}
+#[gen_stub_pymethods]
+#[pymethods]
+impl VoteCreationContextBuilder {
+    #[new]
+    fn new(max_vote_options: u64) -> Self {
+        VoteCreationContextBuilder { max_vote_options }
+    }
+
+    fn spawn(&self, poll_id: u64) -> PyResult<String> {
+        Ok(contexts::VoteCreationContext::new(
+            self.max_vote_options
+        ).spawn(poll_id))
+    }
+
+    fn transition(&self, raw_context_state: String, option: i32) -> PyResult<String> {
+        Ok(contexts::VoteCreationContext::new(
+            self.max_vote_options
+        ).transition(&raw_context_state, option).unwrap())
+    }
+}
+
+#[gen_stub_pyclass]
+#[pyclass]
+pub struct PollCreationContextBuilder {
+    max_vote_options: u64
+}
+#[gen_stub_pymethods]
+#[pymethods]
+impl PollCreationContextBuilder {
+    #[new]
+    fn new(max_vote_options: u64) -> Self {
+        PollCreationContextBuilder { max_vote_options }
+    }
+
+    fn spawn(&self, poll_title: String) -> PyResult<String> {
+        Ok(contexts::PollCreationContext::new(
+            self.max_vote_options
+        ).spawn(poll_title))
+    }
+
+    fn transition(&self, raw_context_state: String, poll_option: String) -> PyResult<String> {
+        todo!();
+    }
+}
+
 #[pymodule]
 fn ranked_choice_vote(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<VotesAggregator>()?;
