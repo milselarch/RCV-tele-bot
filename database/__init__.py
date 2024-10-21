@@ -1,7 +1,8 @@
+from .database import database_proxy as db, initialize_db
+
 from .database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions,
-    VoteRankings, database_proxy as db, Users, ChatWhitelist,
-    PollWinners, initialize_db
+    VoteRankings, ChatWhitelist, Users, PollWinners, CallbackContextState
 )
 
-import test_database
+from .test_database import test_database

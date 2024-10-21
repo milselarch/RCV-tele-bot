@@ -1,8 +1,7 @@
-mod contexts;
-
 use std::collections::HashMap;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::{PyTuple};
 use pyo3_stub_gen::{
     derive::gen_stub_pymethods, derive::gen_stub_pyclass,
     define_stub_info_gatherer
@@ -14,6 +13,25 @@ use trie_rcv::{
 };
 
 const WITHOLD_VOTE_VAL: i32 = SpecialVotes::WITHHOLD.to_int();
+
+trait ShowErrorMessage {
+    fn to_error_message(&self) -> String;
+}
+
+impl ShowErrorMessage for VoteErrors {
+    fn to_error_message(&self) -> String {
+        match self {
+            VoteErrors::InvalidCastToCandidate => {"Invalid candidate"}
+            VoteErrors::InvalidCastToSpecialVote => {"Invalid cast to special vote"}
+            VoteErrors::ReadOutOfBounds => {"Read out of bounds"}
+            VoteErrors::NonFinalSpecialVote => {
+                "Special vote value can only be ranked once as the last choice"
+            }
+            VoteErrors::DuplicateVotes => {"Duplicate vote rankings"}
+            VoteErrors::VoteIsEmpty => {"Vote is empty"}
+        }.to_string()
+    }
+}
 
 
 #[gen_stub_pyclass]
@@ -60,6 +78,24 @@ impl VotesAggregator {
         )
     }
 
+    fn validate_raw_vote(&self, rankings: Vec<i32>) -> PyResult<Py<PyTuple>> {
+        // returns a tuple (valid, error_message)
+        // with types (valid: bool, error_message: str)
+        let cast_result = RankedVote::from_vector(&rankings);
+        let cast_successful = cast_result.is_ok();
+        let error_message = match cast_result {
+            Ok(_) => "".to_string(),
+            Err(err) => err.to_error_message()
+        };
+        Python::with_gil(|py| {
+            let elements: Vec<PyObject> = vec![
+                cast_successful.into_py(py),
+                error_message.into_py(py)
+            ];
+            Ok(PyTuple::new_bound(py, elements).into())
+        })
+    }
+
     fn insert_vote_ranking(&mut self, vote_id: u64, vote_ranking: i32) {
         let vote = self.raw_votes_cache.entry(vote_id).or_insert(vec![]);
         vote.push(vote_ranking)
@@ -87,56 +123,6 @@ impl VotesAggregator {
         }
         let winner = self.rcv.determine_winner();
         Ok(winner)
-    }
-}
-
-#[gen_stub_pyclass]
-#[pyclass]
-pub struct VoteCreationContextBuilder {
-    max_vote_options: u64
-}
-#[gen_stub_pymethods]
-#[pymethods]
-impl VoteCreationContextBuilder {
-    #[new]
-    fn new(max_vote_options: u64) -> Self {
-        VoteCreationContextBuilder { max_vote_options }
-    }
-
-    fn spawn(&self, poll_id: u64) -> PyResult<String> {
-        Ok(contexts::VoteCreationContext::new(
-            self.max_vote_options
-        ).spawn(poll_id))
-    }
-
-    fn transition(&self, raw_context_state: String, option: i32) -> PyResult<String> {
-        Ok(contexts::VoteCreationContext::new(
-            self.max_vote_options
-        ).transition(&raw_context_state, option).unwrap())
-    }
-}
-
-#[gen_stub_pyclass]
-#[pyclass]
-pub struct PollCreationContextBuilder {
-    max_vote_options: u64
-}
-#[gen_stub_pymethods]
-#[pymethods]
-impl PollCreationContextBuilder {
-    #[new]
-    fn new(max_vote_options: u64) -> Self {
-        PollCreationContextBuilder { max_vote_options }
-    }
-
-    fn spawn(&self, poll_title: String) -> PyResult<String> {
-        Ok(contexts::PollCreationContext::new(
-            self.max_vote_options
-        ).spawn(poll_title))
-    }
-
-    fn transition(&self, raw_context_state: String, poll_option: String) -> PyResult<String> {
-        todo!();
     }
 }
 

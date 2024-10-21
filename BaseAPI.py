@@ -9,9 +9,6 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-
-from jsonfield.jsonfield import JSONField
-
 import database
 import aioredlock
 

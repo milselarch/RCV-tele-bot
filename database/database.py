@@ -5,7 +5,6 @@ import datetime
 import os
 import sys
 
-from jsonfield.jsonfield import JSONField
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok
@@ -43,7 +42,7 @@ class UserID(int):
 def get_tables() -> list[Type[BaseModel]]:
     return [
         Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
-        PollOptions, VoteRankings, PollWinners
+        PollOptions, VoteRankings, PollWinners, CallbackContextState
     ]
 
 
@@ -364,7 +363,8 @@ class CallbackContextState(BaseModel):
     id = BigAutoField(primary_key=True)
     user = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
     chat_id = BigIntegerField(null=False)  # telegram chat ID
-    state = JSONField(null=False)
+    context_type = CharField(max_length=255, null=False)
+    state = TextField(null=False)
 
     indexes = (
         # Unique multi-column index for user-chat_id pairs
@@ -375,5 +375,6 @@ class CallbackContextState(BaseModel):
 # database should be connected if called from pem db migrations
 called_from_pem = os.path.basename(sys.argv[0]) == 'pem'
 if (__name__ == '__main__') or called_from_pem:
+    print('TESTING')
     # Create tables (if they don't exist)
     initialize_db()
