@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Sequence
 from ranked_choice_vote import VotesAggregator
 
 
@@ -24,3 +24,7 @@ class PyVotesCounter(object):
 
     def determine_winner(self) -> Optional[int]:
         return self.votes_counter.determine_winner()
+
+    @staticmethod
+    def validate_raw_vote(rankings: Sequence[int]) -> (bool, str):
+        return VotesAggregator.validate_raw_vote(rankings)

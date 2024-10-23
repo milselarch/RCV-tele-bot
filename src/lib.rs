@@ -78,7 +78,8 @@ impl VotesAggregator {
         )
     }
 
-    fn validate_raw_vote(&self, rankings: Vec<i32>) -> PyResult<Py<PyTuple>> {
+    #[staticmethod]
+    fn validate_raw_vote(rankings: Vec<i32>) -> PyResult<Py<PyTuple>> {
         // returns a tuple (valid, error_message)
         // with types (valid: bool, error_message: str)
         let cast_result = RankedVote::from_vector(&rankings);

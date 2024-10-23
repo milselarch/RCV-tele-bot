@@ -160,5 +160,56 @@ class TestRankedChoiceVote(unittest.TestCase):
         )
 
 
+class TestVoteValidation(unittest.TestCase):
+    def __init__(self, *args, verbose=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.verbose = verbose
+
+    def test_valid_votes(self):
+        votes_aggregator = PyVotesCounter()
+        # TODO: vote [0, 1, 2] should be valid
+        valid_votes = [
+            [1, 2, 7, 3], [1, 2, 3], [4], [-2], [-1],
+            [2, 5, 1, -1], [2, 5, 1, 11, -2]
+        ]
+
+        for valid_vote in valid_votes:
+            validate_result = votes_aggregator.validate_raw_vote(valid_vote)
+            assert isinstance(validate_result[1], str)
+            assert isinstance(validate_result[0], bool)
+
+            is_valid = validate_result[0]
+            self.assertTrue(is_valid, "Vote should be valid")
+            self.assertTrue(
+                len(validate_result[1]) == 0, "Error message should be empty"
+            )
+
+    def test_duplicate_rankings(self):
+        votes_aggregator = PyVotesCounter()
+        validate_result = votes_aggregator.validate_raw_vote([1, 2, 2])
+        assert isinstance(validate_result[1], str)
+        assert isinstance(validate_result[0], bool)
+        # print('validate_result', validate_result)
+
+        is_valid = validate_result[0]
+        self.assertFalse(is_valid, "non-unique vote is invalid")
+        self.assertTrue(
+            len(validate_result[1]) > 0, "Error message should be non-empty"
+        )
+
+    def test_non_final_special_vote(self):
+        votes_aggregator = PyVotesCounter()
+        validate_result = votes_aggregator.validate_raw_vote([1, 2, -1, 2])
+        assert isinstance(validate_result[1], str)
+        assert isinstance(validate_result[0], bool)
+        # print('validate_result', validate_result)
+
+        is_valid = validate_result[0]
+        self.assertFalse(is_valid, "vote with non-final special vote is invalid")
+        self.assertTrue(
+            len(validate_result[1]) > 0, "Error message should be non-empty"
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

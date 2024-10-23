@@ -11,6 +11,10 @@ class VotesAggregator:
     def get_num_votes(self) -> int:
         ...
 
+    @staticmethod
+    def validate_raw_vote(rankings: typing.Sequence[int]) -> tuple[bool, str]:
+        ...
+
     def insert_vote_ranking(self, vote_id:int, vote_ranking:int) -> None:
         ...
 
