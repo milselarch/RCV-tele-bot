@@ -501,9 +501,9 @@ dependencies = [
 
 [[package]]
 name = "trie_rcv"
-version = "1.2.2"
+version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7d452af51646823fe3173209d767edacf894b14cfaca882288c14b997965157"
+checksum = "c68d4c12652088e607c9fa738509f93f0f7d478ceae4977bbe696aa7bacc26a0"
 dependencies = [
  "itertools",
  "petgraph",

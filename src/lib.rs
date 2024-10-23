@@ -115,7 +115,7 @@ impl VotesAggregator {
         Ok(true)
     }
 
-    fn determine_winner(&mut self) -> PyResult<Option<u16>> {
+    fn determine_winner(&mut self) -> PyResult<Option<u32>> {
         // TODO: implement elimination strategy selection
         self.rcv.set_elimination_strategy(EliminationStrategies::DowdallScoring);
         let flush_result = self._flush_votes();
