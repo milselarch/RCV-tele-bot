@@ -167,9 +167,8 @@ class TestVoteValidation(unittest.TestCase):
 
     def test_valid_votes(self):
         votes_aggregator = PyVotesCounter()
-        # TODO: vote [0, 1, 2] should be valid
         valid_votes = [
-            [1, 2, 7, 3], [1, 2, 3], [4], [-2], [-1],
+            [1, 2, 7, 3], [1, 2, 3], [4], [-2], [-1], [1, 0, 3, 5],
             [2, 5, 1, -1], [2, 5, 1, 11, -2]
         ]
 

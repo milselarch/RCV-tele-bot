@@ -24,6 +24,7 @@ from datetime import datetime as Datetime
 from ModifiedTeleUpdate import ModifiedTeleUpdate
 from SpecialVotes import SpecialVotes
 from bot_middleware import track_errors, admin_only
+from contexts import PollCreationContext
 from database.database import UserID
 from database.db_helpers import EmptyField, Empty, BoundRowFields
 from load_config import WEBHOOK_URL
@@ -707,8 +708,16 @@ class RankedChoiceBot(BaseAPI):
 
         creator_tele_id = creator_user.id
         assert isinstance(creator_tele_id, int)
-        raw_text = message.text.strip()
         user_entry: Users = update.user
+        raw_poll_creation_args = self.read_raw_command_args(
+            update, strip=False
+        ).rstrip()
+
+        # TODO: initiate poll creation context here
+        if raw_poll_creation_args == '':
+            poll_creation_context = PollCreationContext(
+                max_options=self.poll_max_options
+            )
 
         try:
             subscription_tier = SubscriptionTiers(
@@ -718,34 +727,31 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text("Creator user does not exist")
             return False
 
-        if '\n' not in raw_text:
-            await message.reply_text("poll creation format wrong")
-            return False
-        elif ':' not in raw_text:
+        if '\n' not in raw_poll_creation_args:
             await message.reply_text("poll creation format wrong")
             return False
 
-        all_lines = raw_text.split('\n')
+        all_lines = raw_poll_creation_args.split('\n')
         if ':' in all_lines[0]:
             # separate poll voters (before :) from poll title and options
-            split_index = raw_text.index(':')
+            split_index = raw_poll_creation_args.index(':')
             # first part of command is all the users that are in the poll
-            command_p1: str = raw_text[:split_index].strip()
+            command_p1: str = raw_poll_creation_args[:split_index].strip()
             # second part of command is the poll question + poll options
-            command_p2: str = raw_text[split_index + 1:].strip()
+            command_p2: str = raw_poll_creation_args[split_index+1:].strip()
         else:
             # no : on first line to separate poll voters and
             # poll title + questions
-            command_p1 = ''
-            command_p2 = raw_text
+            command_p1 = all_lines[0]
+            command_p2 = raw_poll_creation_args[len(command_p1)+1:]
 
-        lines = command_p2.split('\n')
-        if len(lines) < 3:
+        poll_info_lines = command_p2.split('\n')
+        if len(poll_info_lines) < 3:
             await message.reply_text('Poll requires at least 2 options')
             return False
 
-        poll_question = lines[0].strip().replace('\n', '')
-        poll_options = lines[1:]
+        poll_question = poll_info_lines[0].strip().replace('\n', '')
+        poll_options = poll_info_lines[1:]
         poll_options = [
             poll_option.strip().replace('\n', '')
             for poll_option in poll_options
@@ -767,13 +773,9 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         # print('COMMAND_P2', lines)
-        if ' ' in command_p1:
-            command_p1 = command_p1[command_p1.index(' '):].strip()
-        elif not open_registration:
+        if (command_p1 == '') and not open_registration:
             await message.reply_text('poll voters not specified!')
             return False
-        else:
-            command_p1 = ''
 
         raw_poll_usernames: List[str] = command_p1.split()
         whitelisted_usernames: List[str] = []
@@ -1951,9 +1953,10 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def delete_account(self, update: ModifiedTeleUpdate, *_, **__):
-        deletion_token_res = self.get_raw_command_args(update)
+        deletion_token = self.read_raw_command_args(update)
+        # print('DEL_TOKEN', [deletion_token])
 
-        if deletion_token_res.is_err():
+        if deletion_token == '':
             # deletion token not provided, send deletion instructions
             delete_token = self.generate_delete_token(update.user)
             return await update.message.reply_text(textwrap.dedent(f"""
@@ -1976,7 +1979,6 @@ class RankedChoiceBot(BaseAPI):
                 /delete_account {delete_token}
             """))
 
-        deletion_token = deletion_token_res.unwrap()
         match_pattern = f'^[0-9A-F]+:[0-9A-F]+$'
         if re.match(match_pattern, deletion_token) is None:
             return await update.message.reply_text('Invalid deletion token')
@@ -2301,35 +2303,42 @@ class RankedChoiceBot(BaseAPI):
                 command_name, wrapped_handler
             ))
 
-    @staticmethod
-    def get_raw_command_args(
-        update: ModifiedTeleUpdate
-    ) -> Result[str, MessageBuilder]:
+    @classmethod
+    def read_raw_command_args(
+        cls, update: ModifiedTeleUpdate, strip: bool = True
+    ) -> str:
+        """
+        extract the part of the message text that contains
+        everything after the command, but returns an empty string
+        if no args are found, or the message is empty
+        e.g. /command {args} -> {args}
+        """
         message: telegram.Message = update.message
-        error_message = MessageBuilder()
+        if message is None:
+            return ''
 
-        if message.text is None:
-            error_message.add('no text found in message')
-            return Err(error_message)
+        message_text = message.text
+        if message_text is None:
+            return ''
 
-        raw_text = message.text.strip()
+        raw_text = message_text.strip()
         if ' ' not in raw_text:
-            error_message.add('no poll id specified')
-            return Err(error_message)
+            return ''
 
-        raw_command_args = raw_text[raw_text.index(' '):].strip()
-        return Ok(raw_command_args)
+        raw_args = raw_text[raw_text.index(' ')+1:]
+        raw_args = raw_args.strip() if strip else raw_args
+        return raw_args
 
     @classmethod
     def extract_poll_id(
         cls, update: ModifiedTeleUpdate
     ) -> Result[int, MessageBuilder]:
-        raw_args_res = cls.get_raw_command_args(update)
-        if raw_args_res.is_err():
-            return raw_args_res
-
-        raw_poll_id = raw_args_res.unwrap()
+        raw_poll_id = cls.read_raw_command_args(update)
         error_message = MessageBuilder()
+
+        if raw_poll_id == '':
+            error_message.add(f'No poll id found')
+            return Err(error_message)
 
         try:
             poll_id = int(raw_poll_id)
