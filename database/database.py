@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import json
 import os
 import sys
+from abc import ABCMeta, abstractmethod
 
+import pydantic
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
-from result import Result, Ok
+from result import Result, Ok, Err
+from enum import StrEnum
 
 from load_config import YAML_CONFIG
-from typing import Self, Optional, Type
+from typing import Self, Optional, Type, TypeVar
 from database.db_helpers import (
     BoundRowFields, Empty, EmptyField, TypedModel
 )
@@ -359,6 +363,45 @@ class PollWinners(BaseModel):
         return Ok(winning_option_id)
 
 
+class ContextStates(StrEnum):
+    POLL_CREATION = "POLL_CREATION"
+    CAST_VOTE = "CAST_VOTE"
+
+
+P = TypeVar('P', bound=pydantic.BaseModel)
+
+
+class SerializableBaseModel(pydantic.BaseModel, metaclass=ABCMeta):
+    def dump_to_json_str(self) -> str:
+        return json.dumps(self.model_dump(mode='json'))
+
+    @abstractmethod
+    def get_context_type(self) -> ContextStates:
+        raise NotImplementedError()
+
+    def save_state(
+        self, user_id: UserID, chat_id: int
+    ) -> CallbackContextState:
+        with database_proxy.atomic():
+            context_state, _ = CallbackContextState.build_from_fields(
+                user_id=user_id, chat_id=chat_id,
+                context_type=self.get_context_type()
+            ).get_or_create()
+
+            context_state.update_state(self)
+            return context_state
+
+    @classmethod
+    def load(
+        cls: Type[P], context: CallbackContextState
+    ) -> Result[P, ValueError]:
+        try:
+            model: P = cls.model_validate_json(context.state)
+            return Ok(model)
+        except ValueError as e:
+            Err(e)
+
+
 class CallbackContextState(BaseModel):
     id = BigAutoField(primary_key=True)
     user = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
@@ -370,6 +413,40 @@ class CallbackContextState(BaseModel):
         # Unique multi-column index for user-chat_id pairs
         (('user', 'chat_id'), True),
     )
+
+    def update_state(self, new_state: SerializableBaseModel):
+        self.state = new_state.dump_to_json_str()
+        self.save()
+
+    def get_context_type(self) -> Result[ContextStates, ValueError]:
+        try:
+            return Ok(ContextStates(self.context_type))
+        except ValueError as e:
+            return Err(e)
+
+    def deserialize_state(self) -> dict[str, any]:
+        return json.loads(self.state)
+
+    @classmethod
+    def build_from_fields(
+        cls, user_id: UserID | EmptyField = Empty,
+        chat_id: int | EmptyField = Empty,
+        context_type: ContextStates | EmptyField = Empty,
+        state: SerializableBaseModel | EmptyField = Empty
+    ) -> BoundRowFields[Self]:
+        raw_context_type: str | EmptyField = Empty
+        if context_type is not Empty:
+            raw_context_type = str(context_type)
+
+        serialized_state: str | EmptyField = Empty
+        if state is not Empty:
+            serialized_state = state.dump_to_json_str()
+
+        return BoundRowFields(cls, {
+            cls.user: user_id, cls.chat_id: chat_id,
+            cls.context_type: raw_context_type,
+            cls.state: serialized_state
+        })
 
 
 # database should be connected if called from pem db migrations

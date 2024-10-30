@@ -2,7 +2,7 @@ import unittest
 # noinspection PyUnresolvedReferences
 # import ParentImport
 
-from SpecialVotes import SpecialVotes as SpecV
+from special_votes import SpecialVotes as SpecV
 
 
 class TestSpecialVotes(unittest.TestCase):

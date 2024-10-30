@@ -4,55 +4,53 @@ import json
 import logging
 import multiprocessing
 import time
-
-import telegram
 import textwrap
 import asyncio
 import datetime
 import re
 
+import strings
+
 from peewee import JOIN
 from result import Ok, Err, Result
-# noinspection PyProtectedMember
-from telegram.ext._utils.types import CCT, RT
-from telegram.ext.filters import BaseFilter
-from MessageBuilder import MessageBuilder
+from message_buillder import MessageBuilder
 from requests.models import PreparedRequest
 from json import JSONDecodeError
-from datetime import datetime as Datetime
+from datetime import datetime as _datetime
 
-from ModifiedTeleUpdate import ModifiedTeleUpdate
-from SpecialVotes import SpecialVotes
+from modified_tele_update import ModifiedTeleUpdate
+from special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from contexts import PollCreationContext
-from database.database import UserID
+from database.database import UserID, ContextStates
 from database.db_helpers import EmptyField, Empty, BoundRowFields
 from load_config import WEBHOOK_URL
-from LocksManager import PollsLockManager
+from locks_manager import PollsLockManager
+from version import __VERSION__
 
-from typing import (
-    List, Tuple, Dict, Optional, Sequence, Iterable, Callable, Coroutine, Any
-)
-from database import (
-    Users, Polls, PollVoters, UsernameWhitelist,
-    PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
-)
-from BaseAPI import (
-    BaseAPI, UserRegistrationStatus, PollInfo, SubscriptionTiers,
-    CallbackCommands, GetPollWinnerStatus
-)
 from telegram import (
     Message, WebAppInfo, ReplyKeyboardMarkup,
     KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton,
     User as TeleUser, Update as BaseTeleUpdate
 )
 from telegram.ext import (
-    CommandHandler, ContextTypes,
-    MessageHandler, filters, CallbackContext, CallbackQueryHandler,
-    Application
+    ContextTypes, filters, CallbackContext, Application
+)
+from typing import (
+    List, Dict, Optional, Sequence, Iterable, Callable
 )
 
-__VERSION__ = '1.1.1'
+from database import (
+    Users, Polls, PollVoters, UsernameWhitelist,
+    PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
+)
+from base_api import (
+    BaseAPI, UserRegistrationStatus, PollInfo, SubscriptionTiers,
+    CallbackCommands, GetPollWinnerStatus
+)
+
+from tele_helpers import TelegramHelpers
+
 ID_PATTERN = re.compile(r"^[1-9]\d*$")
 MAX_DISPLAY_VOTE_COUNT = 30
 MAX_CONCURRENT_UPDATES = 256
@@ -91,78 +89,12 @@ class RankedChoiceBot(BaseAPI):
     async def flush_deleted_users(cls):
         # TODO: write tests for this
         while True:
-            deletion_cutoff = Datetime.now() - cls.DELETE_USERS_BACKLOG
+            deletion_cutoff = _datetime.now() - cls.DELETE_USERS_BACKLOG
             Users.delete().where(
                 Users.deleted_at < deletion_cutoff
             ).execute()
 
             await asyncio.sleep(cls.FLUSH_USERS_INTERVAL)
-
-    @staticmethod
-    def users_middleware(
-        func: Callable[..., Coroutine], include_self=True
-    ) -> Callable[[BaseTeleUpdate, ...], Coroutine]:
-        async def caller(
-            self, update: BaseTeleUpdate | CallbackContext,
-            *args, **kwargs
-        ):
-            # print("SELF", self)
-            # print('UPDATE', update, args, kwargs)
-            is_tele_update = isinstance(update, BaseTeleUpdate)
-
-            if update.message is not None:
-                message: Message = update.message
-                tele_user = message.from_user
-            elif is_tele_update and update.callback_query is not None:
-                query = update.callback_query
-                tele_user = query.from_user
-            else:
-                tele_user = None
-
-            if tele_user is None:
-                if update.message is not None:
-                    respond_callback = update.message.reply_text
-                elif update.callback_query is not None:
-                    respond_callback = update.callback_query.answer
-                else:
-                    logger.error(f'NO USER FOUND FOR ENDPOINT {func}')
-                    return False
-
-                await respond_callback("User not found")
-
-            tele_id = tele_user.id
-            chat_username: str = tele_user.username
-            assert isinstance(tele_user, TeleUser)
-            user, _ = Users.build_from_fields(tele_id=tele_id).get_or_create()
-            # don't allow deleted users to interact with the bot
-            if user.deleted_at is not None:
-                await tele_user.send_message("User has been deleted")
-                return False
-
-            # update user tele id to username mapping
-            if user.username != chat_username:
-                user.username = chat_username
-                user.save()
-
-            modified_tele_update = ModifiedTeleUpdate(
-                update=update, user=user
-            )
-
-            if include_self:
-                return await func(self, modified_tele_update, *args, **kwargs)
-            else:
-                return await func(modified_tele_update, *args, **kwargs)
-
-        def caller_without_self(update: BaseTeleUpdate, *args, **kwargs):
-            return caller(None, update, *args, **kwargs)
-
-        return caller if include_self else caller_without_self
-
-    @classmethod
-    def wrap_command_handler(cls, handler):
-        return track_errors(cls.users_middleware(
-            handler, include_self=False
-        ))
 
     def schedule_tasks(self, tasks: List[Callable[[], None]]):
         assert len(self.scheduled_processes) == 0
@@ -207,6 +139,7 @@ class RankedChoiceBot(BaseAPI):
             delete_poll=self.delete_poll,
             delete_account=self.delete_account,
             help=self.show_help,
+            done=self.complete_chat_context,
 
             vote_admin=self.vote_for_poll_admin,
             close_poll_admin=self.close_poll_admin,
@@ -216,25 +149,25 @@ class RankedChoiceBot(BaseAPI):
         )
 
         # on different commands - answer in Telegram
-        self.register_commands(
+        TelegramHelpers.register_commands(
             self.app, commands_mapping=commands_mapping
         )
         # catch-all to handle responses to unknown commands
-        self.register_message_handler(
+        TelegramHelpers.register_message_handler(
             self.app, filters.Regex(r'^/') & filters.COMMAND,
             self.handle_unknown_command
         )
         # handle web app updates
-        self.register_message_handler(
+        TelegramHelpers.register_message_handler(
             self.app, filters.StatusUpdate.WEB_APP_DATA,
             self.web_app_handler
         )
         # catch-all to handle all other messages
-        self.register_message_handler(
+        TelegramHelpers.register_message_handler(
             self.app, filters.Regex(r'.*') & filters.TEXT,
             self.handle_other_messages
         )
-        self.register_callback_handler(
+        TelegramHelpers.register_callback_handler(
             self.app, self.inline_keyboard_handler
         )
 
@@ -401,10 +334,61 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def handle_other_messages(self, update: ModifiedTeleUpdate, _):
+        # handles messages not explicitly invoked as a part of a command
         # TODO: implement callback contexts.rs voting and poll creation
-        await update.message.reply_text(
-            "Message support is still in development"
-        )
+        message: Message = update.message
+        chat_context_res = TelegramHelpers.extract_chat_context(update)
+        if chat_context_res.is_err():
+            error_message = chat_context_res.unwrap_err()
+            return await error_message.call(message.reply_text)
+
+        extracted_context = chat_context_res.unwrap()
+        chat_context = extracted_context.chat_context
+        context_type = extracted_context.context_type
+        message_text = extracted_context.message_text
+
+        if context_type == ContextStates.POLL_CREATION:
+            # TODO: check user's max poll options and max poll option length
+            poll_creation_context_res = PollCreationContext.load(chat_context)
+
+            if poll_creation_context_res.is_err():
+                chat_context.delete()
+                return await message.reply_text(
+                    "Unexpected error loading poll creation context"
+                )
+
+            poll_creation_context = poll_creation_context_res.unwrap()
+            if not poll_creation_context.has_question:
+                # set the poll question and prompt for first poll option
+                set_res = poll_creation_context.set_question(message.text)
+                if set_res.is_err():
+                    error = set_res.unwrap_err()
+                    reply_message = str(error)
+                else:
+                    reply_message = "Enter poll option #1:"
+            else:
+                # add poll option and prompt for more options
+                poll_creation_context.add_option(message_text)
+                option_no = 1 + poll_creation_context.num_poll_options
+
+                if option_no <= 2:
+                    reply_message = f"Enter poll option #{option_no}:"
+                else:
+                    reply_message = (
+                        f"Enter poll option #{option_no}, "
+                        f"or use /done if you're done:"
+                    )
+
+            poll_creation_context.save_state(
+                user_id=extracted_context.user.get_user_id(),
+                chat_id=message.chat.id
+            )
+            return await message.reply_text(reply_message)
+        else:
+            # this should never happen
+            return await message.reply_text(
+                f"{context_type} context unsupported"
+            )
 
     def generate_poll_url(self, poll_id: int, tele_user: TeleUser) -> str:
         req = PreparedRequest()
@@ -631,7 +615,7 @@ class RankedChoiceBot(BaseAPI):
         tele_user: TeleUser | None = update.message.from_user
         user_tele_id = tele_user.id
 
-        extract_poll_id_result = self.extract_poll_id(update)
+        extract_poll_id_result = TelegramHelpers.extract_poll_id(update)
         if extract_poll_id_result.is_err():
             await message.reply_text('Poll ID not specified')
             return False
@@ -685,6 +669,26 @@ class RankedChoiceBot(BaseAPI):
             whitelisted_chat_ids=whitelisted_chat_ids
         )
 
+    @staticmethod
+    async def complete_chat_context(
+        update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+    ):
+        message: Message = update.message
+        chat_context_res = TelegramHelpers.extract_chat_context(update)
+        if chat_context_res.is_err():
+            error_message = chat_context_res.unwrap_err()
+            return await error_message.call(message.reply_text)
+
+        extracted_context = chat_context_res.unwrap()
+        if extracted_context.context_type == ContextStates.POLL_CREATION:
+            # TODO: do this lol
+            raise NotImplementedError
+        else:
+            # TODO: do this lol
+            pass
+
+        await message.reply_text("NOT_IMPLEMENTED")
+
     async def create_poll(
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
         open_registration: bool = False,
@@ -709,15 +713,17 @@ class RankedChoiceBot(BaseAPI):
         creator_tele_id = creator_user.id
         assert isinstance(creator_tele_id, int)
         user_entry: Users = update.user
-        raw_poll_creation_args = self.read_raw_command_args(
+        raw_poll_creation_args = TelegramHelpers.read_raw_command_args(
             update, strip=False
         ).rstrip()
 
-        # TODO: initiate poll creation context here
+        # initiate poll creation context here
         if raw_poll_creation_args == '':
-            poll_creation_context = PollCreationContext(
-                max_options=self.poll_max_options
+            PollCreationContext(max_options=self.poll_max_options).save_state(
+                user_id=user_entry.get_user_id(), chat_id=message.chat.id
             )
+            await message.reply_text("Enter the poll question:")
+            return True
 
         try:
             subscription_tier = SubscriptionTiers(
@@ -930,6 +936,22 @@ class RankedChoiceBot(BaseAPI):
             poll_message, reply_markup=reply_markup
         )
 
+    @classmethod
+    async def whitelist_chat_registration(
+        cls, update: ModifiedTeleUpdate, *_, **__
+    ):
+        return await TelegramHelpers.set_chat_registration_status(
+            update=update, whitelist=True
+        )
+
+    @classmethod
+    async def blacklist_chat_registration(
+        cls, update: ModifiedTeleUpdate, *_, **__
+    ):
+        return await TelegramHelpers.set_chat_registration_status(
+            update=update, whitelist=False
+        )
+
     async def register_user_by_tele_id(
         self, update: ModifiedTeleUpdate, *_, **__
     ):
@@ -1003,86 +1025,9 @@ class RankedChoiceBot(BaseAPI):
         await message.reply_text(f'User #{target_user_tele_id} registered')
         return True
 
-    async def whitelist_chat_registration(
-        self, update: ModifiedTeleUpdate, *_, **__
-    ):
-        return await self.set_chat_registration_status(
-            update=update, whitelist=True
-        )
-
-    async def blacklist_chat_registration(
-        self, update: ModifiedTeleUpdate, *_, **__
-    ):
-        return await self.set_chat_registration_status(
-            update=update, whitelist=False
-        )
-
-    async def set_chat_registration_status(
-        self, update: ModifiedTeleUpdate, whitelist: bool
-    ) -> bool:
-        message = update.message
-        tele_user: TeleUser | None = message.from_user
-
-        extract_poll_id_result = self.extract_poll_id(update)
-        if extract_poll_id_result.is_err():
-            error_message = extract_poll_id_result.err()
-            await error_message.call(update.message.reply_text)
-            return False
-
-        poll_id = extract_poll_id_result.unwrap()
-
-        try:
-            poll = Polls.select().where(Polls.id == poll_id).get()
-        except Polls.DoesNotExist:
-            await message.reply_text(f'poll {poll_id} does not exist')
-            return False
-
-        try:
-            user = Users.build_from_fields(tele_id=tele_user.id).get()
-        except Users.DoesNotExist:
-            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
-            return False
-
-        user_id = user.get_user_id()
-        creator_id: UserID = poll.get_creator().get_user_id()
-        if creator_id != user_id:
-            await message.reply_text(
-                'only poll creator is allowed to whitelist chats '
-                'for open user registration'
-            )
-            return False
-
-        if whitelist:
-            ChatWhitelist.insert(
-                poll_id=poll_id, chat_id=message.chat.id
-            ).on_conflict_ignore().execute()
-            await message.reply_text(
-                f'Whitelisted chat for user self-registration'
-            )
-            return True
-        else:
-            
-            try:
-                whitelist_row = ChatWhitelist.get(
-                    (ChatWhitelist.poll == poll_id) &
-                    (ChatWhitelist.chat_id == message.chat.id)
-                )
-            except ChatWhitelist.DoesNotExist:
-                await message.reply_text(
-                    f'Chat was not whitelisted for user self-registration '
-                    f'to begin with'
-                )
-                return False
-
-            whitelist_row.delete_instance()
-            await message.reply_text(
-                f'Removed user self-registration chat whitelist'
-            )
-            return True
-
     async def view_votes(self, update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
-        extract_result = self.extract_poll_id(update)
+        extract_result = TelegramHelpers.extract_poll_id(update)
 
         if extract_result.is_err():
             error_message = extract_result.err()
@@ -1214,7 +1159,7 @@ class RankedChoiceBot(BaseAPI):
     async def _set_poll_status(self, update: ModifiedTeleUpdate, closed=True):
         assert isinstance(update, ModifiedTeleUpdate)
         message = update.message
-        extract_result = self.extract_poll_id(update)
+        extract_result = TelegramHelpers.extract_poll_id(update)
 
         if extract_result.is_err():
             error_message = extract_result.err()
@@ -1410,7 +1355,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'UNEXPECTED ERROR: NO TELE USER')
             return False
 
-        extract_result = self.extract_poll_id(update)
+        extract_result = TelegramHelpers.extract_poll_id(update)
         user_tele_id = tele_user.id
 
         if extract_result.is_err():
@@ -1531,7 +1476,7 @@ class RankedChoiceBot(BaseAPI):
 
     async def close_poll(self, update, *_, **__):
         message = update.message
-        extract_result = self.extract_poll_id(update)
+        extract_result = TelegramHelpers.extract_poll_id(update)
 
         if extract_result.is_err():
             error_message = extract_result.err()
@@ -1761,120 +1706,6 @@ class RankedChoiceBot(BaseAPI):
             user_tele_id=user_tele_id, username=username
         )
 
-    @staticmethod
-    def parse_ranking(raw_ranking: str) -> int:
-        raw_ranking = raw_ranking.strip()
-
-        try:
-            special_ranking = SpecialVotes.from_string(raw_ranking)
-            assert special_ranking.value < 0
-            return special_ranking.value
-        except ValueError:
-            ranking = int(raw_ranking)
-            assert ranking > 0
-            return ranking
-
-    @staticmethod
-    def stringify_ranking(ranking_no: int) -> str:
-        if ranking_no > 0:
-            return str(ranking_no)
-        else:
-            return SpecialVotes(ranking_no).to_string()
-
-    @classmethod
-    def unpack_rankings_and_poll_id(
-        cls, raw_text: str
-    ) -> Result[Tuple[int, List[int]], MessageBuilder]:
-        """
-        raw_text format:
-        {command} {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
-        """
-        # print("RAW_TEXT", raw_text)
-        error_message = MessageBuilder()
-        # remove starting command from raw_text
-        raw_arguments = raw_text[raw_text.index(' '):].strip()
-
-        r"""
-        catches input of format:
-        {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
-        {poll_id} {choice_1} > {choice_2} > ... > {choice_n}
-
-        regex breakdown:
-        ^ -> start of string
-        ^[0-9]+:*\s+ -> poll_id, optional colon, and space 
-        (\s*[1-9]+0*\s*>)* -> ranking number (>0) then arrow
-        \s*([0-9]+|withhold|abstain) -> final ranking number or special vote
-        $ -> end of string        
-        """
-        # print('RAW_ARGS', [raw_arguments])
-        pattern1 = r'^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|{}|{})$'.format(
-            *SpecialVotes.get_str_values()
-        )
-        r"""
-        catches input of format:
-        {poll_id} {choice_1} {choice_2} ... {choice_n}
-
-        regex breakdown:
-        ^ -> start of string
-        ([0-9]+):*\s* -> poll_id, optional colon
-        ([1-9]+0*\s+)* -> ranking number (>0) then space
-        ([0-9]+|withhold|abstain) -> final ranking number or special vote
-        $ -> end of string        
-        """
-        pattern2 = r'^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|{}|{})$'.format(
-            *SpecialVotes.get_str_values()
-        )
-
-        pattern_match1 = re.match(pattern1, raw_arguments)
-        pattern_match2 = re.match(pattern2, raw_arguments)
-        # print("P1P2", pattern1, pattern2)
-
-        if pattern_match1:
-            raw_arguments = raw_arguments.replace(':', '')
-            separator_index = raw_arguments.index(' ')
-            raw_poll_id = int(raw_arguments[:separator_index])
-            raw_votes = raw_arguments[separator_index:].strip()
-            rankings = [
-                cls.parse_ranking(ranking)
-                for ranking in raw_votes.split('>')
-            ]
-        elif pattern_match2:
-            raw_arguments = raw_arguments.replace(':', '')
-            raw_arguments = re.sub(r'\s+', ' ', raw_arguments)
-            raw_arguments_arr = raw_arguments.split(' ')
-            raw_poll_id = int(raw_arguments_arr[0])
-            raw_votes = raw_arguments_arr[1:]
-            rankings = [
-                cls.parse_ranking(ranking)
-                for ranking in raw_votes
-            ]
-        else:
-            error_message.add('input format is invalid')
-            return Err(error_message)
-
-        validate_result = cls.validate_rankings(rankings)
-        if validate_result.is_err():
-            return validate_result
-
-        try:
-            poll_id = int(raw_poll_id)
-        except ValueError:
-            error_message.add(f'invalid poll id: {raw_arguments}')
-            return Err(error_message)
-
-        return Ok((poll_id, rankings))
-
-    @staticmethod
-    async def show_about(update: ModifiedTeleUpdate, *_, **__):
-        message: Message = update.message
-        await message.reply_text(textwrap.dedent(f"""
-            Version {__VERSION__}
-            The source code for this bot can be found at:
-            https://github.com/milselarch/RCV-tele-bot
-            Join the feedback and discussion group at: 
-            https://t.me/+fs0WPn1pfmYxNjg1
-        """))
-
     @classmethod
     async def delete_poll(cls, update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
@@ -1953,31 +1784,15 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def delete_account(self, update: ModifiedTeleUpdate, *_, **__):
-        deletion_token = self.read_raw_command_args(update)
+        deletion_token = TelegramHelpers.read_raw_command_args(update)
         # print('DEL_TOKEN', [deletion_token])
 
         if deletion_token == '':
             # deletion token not provided, send deletion instructions
             delete_token = self.generate_delete_token(update.user)
-            return await update.message.reply_text(textwrap.dedent(f"""
-                Deleting your account will accomplish the following:
-                - all polls you've created will be deleted
-                - all votes you've cast for any ongoing polls
-                  will be deleted, and you will be deregistered
-                  from these ongoing polls
-                - all votes you've cast for any closed polls will
-                  be decoupled from your user account
-                - your user account will be marked as deleted and you
-                  will not be able to create new polls or vote using
-                  your account moving forward
-                - your user account will be removed from the database
-                  28 days after being marked for deletion 
-                
-                Confirm account deletion by running the delete command 
-                with the provided deletion token:
-                ——————————————————
-                /delete_account {delete_token}
-            """))
+            return await update.message.reply_text(
+                strings.generate_delete_text(delete_token)
+            )
 
         match_pattern = f'^[0-9A-F]+:[0-9A-F]+$'
         if re.match(match_pattern, deletion_token) is None:
@@ -1998,7 +1813,7 @@ class RankedChoiceBot(BaseAPI):
             with db.atomic():
                 # delete all polls created by the user
                 Polls.delete().where(Polls.creator == user_id).execute()
-                user.deleted_at = Datetime.now()  # mark as deleted
+                user.deleted_at = _datetime.now()  # mark as deleted
                 user.save()
 
                 poll_registrations: Iterable[PollVoters] = (
@@ -2030,87 +1845,7 @@ class RankedChoiceBot(BaseAPI):
     @staticmethod
     async def show_help(update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
-        await message.reply_text(textwrap.dedent("""
-           /start - start bot
-           /user_details - shows your username and user id
-           ——————————————————
-           /create_poll @username_1 @username_2 ... @username_n:
-           poll title
-           poll option 1
-           poll option 2
-           ...
-           poll option m   
-
-           Creates a new poll
-           ——————————————————
-           /create_group_poll @username_1 @username_2 ... @username_n:
-           poll title
-           poll option 1
-           poll option 2
-           ...
-           poll option m
-           
-           Creates a new poll that chat members can self-register for
-           ——————————————————
-           /register_user_id {poll_id} {user_id}
-           Registers a user by user_id for a poll
-           ——————————————————
-           /whitelist_chat_registration {poll_id}
-           Whitelists the current chat so that chat members can self-register
-           for the poll specified by poll_id within the chat group
-           ——————————————————
-           /blacklist_chat_registration {poll_id}
-           Blacklists the current chat so that chat members cannot 
-           self-register for the poll specified by poll_id within the chat
-           group
-           ——————————————————
-           /view_poll {poll_id} - shows poll details given poll_id
-           ——————————————————
-           /vote {poll_id}: {option_1} > {option_2} > ... > {option_n} 
-           /vote {poll_id} {option_1} > {option_2} > ... > {option_n} 
-           /vote {poll_id} {option_1} {option_2} ... {option_n} 
-
-           Last option can also accept 2 special values, withhold and abstain:
-               > Vote withhold if you want to vote for none of the options
-               > Vote abstain if you want to remove yourself from the poll 
-
-           Vote for the poll with the specified poll_id
-           requires that the user is one of the registered 
-           voters of the poll
-           ——————————————————
-           /poll_results {poll_id}
-           Returns poll results if the poll has been closed
-           ——————————————————
-           /has_voted {poll_id} 
-           Tells you if you've voted for the poll with the 
-           specified poll_id
-           ——————————————————
-           /close_poll {poll_id}
-           Close the poll with the specified poll_id
-           Note that only the creator of the poll is allowed 
-           to issue this command to close the poll
-           ——————————————————
-           /view_votes {poll_id}
-           View all the votes entered for the poll 
-           with the specified poll_id. 
-           This can only be done after the poll has been closed first
-           ——————————————————
-           /view_voters {poll_id}
-           Show which voters have voted and which have not
-           ——————————————————
-           /about - view miscellaneous information about the bot
-           /view_polls - view all polls created by you
-           ——————————————————
-           /delete_poll {poll_id} - delete poll by poll_id
-           Use /delete_poll --force to force delete the poll without 
-           confirmation, regardless of whether poll is open or closed
-           ——————————————————
-           /delete_account
-           /delete_account {deletion_token}
-           Delete your user account (this cannot be undone)
-           ——————————————————
-           /help - view commands available to the bot
-           """))
+        await message.reply_text(strings.HELP_TEXT)
 
     async def view_poll_voters(self, update, *_, **__):
         """
@@ -2121,7 +1856,7 @@ class RankedChoiceBot(BaseAPI):
         :return:
         """
         message: Message = update.message
-        extract_result = self.extract_poll_id(update)
+        extract_result = TelegramHelpers.extract_poll_id(update)
 
         if extract_result.is_err():
             error_message = extract_result.err()
@@ -2214,6 +1949,17 @@ class RankedChoiceBot(BaseAPI):
             {' '.join(not_voted_usernames)}
         """))
 
+    @staticmethod
+    async def show_about(update: ModifiedTeleUpdate, *_, **__):
+        message: Message = update.message
+        await message.reply_text(textwrap.dedent(f"""
+            Version {__VERSION__}
+            The source code for this bot can be found at:
+            https://github.com/milselarch/RCV-tele-bot
+            Join the feedback and discussion group at: 
+            https://t.me/+fs0WPn1pfmYxNjg1
+        """))
+
     async def fetch_poll_results(self, update, *_, **__):
         """
         /poll_results 5
@@ -2223,7 +1969,7 @@ class RankedChoiceBot(BaseAPI):
         :return:
         """
         message = update.message
-        extract_result = self.extract_poll_id(update)
+        extract_result = TelegramHelpers.extract_poll_id(update)
 
         if extract_result.is_err():
             error_message = extract_result.err()
@@ -2270,83 +2016,6 @@ class RankedChoiceBot(BaseAPI):
             return await message.reply_text(f'Poll winner is: {option_name}')
         else:
             return await message.reply_text('Poll has no winner')
-
-    @classmethod
-    def register_message_handler(
-        cls, dispatcher: Application, message_filter: BaseFilter,
-        callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
-    ):
-        dispatcher.add_handler(MessageHandler(
-            message_filter, cls.users_middleware(callback, include_self=False)
-        ))
-
-    @classmethod
-    def register_callback_handler(
-        cls, dispatcher: Application,
-        callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
-    ):
-        dispatcher.add_handler(CallbackQueryHandler(
-            cls.users_middleware(callback, include_self=False)
-        ))
-
-    @classmethod
-    def register_commands(
-        cls, dispatcher: Application,
-        commands_mapping: Dict[
-            str, Callable[[ModifiedTeleUpdate, ...], Coroutine]
-        ],
-    ):
-        for command_name in commands_mapping:
-            handler = commands_mapping[command_name]
-            wrapped_handler = cls.wrap_command_handler(handler)
-            dispatcher.add_handler(CommandHandler(
-                command_name, wrapped_handler
-            ))
-
-    @classmethod
-    def read_raw_command_args(
-        cls, update: ModifiedTeleUpdate, strip: bool = True
-    ) -> str:
-        """
-        extract the part of the message text that contains
-        everything after the command, but returns an empty string
-        if no args are found, or the message is empty
-        e.g. /command {args} -> {args}
-        """
-        message: telegram.Message = update.message
-        if message is None:
-            return ''
-
-        message_text = message.text
-        if message_text is None:
-            return ''
-
-        raw_text = message_text.strip()
-        if ' ' not in raw_text:
-            return ''
-
-        raw_args = raw_text[raw_text.index(' ')+1:]
-        raw_args = raw_args.strip() if strip else raw_args
-        return raw_args
-
-    @classmethod
-    def extract_poll_id(
-        cls, update: ModifiedTeleUpdate
-    ) -> Result[int, MessageBuilder]:
-        raw_poll_id = cls.read_raw_command_args(update)
-        error_message = MessageBuilder()
-
-        if raw_poll_id == '':
-            error_message.add(f'No poll id found')
-            return Err(error_message)
-
-        try:
-            poll_id = int(raw_poll_id)
-        except ValueError:
-            error_message.add(f'invalid poll id: {raw_poll_id}')
-            return Err(error_message)
-
-        return Ok(poll_id)
 
 
 if __name__ == '__main__':

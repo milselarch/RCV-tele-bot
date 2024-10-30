@@ -1,12 +1,14 @@
-from typing import Sequence
-
 import pydantic
 
+from typing import Sequence
 from result import Result, Ok, Err
-from PyVotesCounter import PyVotesCounter
+from votes_counter import PyVotesCounter
+from database import CallbackContextState
+from database.database import UserID, ContextStates, SerializableBaseModel
+from database import db
 
 
-class PollCreationContext(pydantic.BaseModel):
+class PollCreationContext(SerializableBaseModel):
     question: str
     poll_options: list[str]
     whitelisted_chat_ids: Sequence[int]
@@ -24,6 +26,17 @@ class PollCreationContext(pydantic.BaseModel):
         )
         self.max_options = max_options
 
+    def get_context_type(self) -> ContextStates:
+        return ContextStates.POLL_CREATION
+
+    @property
+    def has_question(self):
+        return self.question.strip() != ''
+
+    @property
+    def num_poll_options(self) -> int:
+        return len(self.poll_options)
+
     @property
     def is_complete(self):
         return (
@@ -31,7 +44,8 @@ class PollCreationContext(pydantic.BaseModel):
             (len(self.question) > 0)
         )
 
-    def set_question(self, question: str) -> Result[bool, ValueError]:
+    def set_question(self, question: str) -> Result[bool, Exception]:
+        question = question.strip()
         if len(question) == 0:
             return Err(ValueError("Question cannot be empty"))
 
@@ -48,13 +62,16 @@ class PollCreationContext(pydantic.BaseModel):
         return Ok(self.is_complete)
 
 
-class VoteContext(pydantic.BaseModel):
+class VoteContext(SerializableBaseModel):
     poll_id: int
     rankings: list[int]
 
     def __init__(self, max_rankings: int, poll_id: int = -1):
         super().__init__(poll_id=poll_id, rankings=[])
         self.max_rankings = max_rankings
+
+    def get_context_type(self) -> ContextStates:
+        return ContextStates.CAST_VOTE
 
     def set_poll_id(self, poll_id: int) -> Result[bool, ValueError]:
         if poll_id < 0:
@@ -81,3 +98,5 @@ class VoteContext(pydantic.BaseModel):
 
         self.rankings.append(raw_option_id)
         return Ok(self.is_complete)
+
+

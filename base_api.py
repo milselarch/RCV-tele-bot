@@ -1,6 +1,7 @@
 import asyncio
 import hmac
 import json
+import re
 import secrets
 import string
 
@@ -18,14 +19,14 @@ from collections import defaultdict
 from strenum import StrEnum
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
-from PyVotesCounter import PyVotesCounter
+from votes_counter import PyVotesCounter
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
 from concurrent.futures import ThreadPoolExecutor
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from MessageBuilder import MessageBuilder
-from SpecialVotes import SpecialVotes
+from message_buillder import MessageBuilder
+from special_votes import SpecialVotes
 from database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
     db, Users
@@ -941,6 +942,109 @@ class BaseAPI(object):
             pwd += ''.join(secrets.choice(alphabet))
 
         return pwd
+
+    @classmethod
+    def unpack_rankings_and_poll_id(
+        cls, raw_text: str
+    ) -> Result[Tuple[int, List[int]], MessageBuilder]:
+        """
+        raw_text format:
+        {command} {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
+        """
+        # print("RAW_TEXT", raw_text)
+        error_message = MessageBuilder()
+        # remove starting command from raw_text
+        raw_arguments = raw_text[raw_text.index(' '):].strip()
+
+        r"""
+        catches input of format:
+        {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
+        {poll_id} {choice_1} > {choice_2} > ... > {choice_n}
+
+        regex breakdown:
+        ^ -> start of string
+        ^[0-9]+:*\s+ -> poll_id, optional colon, and space 
+        (\s*[1-9]+0*\s*>)* -> ranking number (>0) then arrow
+        \s*([0-9]+|withhold|abstain) -> final ranking number or special vote
+        $ -> end of string        
+        """
+        # print('RAW_ARGS', [raw_arguments])
+        pattern1 = r'^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|{}|{})$'.format(
+            *SpecialVotes.get_str_values()
+        )
+        r"""
+        catches input of format:
+        {poll_id} {choice_1} {choice_2} ... {choice_n}
+
+        regex breakdown:
+        ^ -> start of string
+        ([0-9]+):*\s* -> poll_id, optional colon
+        ([1-9]+0*\s+)* -> ranking number (>0) then space
+        ([0-9]+|withhold|abstain) -> final ranking number or special vote
+        $ -> end of string        
+        """
+        pattern2 = r'^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|{}|{})$'.format(
+            *SpecialVotes.get_str_values()
+        )
+
+        pattern_match1 = re.match(pattern1, raw_arguments)
+        pattern_match2 = re.match(pattern2, raw_arguments)
+        # print("P1P2", pattern1, pattern2)
+
+        if pattern_match1:
+            raw_arguments = raw_arguments.replace(':', '')
+            separator_index = raw_arguments.index(' ')
+            raw_poll_id = int(raw_arguments[:separator_index])
+            raw_votes = raw_arguments[separator_index:].strip()
+            rankings = [
+                cls.parse_ranking(ranking)
+                for ranking in raw_votes.split('>')
+            ]
+        elif pattern_match2:
+            raw_arguments = raw_arguments.replace(':', '')
+            raw_arguments = re.sub(r'\s+', ' ', raw_arguments)
+            raw_arguments_arr = raw_arguments.split(' ')
+            raw_poll_id = int(raw_arguments_arr[0])
+            raw_votes = raw_arguments_arr[1:]
+            rankings = [
+                cls.parse_ranking(ranking)
+                for ranking in raw_votes
+            ]
+        else:
+            error_message.add('input format is invalid')
+            return Err(error_message)
+
+        validate_result = cls.validate_rankings(rankings)
+        if validate_result.is_err():
+            return validate_result
+
+        try:
+            poll_id = int(raw_poll_id)
+        except ValueError:
+            error_message.add(f'invalid poll id: {raw_arguments}')
+            return Err(error_message)
+
+        return Ok((poll_id, rankings))
+
+    @staticmethod
+    def parse_ranking(raw_ranking: str) -> int:
+        raw_ranking = raw_ranking.strip()
+
+        try:
+            special_ranking = SpecialVotes.from_string(raw_ranking)
+            assert special_ranking.value < 0
+            return special_ranking.value
+        except ValueError:
+            ranking = int(raw_ranking)
+            assert ranking > 0
+            return ranking
+
+    @staticmethod
+    def stringify_ranking(ranking_no: int) -> str:
+        if ranking_no > 0:
+            return str(ranking_no)
+        else:
+            return SpecialVotes(ranking_no).to_string()
 
     @staticmethod
     def validate_rankings(

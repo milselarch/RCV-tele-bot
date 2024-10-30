@@ -1,7 +1,7 @@
 import unittest
 
-from SpecialVotes import SpecialVotes
-from PyVotesCounter import PyVotesCounter
+from special_votes import SpecialVotes
+from votes_counter import PyVotesCounter
 
 
 class TestRankedChoiceVote(unittest.TestCase):

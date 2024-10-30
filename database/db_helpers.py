@@ -118,3 +118,9 @@ class BoundRowFields(ModelRowFields, Generic[T]):
 
     def insert(self):
         return self.__base_model.insert(**self._fields)
+
+    def replace(self):
+        return self.__base_model.replace(**self._fields)
+
+    def apply_update(self, model_instance: T):
+        return model_instance.update(**self._fields)
