@@ -1275,6 +1275,7 @@ class RankedChoiceBot(BaseAPI):
                     'override existing entry'
                 )
         else:
+            # TODO: check if update on insert conflict works with MySQL
             Users.build_from_fields(
                 tele_id=tele_id, username=username
             ).insert().on_conflict(

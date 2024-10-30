@@ -370,7 +370,6 @@ class TelegramHelpers(object):
             )
             return True
         else:
-
             try:
                 whitelist_row = ChatWhitelist.get(
                     (ChatWhitelist.poll == poll_id) &
