@@ -22,10 +22,9 @@ from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from contexts import PollCreationContext
 from database.database import UserID, ContextStates
-from database.db_helpers import EmptyField, Empty, BoundRowFields
+from database.db_helpers import EmptyField, Empty
 from load_config import WEBHOOK_URL
 from helpers.locks_manager import PollsLockManager
-from helpers.strings import __VERSION__
 
 from telegram import (
     Message, WebAppInfo, ReplyKeyboardMarkup,
@@ -823,10 +822,6 @@ class RankedChoiceBot(BaseAPI):
         initial_num_voters = (
             len(poll_user_tele_ids) + len(whitelisted_usernames)
         )
-        max_voters = subscription_tier.get_max_voters()
-        if initial_num_voters > max_voters:
-            await message.reply_text(f'Whitelisted voters exceeds limit')
-            return False
 
         try:
             user = Users.build_from_fields(tele_id=creator_tele_id).get()
@@ -835,80 +830,29 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         creator_id = user.get_user_id()
-        assert initial_num_voters <= max_voters
-        num_user_created_polls = self.count_polls_created(creator_id)
-        poll_creation_limit = subscription_tier.get_max_polls()
-        limit_reached_text = textwrap.dedent(f"""
-            Poll creation limit reached
-            Use /delete {{POLL_ID}} to remove unused polls
-        """)
-
-        if num_user_created_polls >= poll_creation_limit:
-            await message.reply_text(limit_reached_text)
-            return False
-
         # create users if they don't exist
         user_rows = [
             Users.build_from_fields(tele_id=tele_id)
             for tele_id in poll_user_tele_ids
         ]
 
-        with db.atomic():
-            Users.batch_insert(user_rows).on_conflict_ignore().execute()
-            query = Users.tele_id.in_(poll_user_tele_ids)
-            users = Users.select().where(query)
-            poll_user_ids = [user.get_user_id() for user in users]
+        create_poll_res = TelegramHelpers.create_poll(
+            creator_id=creator_id, user_rows=user_rows,
+            poll_user_tele_ids=poll_user_tele_ids,
+            poll_question=poll_question,
+            subscription_tier=subscription_tier,
+            open_registration=open_registration,
+            poll_options=poll_options,
+            whitelisted_usernames=whitelisted_usernames,
+            whitelisted_chat_ids=whitelisted_chat_ids
+        )
 
-            assert len(poll_user_ids) == len(poll_user_tele_ids)
-            num_user_created_polls = self.count_polls_created(creator_id)
-            # verify again that the number of polls created is still
-            # within the limit to prevent race conditions
-            if num_user_created_polls >= poll_creation_limit:
-                await message.reply_text(limit_reached_text)
-                return False
+        if create_poll_res.is_err():
+            error_message = create_poll_res.err()
+            await error_message.call(message.reply_text)
+            return False
 
-            new_poll = Polls.build_from_fields(
-                desc=poll_question, creator_id=creator_id,
-                num_voters=initial_num_voters, open_registration=open_registration,
-                max_voters=subscription_tier.get_max_voters()
-            ).create()
-
-            new_poll_id: int = new_poll.id
-            assert isinstance(new_poll_id, int)
-            chat_whitelist_rows: List[BoundRowFields[ChatWhitelist]] = []
-            whitelist_user_rows: List[BoundRowFields[UsernameWhitelist]] = []
-            poll_option_rows: List[BoundRowFields[PollOptions]] = []
-            poll_voter_rows: List[BoundRowFields[PollVoters]] = []
-
-            # create poll options
-            for k, poll_option in enumerate(poll_options):
-                poll_choice_number = k+1
-                poll_option_rows.append(PollOptions.build_from_fields(
-                    poll_id=new_poll_id, option_name=poll_option,
-                    option_number=poll_choice_number
-                ))
-            # whitelist voters in poll by username
-            for raw_poll_user in whitelisted_usernames:
-                row_fields = UsernameWhitelist.build_from_fields(
-                    poll_id=new_poll_id, username=raw_poll_user
-                )
-                whitelist_user_rows.append(row_fields)
-            # whitelist voters in poll by user id
-            for poll_user_id in poll_user_ids:
-                poll_voter_rows.append(PollVoters.build_from_fields(
-                    poll_id=new_poll_id, user_id=poll_user_id
-                ))
-            # chat ids that are whitelisted for user self-registration
-            for chat_id in whitelisted_chat_ids:
-                chat_whitelist_rows.append(ChatWhitelist.build_from_fields(
-                    poll_id=new_poll_id, chat_id=chat_id
-                ))
-
-            PollVoters.batch_insert(poll_voter_rows).execute()
-            UsernameWhitelist.batch_insert(whitelist_user_rows).execute()
-            PollOptions.batch_insert(poll_option_rows).execute()
-            ChatWhitelist.batch_insert(chat_whitelist_rows).execute()
-
+        new_poll_id = create_poll_res.unwrap()
         bot_username = context.bot.username
         poll_message = self.generate_poll_info(
             new_poll_id, poll_question, poll_options,
@@ -1952,7 +1896,7 @@ class RankedChoiceBot(BaseAPI):
     async def show_about(update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         await message.reply_text(textwrap.dedent(f"""
-            Version {__VERSION__}
+            Version {strings.__VERSION__}
             The source code for this bot can be found at:
             https://github.com/milselarch/RCV-tele-bot
             Join the feedback and discussion group at: 

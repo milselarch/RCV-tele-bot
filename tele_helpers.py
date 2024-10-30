@@ -2,9 +2,11 @@ import dataclasses
 import logging
 import telegram
 
-from typing import Callable, Coroutine, Any, Dict
+from typing import Callable, Coroutine, Any, Dict, List, Sequence
 from result import Result, Err, Ok
+from base_api import BaseAPI, SubscriptionTiers
 from bot_middleware import track_errors
+from database.db_helpers import BoundRowFields
 from helpers.message_buillder import MessageBuilder
 
 from telegram import Message
@@ -19,8 +21,12 @@ from telegram import (
     Update as BaseTeleUpdate, User as TeleUser
 )
 
-from database import Users, Polls, ChatWhitelist
-from database.database import UserID, CallbackContextState, ContextStates
+from database import Users, Polls, ChatWhitelist, db
+from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT
+from database.database import (
+    UserID, CallbackContextState, ContextStates, UsernameWhitelist,
+    PollVoters, PollOptions
+)
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -94,6 +100,86 @@ class TelegramHelpers(object):
             user=user_entry, message_text=message_text,
             chat_context=chat_context, context_type=chat_context_type
         ))
+
+    @classmethod
+    def create_poll(
+        cls, creator_id: UserID, user_rows: list[BoundRowFields[Users]],
+        poll_user_tele_ids: list[int], poll_question: str,
+        subscription_tier: SubscriptionTiers, open_registration: bool,
+        poll_options: list[str], whitelisted_usernames: list[str],
+        whitelisted_chat_ids: Sequence[int]
+    ) -> Result[int, MessageBuilder]:
+        error_message = MessageBuilder()
+        num_user_created_polls = BaseAPI.count_polls_created(creator_id)
+        poll_creation_limit = subscription_tier.get_max_polls()
+        max_voters = subscription_tier.get_max_voters()
+        initial_num_voters = (
+            len(poll_user_tele_ids) + len(whitelisted_usernames)
+        )
+
+        if num_user_created_polls >= poll_creation_limit:
+            return Err(error_message.add(POLL_OPTIONS_LIMIT_REACHED_TEXT))
+        if initial_num_voters > max_voters:
+            return Err(error_message.add(f'Whitelisted voters exceeds limit'))
+
+        assert initial_num_voters <= max_voters
+
+        with db.atomic():
+            Users.batch_insert(user_rows).on_conflict_ignore().execute()
+            query = Users.tele_id.in_(poll_user_tele_ids)
+            users = Users.select().where(query)
+            poll_user_ids = [user.get_user_id() for user in users]
+
+            assert len(poll_user_ids) == len(poll_user_tele_ids)
+            num_user_created_polls = BaseAPI.count_polls_created(creator_id)
+            # verify again that the number of polls created is still
+            # within the limit to prevent race conditions
+            if num_user_created_polls >= poll_creation_limit:
+                return Err(error_message.add(POLL_OPTIONS_LIMIT_REACHED_TEXT))
+
+            new_poll = Polls.build_from_fields(
+                desc=poll_question, creator_id=creator_id,
+                num_voters=initial_num_voters, open_registration=open_registration,
+                max_voters=subscription_tier.get_max_voters()
+            ).create()
+
+            new_poll_id: int = new_poll.id
+            assert isinstance(new_poll_id, int)
+            chat_whitelist_rows: List[BoundRowFields[ChatWhitelist]] = []
+            whitelist_user_rows: List[BoundRowFields[UsernameWhitelist]] = []
+            poll_option_rows: List[BoundRowFields[PollOptions]] = []
+            poll_voter_rows: List[BoundRowFields[PollVoters]] = []
+
+            # create poll options
+            for k, poll_option in enumerate(poll_options):
+                poll_choice_number = k+1
+                poll_option_rows.append(PollOptions.build_from_fields(
+                    poll_id=new_poll_id, option_name=poll_option,
+                    option_number=poll_choice_number
+                ))
+            # whitelist voters in poll by username
+            for raw_poll_user in whitelisted_usernames:
+                row_fields = UsernameWhitelist.build_from_fields(
+                    poll_id=new_poll_id, username=raw_poll_user
+                )
+                whitelist_user_rows.append(row_fields)
+            # whitelist voters in poll by user id
+            for poll_user_id in poll_user_ids:
+                poll_voter_rows.append(PollVoters.build_from_fields(
+                    poll_id=new_poll_id, user_id=poll_user_id
+                ))
+            # chat ids that are whitelisted for user self-registration
+            for chat_id in whitelisted_chat_ids:
+                chat_whitelist_rows.append(ChatWhitelist.build_from_fields(
+                    poll_id=new_poll_id, chat_id=chat_id
+                ))
+
+            PollVoters.batch_insert(poll_voter_rows).execute()
+            UsernameWhitelist.batch_insert(whitelist_user_rows).execute()
+            PollOptions.batch_insert(poll_option_rows).execute()
+            ChatWhitelist.batch_insert(chat_whitelist_rows).execute()
+
+        return Ok(new_poll_id)
 
     @staticmethod
     def users_middleware(

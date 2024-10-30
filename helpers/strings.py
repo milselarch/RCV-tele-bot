@@ -2,6 +2,11 @@ import textwrap
 
 __VERSION__ = '1.2.0'
 
+POLL_OPTIONS_LIMIT_REACHED_TEXT = textwrap.dedent(f"""
+    Poll creation limit reached
+    Use /delete {{POLL_ID}} to remove unused polls
+""")
+
 HELP_TEXT = textwrap.dedent("""
    /start - start bot
    /user_details - shows your username and user id
