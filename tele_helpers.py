@@ -139,7 +139,8 @@ class TelegramHelpers(object):
 
             new_poll = Polls.build_from_fields(
                 desc=poll_question, creator_id=creator_id,
-                num_voters=initial_num_voters, open_registration=open_registration,
+                num_voters=initial_num_voters,
+                open_registration=open_registration,
                 max_voters=subscription_tier.get_max_voters()
             ).create()
 
