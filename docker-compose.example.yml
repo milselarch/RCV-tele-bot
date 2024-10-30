@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      # host port number is 6400, internal port number is 6379
+      - "6400:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - redis_network
+
+volumes:
+  redis_data:
+
+networks:
+  redis_network:

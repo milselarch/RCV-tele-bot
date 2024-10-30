@@ -1,5 +1,7 @@
 import textwrap
 
+__VERSION__ = '1.2.0'
+
 HELP_TEXT = textwrap.dedent("""
    /start - start bot
    /user_details - shows your username and user id

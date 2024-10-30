@@ -5,8 +5,7 @@ import telegram
 from typing import Callable, Coroutine, Any, Dict
 from result import Result, Err, Ok
 from bot_middleware import track_errors
-from message_buillder import MessageBuilder
-from modified_tele_update import ModifiedTeleUpdate
+from helpers.message_buillder import MessageBuilder
 
 from telegram import Message
 from telegram.ext import (
@@ -37,6 +36,26 @@ class ExtractedContext(object):
     message_text: str
     chat_context: CallbackContextState
     context_type: ContextStates
+
+
+class ModifiedTeleUpdate(object):
+    def __init__(
+        self, update: BaseTeleUpdate, user: Users
+    ):
+        self.update: BaseTeleUpdate = update
+        self.user: Users = user
+
+    @property
+    def callback_query(self):
+        return self.update.callback_query
+
+    @property
+    def message(self):
+        return self.update.message
+
+    @property
+    def effective_message(self):
+        return self.update.effective_message
 
 
 class TelegramHelpers(object):

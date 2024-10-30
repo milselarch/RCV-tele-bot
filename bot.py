@@ -9,24 +9,23 @@ import asyncio
 import datetime
 import re
 
-import strings
-
 from peewee import JOIN
 from result import Ok, Err, Result
-from message_buillder import MessageBuilder
+from helpers.message_buillder import MessageBuilder
 from requests.models import PreparedRequest
 from json import JSONDecodeError
 from datetime import datetime as _datetime
 
-from modified_tele_update import ModifiedTeleUpdate
-from special_votes import SpecialVotes
+from helpers import strings
+from tele_helpers import ModifiedTeleUpdate
+from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from contexts import PollCreationContext
 from database.database import UserID, ContextStates
 from database.db_helpers import EmptyField, Empty, BoundRowFields
 from load_config import WEBHOOK_URL
-from locks_manager import PollsLockManager
-from version import __VERSION__
+from helpers.locks_manager import PollsLockManager
+from helpers.strings import __VERSION__
 
 from telegram import (
     Message, WebAppInfo, ReplyKeyboardMarkup,

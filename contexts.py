@@ -1,11 +1,7 @@
-import pydantic
-
 from typing import Sequence
 from result import Result, Ok, Err
-from votes_counter import PyVotesCounter
-from database import CallbackContextState
-from database.database import UserID, ContextStates, SerializableBaseModel
-from database import db
+from helpers.votes_counter import PyVotesCounter
+from database.database import ContextStates, SerializableBaseModel
 
 
 class PollCreationContext(SerializableBaseModel):

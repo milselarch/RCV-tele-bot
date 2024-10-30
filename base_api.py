@@ -19,14 +19,14 @@ from collections import defaultdict
 from strenum import StrEnum
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
-from votes_counter import PyVotesCounter
+from helpers.votes_counter import PyVotesCounter
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
 from concurrent.futures import ThreadPoolExecutor
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from message_buillder import MessageBuilder
-from special_votes import SpecialVotes
+from helpers.message_buillder import MessageBuilder
+from helpers.special_votes import SpecialVotes
 from database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
     db, Users
