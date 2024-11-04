@@ -38,14 +38,15 @@ from typing import (
 )
 
 from contexts import (
-    PollCreationContext, PollCreator, POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH
+    PollCreationContext, PollCreatorTemplate, POLL_MAX_OPTIONS
 )
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
-    PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
+    PollOptions, VoteRankings, db, ChatWhitelist, PollWinners,
+    SubscriptionTiers
 )
 from base_api import (
-    BaseAPI, UserRegistrationStatus, PollInfo, SubscriptionTiers,
+    BaseAPI, UserRegistrationStatus, PollInfo,
     CallbackCommands, GetPollWinnerStatus
 )
 
@@ -348,7 +349,6 @@ class RankedChoiceBot(BaseAPI):
         if context_type == ContextStates.POLL_CREATION:
             # TODO: check user's max poll options and max poll option length
             poll_creation_context_res = PollCreationContext.load(chat_context)
-
             if poll_creation_context_res.is_err():
                 chat_context.delete()
                 return await message.reply_text(
@@ -382,6 +382,9 @@ class RankedChoiceBot(BaseAPI):
                 chat_id=message.chat.id
             )
             return await message.reply_text(reply_message)
+        elif context_type == ContextStates.CAST_VOTE:
+            # TODO: IMPLEMENTED /done ON VOTE CONTEXT
+            raise NotImplementedError
         else:
             # this should never happen
             return await message.reply_text(
@@ -671,14 +674,49 @@ class RankedChoiceBot(BaseAPI):
     async def complete_chat_context(
         update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
     ):
+        user_entry: Users = update.user
         message: Message = update.message
         chat_context_res = TelegramHelpers.extract_chat_context(update)
+        user_id = user_entry.get_user_id()
+
         if chat_context_res.is_err():
             error_message = chat_context_res.unwrap_err()
             return await error_message.call(message.reply_text)
 
-        extracted_context = chat_context_res.unwrap()
-        if extracted_context.context_type == ContextStates.POLL_CREATION:
+        chat_context = chat_context_res.unwrap()
+        if chat_context.context_type == ContextStates.POLL_CREATION:
+            poll_creation_context_res = PollCreationContext.load(chat_context)
+            if poll_creation_context_res.is_err():
+                chat_context.delete()
+                return await message.reply_text(
+                    "Unexpected error loading poll creation context"
+                )
+
+            poll_creation_context = poll_creation_context_res.unwrap()
+            subscription_tier_res = user_entry.get_subscription_tier()
+            if subscription_tier_res.is_err():
+                err_msg = "Unexpected error reading subscription tier"
+                await message.reply_text(err_msg)
+                return False
+
+            subscription_tier = subscription_tier_res.unwrap()
+            poll_creator = poll_creation_context.to_template(
+                creator_id=user_id, subscription_tier=subscription_tier
+            )
+
+            create_poll_res = poll_creator.save_poll_to_db()
+            if create_poll_res.is_err():
+                error_message = create_poll_res.err()
+                await error_message.call(message.reply_text)
+                return False
+            else:
+                newly_created_poll = create_poll_res.unwrap()
+                poll_id = newly_created_poll.poll_id
+                raise NotImplementedError
+
+            # TODO: do this lol
+            raise NotImplementedError
+        elif chat_context.context_type == ContextStates.CAST_VOTE:
             # TODO: do this lol
             raise NotImplementedError
         else:
@@ -720,14 +758,13 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text("Enter the poll question:")
             return True
 
-        try:
-            subscription_tier = SubscriptionTiers(
-                user_entry.subscription_tier
-            )
-        except ValueError:
-            await message.reply_text("Creator user does not exist")
+        subscription_tier_res = user_entry.get_subscription_tier()
+        if subscription_tier_res.is_err():
+            err_msg = "Unexpected error reading subscription tier"
+            await message.reply_text(err_msg)
             return False
 
+        subscription_tier = subscription_tier_res.unwrap()
         if '\n' not in raw_poll_creation_args:
             await message.reply_text("poll creation format wrong")
             return False
@@ -805,7 +842,7 @@ class RankedChoiceBot(BaseAPI):
             for tele_id in poll_user_tele_ids
         ]
 
-        poll_creator = PollCreator(
+        poll_creator = PollCreatorTemplate(
             creator_id=creator_id, user_rows=user_rows,
             poll_user_tele_ids=poll_user_tele_ids,
             poll_question=poll_question,

@@ -94,6 +94,8 @@ impl PySpecialVotes {
     }
 }
 
+// mysql int datatype is i32, but RCV vote candidates are cast to u32
+// TODO: implement vote mapping
 trait CandidatesMapper<T: Eq + Hash> {
     fn get_candidates_map(&self) -> &HashMap<T, u32>;
     fn get_mut_candidates_map(&mut self) -> &mut HashMap<T, u32>;
@@ -110,8 +112,6 @@ trait CandidatesMapper<T: Eq + Hash> {
 #[pyclass]
 pub struct VotesCounter {
     raw_votes_cache: HashMap<u64, Vec<i32>>,
-    candidates_map: HashMap<i32, u32>,
-    ranked_votes_cache: HashMap<u64, RankedVote>,
     rcv: RankedChoiceVoteTrie
 }
 impl VotesCounter {
@@ -134,8 +134,6 @@ impl VotesCounter {
     fn new() -> Self {
         VotesCounter {
             raw_votes_cache: Default::default(),
-            candidates_map: Default::default(),
-            ranked_votes_cache: Default::default(),
             rcv: Default::default()
         }
     }

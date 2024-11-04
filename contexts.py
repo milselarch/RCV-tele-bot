@@ -1,5 +1,6 @@
 import dataclasses
 import textwrap
+
 from typing import Sequence
 from result import Result, Ok, Err
 
@@ -19,54 +20,8 @@ POLL_MAX_OPTIONS: int = 20
 POLL_OPTION_MAX_LENGTH: int = 100
 
 
-class PollCreationContext(SerializableBaseModel):
-    poll_options: list[str]
-    whitelisted_chat_ids: Sequence[int] = ()
-    open_registration: bool = False
-    question: str = ''
-
-    def __init__(self, max_options: int, **kwargs):
-        super().__init__(**kwargs)
-        self.max_options = max_options
-
-    def get_context_type(self) -> ContextStates:
-        return ContextStates.POLL_CREATION
-
-    @property
-    def has_question(self):
-        return self.question.strip() != ''
-
-    @property
-    def num_poll_options(self) -> int:
-        return len(self.poll_options)
-
-    @property
-    def is_complete(self):
-        return (
-            (len(self.poll_options) > 0) and
-            (len(self.question) > 0)
-        )
-
-    def set_question(self, question: str) -> Result[bool, Exception]:
-        question = question.strip()
-        if len(question) == 0:
-            return Err(ValueError("Question cannot be empty"))
-
-        self.question = question
-        return Ok(self.is_complete)
-
-    def add_option(self, option: str) -> Result[bool, ValueError]:
-        if option in self.poll_options:
-            return Err(ValueError(f"Option {option} already exists"))
-        if len(self.poll_options) == self.max_options:
-            return Err(ValueError("Max number of options reached"))
-
-        self.poll_options.append(option)
-        return Ok(self.is_complete)
-
-
 @dataclasses.dataclass
-class PollCreator(object):
+class PollCreatorTemplate(object):
     creator_id: UserID
     user_rows: Sequence[BoundRowFields[Users]] = ()
     poll_user_tele_ids: Sequence[int] = ()
@@ -83,22 +38,32 @@ class PollCreator(object):
             len(self.poll_user_tele_ids) + len(self.whitelisted_usernames)
         )
 
-    def save_poll_to_db(self) -> Result[int, MessageBuilder]:
+    def validate_params(self) -> Result[None, MessageBuilder]:
         error_message = MessageBuilder()
+        if self.poll_question == '':
+            return Err(error_message.add('Poll question cannot be empty'))
+
         if len(self.poll_options) > POLL_MAX_OPTIONS:
             return Err(error_message.add(textwrap.dedent(f"""
                 Poll can have at most {POLL_MAX_OPTIONS} options
-                {len(self.poll_options)} poll options passed
+                {len(self.poll_options)} poll options entered
+            """)))
+        elif len(self.poll_options) < 2:
+            return Err(error_message.add(textwrap.dedent(f"""
+                Poll can have at least 2 options
+                {len(self.poll_options)} poll options entered
             """)))
 
         max_option_length = max([len(option) for option in self.poll_options])
         if max_option_length > POLL_OPTION_MAX_LENGTH:
             return Err(error_message.add(textwrap.dedent(f"""
                 Poll option character limit is {POLL_OPTION_MAX_LENGTH}
-                Longest option passed is {max_option_length} characters long
+                Longest option entered is {max_option_length} characters long
             """)))
 
-        duplicate_tele_ids = helpers.get_duplicate_nums(self.poll_user_tele_ids)
+        duplicate_tele_ids = helpers.get_duplicate_nums(
+            self.poll_user_tele_ids
+        )
         if len(duplicate_tele_ids) > 0:
             return Err(error_message.add(
                 f'Duplicate user ids found: {duplicate_tele_ids}'
@@ -115,6 +80,15 @@ class PollCreator(object):
             return Err(error_message.add(f'Whitelisted voters exceeds limit'))
 
         assert self.initial_num_voters <= max_voters
+        return Ok(None)
+
+    def save_poll_to_db(self) -> Result[int, MessageBuilder]:
+        validate_res = self.validate_params()
+        if validate_res.is_err():
+            return validate_res
+
+        error_message = MessageBuilder()
+        poll_creation_limit = self.subscription_tier.get_max_polls()
 
         with db.atomic():
             Users.batch_insert(self.user_rows).on_conflict_ignore().execute()
@@ -175,6 +149,64 @@ class PollCreator(object):
             ChatWhitelist.batch_insert(chat_whitelist_rows).execute()
 
         return Ok(new_poll_id)
+
+
+class PollCreationContext(SerializableBaseModel):
+    poll_options: list[str]
+    whitelisted_chat_ids: Sequence[int] = ()
+    open_registration: bool = False
+    question: str = ''
+
+    def __init__(self, max_options: int, **kwargs):
+        super().__init__(**kwargs)
+        self.max_options = max_options
+
+    def get_context_type(self) -> ContextStates:
+        return ContextStates.POLL_CREATION
+
+    @property
+    def has_question(self):
+        return self.question.strip() != ''
+
+    @property
+    def num_poll_options(self) -> int:
+        return len(self.poll_options)
+
+    @property
+    def is_complete(self):
+        return (
+            (len(self.poll_options) > 0) and
+            (len(self.question) > 0)
+        )
+
+    def set_question(self, question: str) -> Result[bool, Exception]:
+        question = question.strip()
+        if len(question) == 0:
+            return Err(ValueError("Question cannot be empty"))
+
+        self.question = question
+        return Ok(self.is_complete)
+
+    def add_option(self, option: str) -> Result[bool, ValueError]:
+        if option in self.poll_options:
+            return Err(ValueError(f"Option {option} already exists"))
+        if len(self.poll_options) == self.max_options:
+            return Err(ValueError("Max number of options reached"))
+
+        self.poll_options.append(option)
+        return Ok(self.is_complete)
+
+    def to_template(
+        self, creator_id: UserID, subscription_tier: SubscriptionTiers
+    ) -> PollCreatorTemplate:
+        return PollCreatorTemplate(
+            creator_id=creator_id,
+            subscription_tier=subscription_tier,
+            poll_options=self.poll_options,
+            whitelisted_chat_ids=self.whitelisted_chat_ids,
+            open_registration=self.open_registration,
+            poll_question=self.poll_question,
+        )
 
 
 class VoteContext(SerializableBaseModel):

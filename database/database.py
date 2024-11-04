@@ -13,6 +13,7 @@ from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok, Err
 from enum import StrEnum
 
+from database import SubscriptionTiers
 from load_config import YAML_CONFIG
 from typing import Self, Optional, Type, TypeVar
 from database.db_helpers import (
@@ -90,6 +91,12 @@ class Users(BaseModel):
 
     def is_deleted(self) -> bool:
         return self.deleted_at is not None
+
+    def get_subscription_tier(self) -> Result[SubscriptionTiers, ValueError]:
+        try:
+            return Ok(SubscriptionTiers(self.subscription_tier))
+        except ValueError as e:
+            return Err(e)
 
     @classmethod
     def build_from_fields(
