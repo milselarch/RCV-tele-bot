@@ -182,6 +182,10 @@ class Polls(BaseModel):
         )
 
     @classmethod
+    def count_polls_created(cls, user_id: UserID) -> int:
+        return cls.select().where(cls.creator == user_id).count()
+
+    @classmethod
     def build_from_fields(
         cls, poll_id: int | EmptyField = Empty,
         desc: str | EmptyField = Empty,

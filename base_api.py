@@ -5,21 +5,22 @@ import re
 import secrets
 import string
 
-import telegram
 import time
 import hashlib
 import textwrap
 import dataclasses
+import telegram
 import database
 import aioredlock
 
 from enum import IntEnum
 from typing_extensions import Any
-from collections import defaultdict
 from strenum import StrEnum
+
+from helpers.subscription_tiers import SubscriptionTiers
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
-from helpers.votes_counter import PyVotesCounter
+from py_rcv import VotesCounter as PyVotesCounter
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
@@ -38,36 +39,6 @@ from aioredlock import Aioredlock, LockError
 class CallbackCommands(StrEnum):
     REGISTER = 'REGISTER'
     DELETE = 'DELETE'
-
-
-class SubscriptionTiers(IntEnum):
-    FREE = 0
-    TIER_1 = 1
-    TIER_2 = 2
-
-    def get_max_voters(self):
-        # returns the maximum number of voters that can join a poll created
-        # by a user with the given subscription tier
-        match self:
-            case SubscriptionTiers.FREE:
-                return 20
-            case SubscriptionTiers.TIER_1:
-                return 50
-            case SubscriptionTiers.TIER_2:
-                return 200
-            case _:
-                raise ValueError(f"Invalid SubscriptionTiers value: {self}")
-
-    def get_max_polls(self):
-        match self:
-            case SubscriptionTiers.FREE:
-                return 10
-            case SubscriptionTiers.TIER_1:
-                return 20
-            case SubscriptionTiers.TIER_2:
-                return 40
-            case _:
-                raise ValueError(f"Invalid SubscriptionTiers value: {self}")
 
 
 class UserRegistrationStatus(StrEnum):
@@ -350,14 +321,6 @@ class BaseAPI(object):
         votes_aggregator.insert_empty_votes(voters_without_votes)
         winning_option_id = votes_aggregator.determine_winner()
         return winning_option_id
-
-    @staticmethod
-    def get_duplicate_nums(nums: List[int]) -> List[int]:
-        num_count = defaultdict(int)
-        for num in nums:
-            num_count[num] += 1
-
-        return [num for num, count in num_count.items() if count > 1]
 
     @staticmethod
     def get_poll_voter(
@@ -730,10 +693,6 @@ class BaseAPI(object):
         return PollMessage(
             text=poll_message, reply_markup=reply_markup
         )
-
-    @staticmethod
-    def count_polls_created(user_id: UserID) -> int:
-        return Polls.select().where(Polls.creator == user_id).count()
 
     @classmethod
     def build_group_vote_markup(

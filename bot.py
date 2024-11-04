@@ -20,7 +20,6 @@ from helpers import strings
 from tele_helpers import ModifiedTeleUpdate
 from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
-from contexts import PollCreationContext
 from database.database import UserID, ContextStates
 from database.db_helpers import EmptyField, Empty
 from load_config import WEBHOOK_URL
@@ -38,6 +37,9 @@ from typing import (
     List, Dict, Optional, Sequence, Iterable, Callable
 )
 
+from contexts import (
+    PollCreationContext, PollCreator, POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH
+)
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
     PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
@@ -74,8 +76,6 @@ class RankedChoiceBot(BaseAPI):
         self.bot = None
         self.app = None
 
-        self.poll_max_options = 20
-        self.poll_option_max_length = 100
         self.poll_locks_manager = PollsLockManager()
         self.webhook_url = None
 
@@ -322,9 +322,9 @@ class RankedChoiceBot(BaseAPI):
         num_votes = poll_metadata.num_votes
 
         await message.reply_text(textwrap.dedent(f"""
-             vote has been registered
-             {num_votes} / {num_voters} voted
-         """))
+            vote has been registered
+            {num_votes} / {num_voters} voted
+        """))
 
     @track_errors
     async def handle_unknown_command(self, update: ModifiedTeleUpdate, _):
@@ -682,10 +682,7 @@ class RankedChoiceBot(BaseAPI):
             # TODO: do this lol
             raise NotImplementedError
         else:
-            # TODO: do this lol
-            pass
-
-        await message.reply_text("NOT_IMPLEMENTED")
+            await message.reply_text("NOT_IMPLEMENTED")
 
     async def create_poll(
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
@@ -717,7 +714,7 @@ class RankedChoiceBot(BaseAPI):
 
         # initiate poll creation context here
         if raw_poll_creation_args == '':
-            PollCreationContext(max_options=self.poll_max_options).save_state(
+            PollCreationContext(max_options=POLL_MAX_OPTIONS).save_state(
                 user_id=user_entry.get_user_id(), chat_id=message.chat.id
             )
             await message.reply_text("Enter the poll question:")
@@ -760,22 +757,6 @@ class RankedChoiceBot(BaseAPI):
             poll_option.strip().replace('\n', '')
             for poll_option in poll_options
         ]
-
-        if len(poll_options) > self.poll_max_options:
-            await message.reply_text(textwrap.dedent(f"""
-                Poll can have at most {self.poll_max_options} options
-                {len(poll_options)} poll options passed
-            """))
-            return False
-
-        max_option_length = max([len(option) for option in poll_options])
-        if max_option_length > self.poll_option_max_length:
-            await message.reply_text(textwrap.dedent(f"""
-                Poll option character limit is {self.poll_option_max_length}
-                Longest option passed is {max_option_length} characters long
-            """))
-            return False
-
         # print('COMMAND_P2', lines)
         if (command_p1 == '') and not open_registration:
             await message.reply_text('poll voters not specified!')
@@ -811,32 +792,20 @@ class RankedChoiceBot(BaseAPI):
 
             whitelisted_usernames.append(whitelisted_username)
 
-        duplicate_tele_ids = self.get_duplicate_nums(poll_user_tele_ids)
-        if len(duplicate_tele_ids) > 0:
-            await message.reply_text(
-                f'Duplicate user ids found: {duplicate_tele_ids}'
-            )
-            return False
-
-        assert len(set(duplicate_tele_ids)) == len(duplicate_tele_ids)
-        initial_num_voters = (
-            len(poll_user_tele_ids) + len(whitelisted_usernames)
-        )
-
         try:
-            user = Users.build_from_fields(tele_id=creator_tele_id).get()
+            db_user = Users.build_from_fields(tele_id=creator_tele_id).get()
         except Users.DoesNotExist:
             await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
             return False
 
-        creator_id = user.get_user_id()
+        creator_id = db_user.get_user_id()
         # create users if they don't exist
         user_rows = [
             Users.build_from_fields(tele_id=tele_id)
             for tele_id in poll_user_tele_ids
         ]
 
-        create_poll_res = TelegramHelpers.create_poll(
+        poll_creator = PollCreator(
             creator_id=creator_id, user_rows=user_rows,
             poll_user_tele_ids=poll_user_tele_ids,
             poll_question=poll_question,
@@ -847,6 +816,7 @@ class RankedChoiceBot(BaseAPI):
             whitelisted_chat_ids=whitelisted_chat_ids
         )
 
+        create_poll_res = poll_creator.save_poll_to_db()
         if create_poll_res.is_err():
             error_message = create_poll_res.err()
             await error_message.call(message.reply_text)
@@ -857,7 +827,7 @@ class RankedChoiceBot(BaseAPI):
         poll_message = self.generate_poll_info(
             new_poll_id, poll_question, poll_options,
             bot_username=bot_username, closed=False,
-            num_voters=initial_num_voters
+            num_voters=poll_creator.initial_num_voters
         )
 
         chat_type = update.message.chat.type

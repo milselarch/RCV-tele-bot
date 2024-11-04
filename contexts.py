@@ -1,25 +1,32 @@
+import dataclasses
+import textwrap
 from typing import Sequence
 from result import Result, Ok, Err
-from helpers.votes_counter import PyVotesCounter
-from database.database import ContextStates, SerializableBaseModel
+
+from helpers import helpers
+from helpers.message_buillder import MessageBuilder
+from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT
+from helpers.subscription_tiers import SubscriptionTiers
+from database.db_helpers import BoundRowFields
+from py_rcv import VotesCounter as PyVotesCounter
+from database import db
+from database.database import (
+    ContextStates, SerializableBaseModel, UserID, Users, Polls,
+    ChatWhitelist, UsernameWhitelist, PollOptions, PollVoters
+)
+
+POLL_MAX_OPTIONS: int = 20
+POLL_OPTION_MAX_LENGTH: int = 100
 
 
 class PollCreationContext(SerializableBaseModel):
-    question: str
     poll_options: list[str]
-    whitelisted_chat_ids: Sequence[int]
-    open_registration: bool
+    whitelisted_chat_ids: Sequence[int] = ()
+    open_registration: bool = False
+    question: str = ''
 
-    def __init__(
-        self, max_options: int, question: str = '',
-        whitelisted_chat_ids: Sequence[int] = (),
-        open_registration: bool = False
-    ):
-        super().__init__(
-            question=question, options=[],
-            whitelisted_chat_ids=whitelisted_chat_ids,
-            open_registration=open_registration
-        )
+    def __init__(self, max_options: int, **kwargs):
+        super().__init__(**kwargs)
         self.max_options = max_options
 
     def get_context_type(self) -> ContextStates:
@@ -58,6 +65,118 @@ class PollCreationContext(SerializableBaseModel):
         return Ok(self.is_complete)
 
 
+@dataclasses.dataclass
+class PollCreator(object):
+    creator_id: UserID
+    user_rows: Sequence[BoundRowFields[Users]] = ()
+    poll_user_tele_ids: Sequence[int] = ()
+    subscription_tier: SubscriptionTiers = SubscriptionTiers.FREE
+    poll_options: Sequence[str] = ()
+    whitelisted_chat_ids: Sequence[int] = ()
+    whitelisted_usernames: Sequence[str] = ()
+    open_registration: bool = False
+    poll_question: str = ''
+
+    @property
+    def initial_num_voters(self):
+        return (
+            len(self.poll_user_tele_ids) + len(self.whitelisted_usernames)
+        )
+
+    def save_poll_to_db(self) -> Result[int, MessageBuilder]:
+        error_message = MessageBuilder()
+        if len(self.poll_options) > POLL_MAX_OPTIONS:
+            return Err(error_message.add(textwrap.dedent(f"""
+                Poll can have at most {POLL_MAX_OPTIONS} options
+                {len(self.poll_options)} poll options passed
+            """)))
+
+        max_option_length = max([len(option) for option in self.poll_options])
+        if max_option_length > POLL_OPTION_MAX_LENGTH:
+            return Err(error_message.add(textwrap.dedent(f"""
+                Poll option character limit is {POLL_OPTION_MAX_LENGTH}
+                Longest option passed is {max_option_length} characters long
+            """)))
+
+        duplicate_tele_ids = helpers.get_duplicate_nums(self.poll_user_tele_ids)
+        if len(duplicate_tele_ids) > 0:
+            return Err(error_message.add(
+                f'Duplicate user ids found: {duplicate_tele_ids}'
+            ))
+
+        assert len(set(duplicate_tele_ids)) == len(duplicate_tele_ids)
+        num_user_created_polls = Polls.count_polls_created(self.creator_id)
+        poll_creation_limit = self.subscription_tier.get_max_polls()
+        max_voters = self.subscription_tier.get_max_voters()
+
+        if num_user_created_polls >= poll_creation_limit:
+            return Err(error_message.add(POLL_OPTIONS_LIMIT_REACHED_TEXT))
+        if self.initial_num_voters > max_voters:
+            return Err(error_message.add(f'Whitelisted voters exceeds limit'))
+
+        assert self.initial_num_voters <= max_voters
+
+        with db.atomic():
+            Users.batch_insert(self.user_rows).on_conflict_ignore().execute()
+            query = Users.tele_id.in_(self.poll_user_tele_ids)
+            users = Users.select().where(query)
+            poll_user_ids = [user.get_user_id() for user in users]
+
+            assert len(poll_user_ids) == len(self.poll_user_tele_ids)
+            num_user_created_polls = Polls.count_polls_created(
+                self.creator_id
+            )
+            # verify again that the number of polls created is still
+            # within the limit to prevent race conditions
+            if num_user_created_polls >= poll_creation_limit:
+                return Err(error_message.add(POLL_OPTIONS_LIMIT_REACHED_TEXT))
+
+            new_poll = Polls.build_from_fields(
+                desc=self.poll_question, creator_id=self.creator_id,
+                num_voters=self.initial_num_voters,
+                open_registration=self.open_registration,
+                max_voters=self.subscription_tier.get_max_voters()
+            ).create()
+
+            new_poll_id: int = new_poll.id
+            assert isinstance(new_poll_id, int)
+            chat_whitelist_rows: list[BoundRowFields[ChatWhitelist]] = []
+            whitelist_user_rows: list[BoundRowFields[UsernameWhitelist]] = []
+            poll_option_rows: list[BoundRowFields[PollOptions]] = []
+            poll_voter_rows: list[BoundRowFields[PollVoters]] = []
+
+            # create poll options
+            for k, poll_option in enumerate(self.poll_options):
+                poll_choice_number = k + 1
+                poll_option_rows.append(PollOptions.build_from_fields(
+                    poll_id=new_poll_id, option_name=poll_option,
+                    option_number=poll_choice_number
+                ))
+            # whitelist voters in poll by username
+            for raw_poll_user in self.whitelisted_usernames:
+                row_fields = UsernameWhitelist.build_from_fields(
+                    poll_id=new_poll_id, username=raw_poll_user
+                )
+                whitelist_user_rows.append(row_fields)
+            # whitelist voters in poll by user id
+            for poll_user_id in poll_user_ids:
+                poll_voter_rows.append(PollVoters.build_from_fields(
+                    poll_id=new_poll_id, user_id=poll_user_id
+                ))
+            # chat ids that are whitelisted for user self-registration
+            for chat_id in self.whitelisted_chat_ids:
+                chat_whitelist_rows.append(ChatWhitelist.build_from_fields(
+                    poll_id=new_poll_id, chat_id=chat_id
+                ))
+
+            PollVoters.batch_insert(poll_voter_rows).execute()
+            UsernameWhitelist.batch_insert(whitelist_user_rows).execute()
+            PollOptions.batch_insert(poll_option_rows).execute()
+            ChatWhitelist.batch_insert(chat_whitelist_rows).execute()
+
+        return Ok(new_poll_id)
+
+
 class VoteContext(SerializableBaseModel):
     poll_id: int
     rankings: list[int]
@@ -88,9 +207,9 @@ class VoteContext(SerializableBaseModel):
             return Err(ValueError("Max number of rankings reached"))
 
         new_rankings = self.rankings + [raw_option_id]
-        valid, error_message = PyVotesCounter.validate_raw_vote(new_rankings)
-        if not valid:
-            return Err(ValueError(error_message))
+        validate_result = PyVotesCounter.validate_raw_vote(new_rankings)
+        if not validate_result.valid:
+            return Err(ValueError(validate_result.error_message))
 
         self.rankings.append(raw_option_id)
         return Ok(self.is_complete)

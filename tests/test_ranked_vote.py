@@ -1,7 +1,7 @@
 import unittest
 
-from special_votes import SpecialVotes
-from votes_counter import PyVotesCounter
+from helpers.special_votes import SpecialVotes
+from py_rcv import VotesCounter as PyVotesCounter
 
 
 class TestRankedChoiceVote(unittest.TestCase):
@@ -174,39 +174,42 @@ class TestVoteValidation(unittest.TestCase):
 
         for valid_vote in valid_votes:
             validate_result = votes_aggregator.validate_raw_vote(valid_vote)
-            assert isinstance(validate_result[1], str)
-            assert isinstance(validate_result[0], bool)
+            assert isinstance(validate_result.error_message, str)
+            assert isinstance(validate_result.valid, bool)
 
-            is_valid = validate_result[0]
+            is_valid = validate_result.valid
             self.assertTrue(is_valid, "Vote should be valid")
             self.assertTrue(
-                len(validate_result[1]) == 0, "Error message should be empty"
+                len(validate_result.error_message) == 0,
+                "Error message should be empty"
             )
 
     def test_duplicate_rankings(self):
         votes_aggregator = PyVotesCounter()
         validate_result = votes_aggregator.validate_raw_vote([1, 2, 2])
-        assert isinstance(validate_result[1], str)
-        assert isinstance(validate_result[0], bool)
+        assert isinstance(validate_result.error_message, str)
+        assert isinstance(validate_result.valid, bool)
         # print('validate_result', validate_result)
 
-        is_valid = validate_result[0]
+        is_valid = validate_result.valid
         self.assertFalse(is_valid, "non-unique vote is invalid")
         self.assertTrue(
-            len(validate_result[1]) > 0, "Error message should be non-empty"
+            len(validate_result.error_message) > 0,
+            "Error message should be non-empty"
         )
 
     def test_non_final_special_vote(self):
         votes_aggregator = PyVotesCounter()
         validate_result = votes_aggregator.validate_raw_vote([1, 2, -1, 2])
-        assert isinstance(validate_result[1], str)
-        assert isinstance(validate_result[0], bool)
+        assert isinstance(validate_result.error_message, str)
+        assert isinstance(validate_result.valid, bool)
         # print('validate_result', validate_result)
 
-        is_valid = validate_result[0]
+        is_valid = validate_result.valid
         self.assertFalse(is_valid, "vote with non-final special vote is invalid")
         self.assertTrue(
-            len(validate_result[1]) > 0, "Error message should be non-empty"
+            len(validate_result.error_message) > 0,
+            "Error message should be non-empty"
         )
 
 
