@@ -11,6 +11,8 @@ import re
 
 from peewee import JOIN
 from result import Ok, Err, Result
+
+from helpers.commands import Command
 from helpers.message_buillder import MessageBuilder
 from requests.models import PreparedRequest
 from json import JSONDecodeError
@@ -42,8 +44,7 @@ from contexts import (
 )
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
-    PollOptions, VoteRankings, db, ChatWhitelist, PollWinners,
-    SubscriptionTiers
+    PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
 )
 from base_api import (
     BaseAPI, UserRegistrationStatus, PollInfo,
@@ -116,36 +117,34 @@ class RankedChoiceBot(BaseAPI):
         builder.post_init(self.post_init)
         self.app = builder.build()
 
-        commands_mapping = dict(
-            start=self.start_handler,
-            user_details=self.user_details_handler,
-            chat_details=self.chat_details_handler,
-            create_poll=self.create_poll,
-            create_group_poll=self.create_group_poll,
-            register_user_id=self.register_user_by_tele_id,
-            whitelist_chat_registration=self.whitelist_chat_registration,
-            blacklist_chat_registration=self.blacklist_chat_registration,
-
-            view_poll=self.view_poll,
-            view_polls=self.view_all_polls,
-            vote=self.vote_for_poll,
-            poll_results=self.fetch_poll_results,
-            has_voted=self.has_voted,
-            close_poll=self.close_poll,
-            view_votes=self.view_votes,
-            view_voters=self.view_poll_voters,
-            about=self.show_about,
-            delete_poll=self.delete_poll,
-            delete_account=self.delete_account,
-            help=self.show_help,
-            done=self.complete_chat_context,
-
-            vote_admin=self.vote_for_poll_admin,
-            close_poll_admin=self.close_poll_admin,
-            unclose_poll_admin=self.unclose_poll_admin,
-            lookup_from_username_admin=self.lookup_from_username_admin,
-            insert_user_admin=self.insert_user_admin
-        )
+        commands_mapping = {
+            Command.START: self.start_handler,
+            Command.USER_DETAILS: self.user_details_handler,
+            Command.CHAT_DETAILS: self.chat_details_handler,
+            Command.CREATE_POLL: self.create_poll,
+            Command.CREATE_GROUP_POLL: self.create_group_poll,
+            Command.REGISTER_USER_ID: self.register_user_by_tele_id,
+            Command.WHITELIST_CHAT_REGISTRATION: self.whitelist_chat_registration,
+            Command.BLACKLIST_CHAT_REGISTRATION: self.blacklist_chat_registration,
+            Command.VIEW_POLL: self.view_poll,
+            Command.VIEW_POLLS: self.view_all_polls,
+            Command.VOTE: self.vote_for_poll,
+            Command.POLL_RESULTS: self.fetch_poll_results,
+            Command.HAS_VOTED: self.has_voted,
+            Command.CLOSE_POLL: self.close_poll,
+            Command.VIEW_VOTES: self.view_votes,
+            Command.VIEW_VOTERS: self.view_poll_voters,
+            Command.ABOUT: self.show_about,
+            Command.DELETE_POLL: self.delete_poll,
+            Command.DELETE_ACCOUNT: self.delete_account,
+            Command.HELP: self.show_help,
+            Command.DONE: self.complete_chat_context,
+            Command.VOTE_ADMIN: self.vote_for_poll_admin,
+            Command.CLOSE_POLL_ADMIN: self.close_poll_admin,
+            Command.UNCLOSE_POLL_ADMIN: self.unclose_poll_admin,
+            Command.LOOKUP_FROM_USERNAME_ADMIN: self.lookup_from_username_admin,
+            Command.INSERT_USER_ADMIN: self.insert_user_admin
+        }
 
         # on different commands - answer in Telegram
         TelegramHelpers.register_commands(
@@ -181,54 +180,54 @@ class RankedChoiceBot(BaseAPI):
     async def post_init(application: Application):
         # print('SET COMMANDS')
         await application.bot.set_my_commands([(
-            'start', 'start bot'
+            Command.START, 'start bot'
         ), (
-            'user_details', 'shows your username and user id'
+            Command.USER_DETAILS, 'shows your username and user id'
         ), (
-            'chat_details', 'shows chat id'
+            Command.CHAT_DETAILS,  'shows chat id'
         ), (
-            'create_poll', 'creates a new poll'
+            Command.CREATE_POLL, 'creates a new poll'
         ), (
-            'create_group_poll',
+            Command.CREATE_GROUP_POLL,
             'creates a new poll that users can self register for'
         ), (
-            'register_user_id',
+            Command.REGISTER_USER_ID,
             'registers a user by user_id for a poll'
         ), (
-            'whitelist_chat_registration',
+            Command.WHITELIST_CHAT_REGISTRATION,
             'whitelist a chat for self registration'
         ), (
-            'blacklist_chat_registration',
+            Command.BLACKLIST_CHAT_REGISTRATION,
             'removes a chat from self registration whitelist'
         ), (
-            'view_poll', 'shows poll details given poll_id'
+            Command.VIEW_POLL, 'shows poll details given poll_id'
         ), (
-            'view_polls', 'shows all polls that you have created'
+            Command.VIEW_POLLS, 'shows all polls that you have created'
         ), (
-            'vote', 'vote for the poll with the specified poll_id'
+            Command.VOTE, 'vote for the poll with the specified poll_id'
         ), (
-            'poll_results',
+            Command.POLL_RESULTS,
             'returns poll results if the poll has been closed'
         ), (
-            'has_voted',
+            Command.HAS_VOTED,
             "check if you've voted for the poll given the poll ID"
         ), (
-            'close_poll',
+            Command.CLOSE_POLL,
             'close the poll with the specified poll_id'
         ), (
-            'view_votes',
+            Command.VIEW_VOTES,
             'view all the votes entered for the poll'
         ), (
-            'view_voters',
+            Command.VIEW_VOTERS,
             'show which voters have voted and which have not'
         ), (
-            'about', 'miscellaneous info about the bot'
+            Command.ABOUT, 'miscellaneous info about the bot'
         ), (
-            'delete_poll', 'delete a poll'
+            Command.DELETE_POLL, 'delete a poll'
         ), (
-            'delete_account', 'delete your user account'
+            Command.DELETE_ACCOUNT, 'delete your user account'
         ), (
-            'help', 'view commands available to the bot'
+            Command.HELP, 'view commands available to the bot'
         )])
 
     async def start_handler(
@@ -696,8 +695,7 @@ class RankedChoiceBot(BaseAPI):
             subscription_tier_res = user_entry.get_subscription_tier()
             if subscription_tier_res.is_err():
                 err_msg = "Unexpected error reading subscription tier"
-                await message.reply_text(err_msg)
-                return False
+                return await message.reply_text(err_msg)
 
             subscription_tier = subscription_tier_res.unwrap()
             poll_creator = poll_creation_context.to_template(
@@ -707,15 +705,18 @@ class RankedChoiceBot(BaseAPI):
             create_poll_res = poll_creator.save_poll_to_db()
             if create_poll_res.is_err():
                 error_message = create_poll_res.err()
-                await error_message.call(message.reply_text)
-                return False
+                return await error_message.call(message.reply_text)
             else:
+                # TODO: test that this flow works
                 newly_created_poll = create_poll_res.unwrap()
                 poll_id = newly_created_poll.poll_id
-                raise NotImplementedError
-
-            # TODO: do this lol
-            raise NotImplementedError
+                # TODO: self-destruct context when done
+                return await message.reply_text(textwrap.dedent(f"""
+                    Poll created successfully. Run:
+                    /{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}
+                    in the group chat of your choice to allow chat members
+                    to register and vote for the poll
+                """))
         elif chat_context.context_type == ContextStates.CAST_VOTE:
             # TODO: do this lol
             raise NotImplementedError

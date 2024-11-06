@@ -7,7 +7,7 @@ from result import Result, Ok, Err
 from helpers import helpers
 from helpers.message_buillder import MessageBuilder
 from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT
-from helpers.subscription_tiers import SubscriptionTiers
+from database.subscription_tiers import SubscriptionTiers
 from database.db_helpers import BoundRowFields
 from py_rcv import VotesCounter as PyVotesCounter
 from database import db

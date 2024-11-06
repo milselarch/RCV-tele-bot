@@ -5,15 +5,15 @@ import datetime
 import json
 import os
 import sys
-from abc import ABCMeta, abstractmethod
-
 import pydantic
+
+from abc import ABCMeta, abstractmethod
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok, Err
 from enum import StrEnum
 
-from database import SubscriptionTiers
+from .subscription_tiers import SubscriptionTiers
 from load_config import YAML_CONFIG
 from typing import Self, Optional, Type, TypeVar
 from database.db_helpers import (
@@ -401,6 +401,22 @@ class SerializableBaseModel(pydantic.BaseModel, metaclass=ABCMeta):
 
             context_state.update_state(self)
             return context_state
+
+    def self_destruct(
+        self, user_id: UserID, chat_id: int
+    ) -> bool:
+        with database_proxy.atomic():
+            context_state_res = CallbackContextState.build_from_fields(
+                user_id=user_id, chat_id=chat_id,
+                context_type=self.get_context_type()
+            ).safe_get()
+
+            if context_state_res.is_err():
+                return False
+
+            context_state = context_state_res.unwrap()
+            context_state.delete_instance()
+            return True
 
     @classmethod
     def load(

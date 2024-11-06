@@ -17,10 +17,10 @@ from enum import IntEnum
 from typing_extensions import Any
 from strenum import StrEnum
 
-from helpers.subscription_tiers import SubscriptionTiers
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
 from py_rcv import VotesCounter as PyVotesCounter
+from database.subscription_tiers import SubscriptionTiers
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
