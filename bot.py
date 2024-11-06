@@ -124,8 +124,10 @@ class RankedChoiceBot(BaseAPI):
             Command.CREATE_POLL: self.create_poll,
             Command.CREATE_GROUP_POLL: self.create_group_poll,
             Command.REGISTER_USER_ID: self.register_user_by_tele_id,
-            Command.WHITELIST_CHAT_REGISTRATION: self.whitelist_chat_registration,
-            Command.BLACKLIST_CHAT_REGISTRATION: self.blacklist_chat_registration,
+            Command.WHITELIST_CHAT_REGISTRATION:
+                self.whitelist_chat_registration,
+            Command.BLACKLIST_CHAT_REGISTRATION:
+                self.blacklist_chat_registration,
             Command.VIEW_POLL: self.view_poll,
             Command.VIEW_POLLS: self.view_all_polls,
             Command.VOTE: self.vote_for_poll,
@@ -142,7 +144,8 @@ class RankedChoiceBot(BaseAPI):
             Command.VOTE_ADMIN: self.vote_for_poll_admin,
             Command.CLOSE_POLL_ADMIN: self.close_poll_admin,
             Command.UNCLOSE_POLL_ADMIN: self.unclose_poll_admin,
-            Command.LOOKUP_FROM_USERNAME_ADMIN: self.lookup_from_username_admin,
+            Command.LOOKUP_FROM_USERNAME_ADMIN:
+                self.lookup_from_username_admin,
             Command.INSERT_USER_ADMIN: self.insert_user_admin
         }
 
