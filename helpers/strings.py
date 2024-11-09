@@ -4,6 +4,7 @@ from helpers.commands import Command
 
 __VERSION__ = '1.2.0'
 
+READ_SUBSCRIPTION_TIER_FAILED = "Unexpected error reading subscription tier"
 POLL_OPTIONS_LIMIT_REACHED_TEXT = textwrap.dedent(f"""
     Poll creation limit reached
     Use /{Command.DELETE_POLL} {{POLL_ID}} to remove unused polls

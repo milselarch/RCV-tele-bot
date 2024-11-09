@@ -387,12 +387,21 @@ class SerializableBaseModel(pydantic.BaseModel, metaclass=ABCMeta):
         return json.dumps(self.model_dump(mode='json'))
 
     @abstractmethod
-    def get_context_type(self) -> ContextStates:
-        raise NotImplementedError()
+    def get_user_id(self) -> UserID:
+        raise NotImplementedError
 
-    def save_state(
-        self, user_id: UserID, chat_id: int
-    ) -> CallbackContextState:
+    @abstractmethod
+    def get_chat_id(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_context_type(self) -> ContextStates:
+        raise NotImplementedError
+
+    def save_state(self) -> CallbackContextState:
+        user_id = self.get_user_id()
+        chat_id = self.get_chat_id()
+
         with database_proxy.atomic():
             context_state, _ = CallbackContextState.build_from_fields(
                 user_id=user_id, chat_id=chat_id,
@@ -402,7 +411,7 @@ class SerializableBaseModel(pydantic.BaseModel, metaclass=ABCMeta):
             context_state.update_state(self)
             return context_state
 
-    def self_destruct(
+    def delete_context(
         self, user_id: UserID, chat_id: int
     ) -> bool:
         with database_proxy.atomic():
@@ -435,6 +444,7 @@ class CallbackContextState(BaseModel):
     chat_id = BigIntegerField(null=False)  # telegram chat ID
     context_type = CharField(max_length=255, null=False)
     state = TextField(null=False)
+    # TODO: add last update date and clear all context states
 
     indexes = (
         # Unique multi-column index for user-chat_id pairs

@@ -50,7 +50,7 @@ class PollCreatorTemplate(object):
             """)))
         elif len(self.poll_options) < 2:
             return Err(error_message.add(textwrap.dedent(f"""
-                Poll can have at least 2 options
+                Poll must have at least 2 options
                 {len(self.poll_options)} poll options entered
             """)))
 
@@ -152,17 +152,26 @@ class PollCreatorTemplate(object):
 
 
 class PollCreationContext(SerializableBaseModel):
+    chat_id: int
+    user_id: int
     poll_options: list[str]
+
     whitelisted_chat_ids: Sequence[int] = ()
     open_registration: bool = False
     question: str = ''
 
-    def __init__(self, max_options: int, **kwargs):
+    def __init__(self, **kwargs):
+        # TODO: type hint the input params somehow?
         super().__init__(**kwargs)
-        self.max_options = max_options
 
     def get_context_type(self) -> ContextStates:
         return ContextStates.POLL_CREATION
+
+    def get_user_id(self) -> UserID:
+        return UserID(self.user_id)
+
+    def get_chat_id(self) -> int:
+        return self.chat_id
 
     @property
     def has_question(self):
@@ -190,7 +199,7 @@ class PollCreationContext(SerializableBaseModel):
     def add_option(self, option: str) -> Result[bool, ValueError]:
         if option in self.poll_options:
             return Err(ValueError(f"Option {option} already exists"))
-        if len(self.poll_options) == self.max_options:
+        if len(self.poll_options) >= POLL_MAX_OPTIONS:
             return Err(ValueError("Max number of options reached"))
 
         self.poll_options.append(option)
@@ -205,17 +214,27 @@ class PollCreationContext(SerializableBaseModel):
             poll_options=self.poll_options,
             whitelisted_chat_ids=self.whitelisted_chat_ids,
             open_registration=self.open_registration,
-            poll_question=self.poll_question,
+            poll_question=self.question
         )
 
 
 class VoteContext(SerializableBaseModel):
+    chat_id: int
+    user_id: int
+
     poll_id: int
     rankings: list[int]
 
     def __init__(self, max_rankings: int, poll_id: int = -1):
+        # TODO: type hint the input params somehow?
         super().__init__(poll_id=poll_id, rankings=[])
         self.max_rankings = max_rankings
+
+    def get_user_id(self) -> UserID:
+        return UserID(self.user_id)
+
+    def get_chat_id(self) -> int:
+        return self.chat_id
 
     def get_context_type(self) -> ContextStates:
         return ContextStates.CAST_VOTE

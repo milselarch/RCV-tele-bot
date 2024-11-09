@@ -1,6 +1,7 @@
 import asyncio
 import hmac
 import json
+import logging
 import re
 import secrets
 import string
@@ -10,12 +11,14 @@ import hashlib
 import textwrap
 import dataclasses
 import telegram
+
 import database
 import aioredlock
 
 from enum import IntEnum
 from typing_extensions import Any
 from strenum import StrEnum
+from requests import PreparedRequest
 
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
@@ -25,15 +28,23 @@ from database.subscription_tiers import SubscriptionTiers
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
 from concurrent.futures import ThreadPoolExecutor
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from helpers.message_buillder import MessageBuilder
 from helpers.special_votes import SpecialVotes
+from load_config import WEBHOOK_URL
+
 from database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
     db, Users
 )
+from telegram import (
+    InlineKeyboardButton, InlineKeyboardMarkup, User as TeleUser,
+    ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+)
 from database.database import PollWinners, BaseModel, UserID, PollMetadata
 from aioredlock import Aioredlock, LockError
+
+
+logger = logging.getLogger(__name__)
 
 
 class CallbackCommands(StrEnum):
@@ -695,6 +706,49 @@ class BaseAPI(object):
         )
 
     @classmethod
+    def generate_poll_url(cls, poll_id: int, tele_user: TeleUser) -> str:
+        req = PreparedRequest()
+        auth_date = str(int(time.time()))
+        query_id = cls.generate_secret()
+        user_info = json.dumps({
+            'id': tele_user.id,
+            'username': tele_user.username
+        })
+
+        data_check_string = cls.make_data_check_string(
+            auth_date=auth_date, query_id=query_id, user=user_info
+        )
+        validation_hash = cls.sign_data_check_string(
+            data_check_string=data_check_string
+        )
+
+        params = {
+            'poll_id': str(poll_id),
+            'auth_date': auth_date,
+            'query_id': query_id,
+            'user': user_info,
+            'hash': validation_hash
+        }
+        req.prepare_url(WEBHOOK_URL, params)
+        return req.url
+
+    @classmethod
+    def build_private_vote_markup(
+        cls, poll_id: int, tele_user: TeleUser
+    ) -> List[List[KeyboardButton]]:
+        poll_url = cls.generate_poll_url(
+            poll_id=poll_id, tele_user=tele_user
+        )
+        logger.info(f'POLL_URL = {poll_url}')
+        # create vote button for reply message
+        markup_layout = [[KeyboardButton(
+            text=f'Vote for Poll #{poll_id}', web_app=WebAppInfo(url=poll_url)
+        )]]
+
+        return markup_layout
+
+
+    @classmethod
     def build_group_vote_markup(
         cls, poll_id: int
     ) -> List[List[InlineKeyboardButton]]:
@@ -1184,6 +1238,26 @@ class BaseAPI(object):
                 ).execute()
 
         return Ok(True)
+
+    @classmethod
+    def generate_vote_markup(
+        cls, tele_user: TeleUser | None, chat_type: str,
+        poll_id: int, open_registration: bool
+    ) -> None | ReplyKeyboardMarkup | InlineKeyboardMarkup:
+        reply_markup = None
+        if chat_type == 'private':
+            # create vote button for reply message
+            vote_markup_data = cls.build_private_vote_markup(
+                poll_id=poll_id, tele_user=tele_user
+            )
+            reply_markup = ReplyKeyboardMarkup(vote_markup_data)
+        elif open_registration:
+            vote_markup_data = cls.build_group_vote_markup(
+                poll_id=poll_id
+            )
+            reply_markup = InlineKeyboardMarkup(vote_markup_data)
+
+        return reply_markup
 
     @staticmethod
     def kwargify(**kwargs):

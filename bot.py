@@ -14,22 +14,21 @@ from result import Ok, Err, Result
 
 from helpers.commands import Command
 from helpers.message_buillder import MessageBuilder
-from requests.models import PreparedRequest
 from json import JSONDecodeError
 from datetime import datetime as _datetime
 
 from helpers import strings
-from tele_helpers import ModifiedTeleUpdate
+from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED
+from tele_helpers import ModifiedTeleUpdate, ExtractedContext
 from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
-from database.database import UserID, ContextStates
+from database.database import UserID, ContextStates, CallbackContextState
 from database.db_helpers import EmptyField, Empty
-from load_config import WEBHOOK_URL
 from helpers.locks_manager import PollsLockManager
 
 from telegram import (
-    Message, WebAppInfo, ReplyKeyboardMarkup,
-    KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton,
+    Message, ReplyKeyboardMarkup,
+    InlineKeyboardMarkup, InlineKeyboardButton,
     User as TeleUser, Update as BaseTeleUpdate
 )
 from telegram.ext import (
@@ -107,7 +106,6 @@ class RankedChoiceBot(BaseAPI):
     def start_bot(self):
         assert self.bot is None
         self.bot = self.create_tele_bot()
-        self.webhook_url = WEBHOOK_URL
         self.schedule_tasks([
             self.run_flush_deleted_users
         ])
@@ -231,6 +229,8 @@ class RankedChoiceBot(BaseAPI):
             Command.DELETE_ACCOUNT, 'delete your user account'
         ), (
             Command.HELP, 'view commands available to the bot'
+        ), (
+            Command.DONE, 'finish creating a poll or ranked vote'
         )])
 
     async def start_handler(
@@ -379,10 +379,7 @@ class RankedChoiceBot(BaseAPI):
                         f"or use /done if you're done:"
                     )
 
-            poll_creation_context.save_state(
-                user_id=extracted_context.user.get_user_id(),
-                chat_id=message.chat.id
-            )
+            poll_creation_context.save_state()
             return await message.reply_text(reply_message)
         elif context_type == ContextStates.CAST_VOTE:
             # TODO: IMPLEMENTED /done ON VOTE CONTEXT
@@ -392,46 +389,6 @@ class RankedChoiceBot(BaseAPI):
             return await message.reply_text(
                 f"{context_type} context unsupported"
             )
-
-    def generate_poll_url(self, poll_id: int, tele_user: TeleUser) -> str:
-        req = PreparedRequest()
-        auth_date = str(int(time.time()))
-        query_id = self.generate_secret()
-        user_info = json.dumps({
-            'id': tele_user.id,
-            'username': tele_user.username
-        })
-
-        data_check_string = self.make_data_check_string(
-            auth_date=auth_date, query_id=query_id, user=user_info
-        )
-        validation_hash = self.sign_data_check_string(
-            data_check_string=data_check_string
-        )
-
-        params = {
-            'poll_id': str(poll_id),
-            'auth_date': auth_date,
-            'query_id': query_id,
-            'user': user_info,
-            'hash': validation_hash
-        }
-        req.prepare_url(self.webhook_url, params)
-        return req.url
-
-    def build_private_vote_markup(
-        self, poll_id: int, tele_user: TeleUser
-    ) -> List[List[KeyboardButton]]:
-        poll_url = self.generate_poll_url(
-            poll_id=poll_id, tele_user=tele_user
-        )
-        logger.info(f'POLL_URL = {poll_url}')
-        # create vote button for reply message
-        markup_layout = [[KeyboardButton(
-            text=f'Vote for Poll #{poll_id}', web_app=WebAppInfo(url=poll_url)
-        )]]
-
-        return markup_layout
 
     @track_errors
     async def inline_keyboard_handler(
@@ -672,21 +629,25 @@ class RankedChoiceBot(BaseAPI):
             whitelisted_chat_ids=whitelisted_chat_ids
         )
 
-    @staticmethod
+    @classmethod
     async def complete_chat_context(
-        update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         user_entry: Users = update.user
         message: Message = update.message
-        chat_context_res = TelegramHelpers.extract_chat_context(update)
+        tele_user: TeleUser | None = message.from_user
+        chat_type = message.chat.type
+        extract_context_res = TelegramHelpers.extract_chat_context(update)
         user_id = user_entry.get_user_id()
 
-        if chat_context_res.is_err():
-            error_message = chat_context_res.unwrap_err()
+        if extract_context_res.is_err():
+            error_message = extract_context_res.unwrap_err()
             return await error_message.call(message.reply_text)
 
-        chat_context = chat_context_res.unwrap()
-        if chat_context.context_type == ContextStates.POLL_CREATION:
+        extracted_context: ExtractedContext = extract_context_res.unwrap()
+        chat_context: CallbackContextState = extracted_context.chat_context
+
+        if extracted_context.context_type == ContextStates.POLL_CREATION:
             poll_creation_context_res = PollCreationContext.load(chat_context)
             if poll_creation_context_res.is_err():
                 chat_context.delete()
@@ -697,8 +658,7 @@ class RankedChoiceBot(BaseAPI):
             poll_creation_context = poll_creation_context_res.unwrap()
             subscription_tier_res = user_entry.get_subscription_tier()
             if subscription_tier_res.is_err():
-                err_msg = "Unexpected error reading subscription tier"
-                return await message.reply_text(err_msg)
+                return await message.reply_text(READ_SUBSCRIPTION_TIER_FAILED)
 
             subscription_tier = subscription_tier_res.unwrap()
             poll_creator = poll_creation_context.to_template(
@@ -710,17 +670,36 @@ class RankedChoiceBot(BaseAPI):
                 error_message = create_poll_res.err()
                 return await error_message.call(message.reply_text)
             else:
-                # TODO: test that this flow works
-                newly_created_poll = create_poll_res.unwrap()
-                poll_id = newly_created_poll.poll_id
-                # TODO: self-destruct context when done
-                return await message.reply_text(textwrap.dedent(f"""
+                poll_id = create_poll_res.unwrap()
+                # self-destruct context once processed
+                chat_context.delete_instance()
+
+                view_poll_result = BaseAPI.get_poll_message(
+                    poll_id=poll_id, user_id=user_id,
+                    bot_username=context.bot.username,
+                    username=user_entry.username
+                )
+                if view_poll_result.is_err():
+                    error_message = view_poll_result.err()
+                    return await error_message.call(message.reply_text)
+
+                poll_message = view_poll_result.unwrap()
+                reply_markup = cls.generate_vote_markup(
+                    tele_user=tele_user, poll_id=poll_id,
+                    chat_type=chat_type, open_registration=True
+                )
+
+                reply_text = message.reply_text
+                await reply_text(poll_message.text, reply_markup=reply_markup)
+                return await reply_text(textwrap.dedent(f"""
                     Poll created successfully. Run:
+                    ——————————————————
                     /{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}
+                    ——————————————————
                     in the group chat of your choice to allow chat members
                     to register and vote for the poll
                 """))
-        elif chat_context.context_type == ContextStates.CAST_VOTE:
+        elif extracted_context.context_type == ContextStates.CAST_VOTE:
             # TODO: do this lol
             raise NotImplementedError
         else:
@@ -750,18 +729,34 @@ class RankedChoiceBot(BaseAPI):
         creator_tele_id = creator_user.id
         assert isinstance(creator_tele_id, int)
         user_entry: Users = update.user
+        user_id = user_entry.get_user_id()
         raw_poll_creation_args = TelegramHelpers.read_raw_command_args(
             update, strip=False
         ).rstrip()
 
         # initiate poll creation context here
         if raw_poll_creation_args == '':
-            PollCreationContext(max_options=POLL_MAX_OPTIONS).save_state(
-                user_id=user_entry.get_user_id(), chat_id=message.chat.id
-            )
+            num_user_created_polls = Polls.count_polls_created(user_id)
+            subscription_tier_res = user_entry.get_subscription_tier()
+            if subscription_tier_res.is_err():
+                return await message.reply_text(READ_SUBSCRIPTION_TIER_FAILED)
+
+            subscription_tier = subscription_tier_res.unwrap()
+            poll_creation_limit = subscription_tier.get_max_polls()
+
+            if num_user_created_polls >= poll_creation_limit:
+                await message.reply_text(POLL_OPTIONS_LIMIT_REACHED_TEXT)
+                return False
+
+            PollCreationContext(
+                user_id=user_entry.get_user_id(), chat_id=message.chat.id,
+                max_options=POLL_MAX_OPTIONS, poll_options=[]
+            ).save_state()
+
             await message.reply_text("Enter the poll question:")
             return True
 
+        assert raw_poll_creation_args != ''
         subscription_tier_res = user_entry.get_subscription_tier()
         if subscription_tier_res.is_err():
             err_msg = "Unexpected error reading subscription tier"
@@ -1345,19 +1340,10 @@ class RankedChoiceBot(BaseAPI):
 
         poll = fetch_poll_result.unwrap()
         chat_type = update.message.chat.type
-        reply_markup = None
-
-        if chat_type == 'private':
-            # create vote button for reply message
-            vote_markup_data = self.build_private_vote_markup(
-                poll_id=poll_id, tele_user=tele_user
-            )
-            reply_markup = ReplyKeyboardMarkup(vote_markup_data)
-        elif poll.open_registration:
-            vote_markup_data = self.build_group_vote_markup(
-                poll_id=poll_id
-            )
-            reply_markup = InlineKeyboardMarkup(vote_markup_data)
+        reply_markup = self.generate_vote_markup(
+            tele_user=tele_user, poll_id=poll_id,
+            chat_type=chat_type, open_registration=poll.open_registration
+        )
 
         poll_message = view_poll_result.unwrap()
         await message.reply_text(poll_message.text, reply_markup=reply_markup)

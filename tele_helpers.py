@@ -77,19 +77,19 @@ class TelegramHelpers(object):
         ).safe_get()
 
         if chat_context_res.is_err():
-            return error_message.add(
+            return Err(error_message.add(
                 "Use /help to view all available commands, "
                 "/create_poll to create a new poll, "
                 "or /vote to vote for an existing poll "
-            )
+            ))
 
         chat_context = chat_context_res.unwrap()
         chat_context_type_res = chat_context.get_context_type()
         if chat_context_type_res.is_err():
             chat_context.delete()
-            return error_message.add(
+            return Err(error_message.add(
                 "Unexpected error loading chat context type"
-            )
+            ))
 
         chat_context_type = chat_context_type_res.unwrap()
         return Ok(ExtractedContext(
