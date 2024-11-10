@@ -724,18 +724,24 @@ class RankedChoiceBot(BaseAPI):
                     f'https://t.me/{bot_username}?startgroup='
                     f'{strings.WHITELIST_POLL_ID_GET_PARAM}={poll_id}'
                 )
+                # https://stackoverflow.com/questions/40626896/
+                escaped_deep_link_url = re.sub(
+                    r'[_*[\]()~>#+\-=|{}.!]', lambda x: '\\' + x.group(),
+                    deep_link_url
+                )
 
                 await reply_text(poll_message.text, reply_markup=reply_markup)
-                return await reply_text(textwrap.dedent(f"""
-                    Poll created successfully. Run the following command:
-                    /{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}  
+                # https://stackoverflow.com/questions/76538913/
+                return await message.reply_markdown_v2(textwrap.dedent(f"""
+                    Poll created successfully\\. Run the following command:  
+                    `/{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}`
                     in the group chat of your choice to allow chat members
-                    to register and vote for the poll. 
+                    to register and vote for the poll\\.  
                     
-                    Alternatively, click  the following link to share the 
+                    Alternatively, click the following link to share the 
                     poll to the group chat of your choice:  
-                    {deep_link_url}
-                """))
+                    [{escaped_deep_link_url}]({escaped_deep_link_url})
+                """))  # TODO: test parse mode works
         elif extracted_context.context_type == ContextStates.CAST_VOTE:
             # TODO: do this lol
             raise NotImplementedError
