@@ -18,7 +18,6 @@ from json import JSONDecodeError
 from datetime import datetime as _datetime
 
 from helpers import strings
-from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED
 from tele_helpers import ModifiedTeleUpdate, ExtractedContext
 from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
@@ -38,6 +37,9 @@ from typing import (
     List, Dict, Optional, Sequence, Iterable, Callable
 )
 
+from helpers.strings import (
+    POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED
+)
 from contexts import (
     PollCreationContext, PollCreatorTemplate, POLL_MAX_OPTIONS
 )
@@ -240,44 +242,68 @@ class RankedChoiceBot(BaseAPI):
         message = update.message
         chat_type = update.message.chat.type
         args = context.args
-        # print('CONTEXT_ARGS', args)
+        print('CONTEXT_ARGS', args)
+        # TODO: add support for startgroup command
+        # https://stackoverflow.com/questions/59066968/
 
         if len(args) == 0:
             await update.message.reply_text('Bot started')
             return True
-        if chat_type != 'private':
-            await update.message.reply_text('Can only vote with /start in DM')
-            return False
 
-        pattern_match = re.match('poll_id=([0-9]+)', args[0])
+        command_params: str = args[0]
+        assert isinstance(command_params, str)
+        invalid_param_msg = f'Invalid params: {args}'
+        if command_params.count('=') != 1:
+            return await update.message.reply_text(invalid_param_msg)
 
-        if not pattern_match:
-            await update.message.reply_text(f'Invalid params: {args}')
-            return False
+        param_name, param_value = command_params.split('=')
 
-        poll_id = int(pattern_match.group(1))
-        tele_user: TeleUser = message.from_user
-        user: Users = update.user
+        match param_name:
+            case strings.POLL_ID_GET_PARAM:
+                if chat_type != 'private':
+                    return await update.message.reply_text(
+                        'Can only vote with /start in DM'
+                    )
+                try:
+                    poll_id = int(param_value)
+                except ValueError as e:
+                    return await update.message.reply_text(invalid_param_msg)
 
-        user_id = user.get_user_id()
-        view_poll_result = self.get_poll_message(
-            poll_id=poll_id, user_id=user_id,
-            bot_username=context.bot.username,
-            username=tele_user.username
-        )
+                tele_user: TeleUser = message.from_user
+                user: Users = update.user
 
-        if view_poll_result.is_err():
-            error_message = view_poll_result.err()
-            await error_message.call(message.reply_text)
-            return False
+                user_id = user.get_user_id()
+                view_poll_result = self.get_poll_message(
+                    poll_id=poll_id, user_id=user_id,
+                    bot_username=context.bot.username,
+                    username=tele_user.username
+                )
 
-        poll_message = view_poll_result.unwrap()
-        reply_markup = ReplyKeyboardMarkup(self.build_private_vote_markup(
-            poll_id=poll_id, tele_user=tele_user
-        ))
-        await message.reply_text(
-            poll_message.text, reply_markup=reply_markup
-        )
+                if view_poll_result.is_err():
+                    error_message = view_poll_result.err()
+                    await error_message.call(message.reply_text)
+                    return False
+
+                poll_message = view_poll_result.unwrap()
+                reply_markup = ReplyKeyboardMarkup(
+                    self.build_private_vote_markup(
+                        poll_id=poll_id, tele_user=tele_user
+                    )
+                )
+                return await message.reply_text(
+                    poll_message.text, reply_markup=reply_markup
+                )
+            case strings.WHITELIST_POLL_ID_GET_PARAM:
+                try:
+                    poll_id = int(param_value)
+                except ValueError as e:
+                    return await update.message.reply_text(invalid_param_msg)
+
+                return await TelegramHelpers.set_chat_registration_status(
+                    update, context, whitelist=True, poll_id=poll_id
+                )
+            case _:
+                return await update.message.reply_text(invalid_param_msg)
 
     @track_errors
     async def web_app_handler(self, update: ModifiedTeleUpdate, _):
@@ -677,7 +703,10 @@ class RankedChoiceBot(BaseAPI):
                 view_poll_result = BaseAPI.get_poll_message(
                     poll_id=poll_id, user_id=user_id,
                     bot_username=context.bot.username,
-                    username=user_entry.username
+                    username=user_entry.username,
+                    # set to false to discourage sending webapp
+                    # link before group chat has been whitelisted
+                    add_webapp_link=False
                 )
                 if view_poll_result.is_err():
                     error_message = view_poll_result.err()
@@ -690,14 +719,22 @@ class RankedChoiceBot(BaseAPI):
                 )
 
                 reply_text = message.reply_text
+                bot_username = context.bot.username
+                deep_link_url = (
+                    f'https://t.me/{bot_username}?startgroup='
+                    f'{strings.WHITELIST_POLL_ID_GET_PARAM}={poll_id}'
+                )
+
                 await reply_text(poll_message.text, reply_markup=reply_markup)
                 return await reply_text(textwrap.dedent(f"""
-                    Poll created successfully. Run:
-                    ——————————————————
-                    /{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}
-                    ——————————————————
+                    Poll created successfully. Run the following command:
+                    /{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}  
                     in the group chat of your choice to allow chat members
-                    to register and vote for the poll
+                    to register and vote for the poll. 
+                    
+                    Alternatively, click  the following link to share the 
+                    poll to the group chat of your choice:  
+                    {deep_link_url}
                 """))
         elif extracted_context.context_type == ContextStates.CAST_VOTE:
             # TODO: do this lol
@@ -887,18 +924,32 @@ class RankedChoiceBot(BaseAPI):
 
     @classmethod
     async def whitelist_chat_registration(
-        cls, update: ModifiedTeleUpdate, *_, **__
+        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
+        extract_poll_id_result = TelegramHelpers.extract_poll_id(update)
+        if extract_poll_id_result.is_err():
+            error_message = extract_poll_id_result.err()
+            await error_message.call(update.message.reply_text)
+            return False
+
+        poll_id = extract_poll_id_result.unwrap()
         return await TelegramHelpers.set_chat_registration_status(
-            update=update, whitelist=True
+            update, context, whitelist=True, poll_id=poll_id
         )
 
     @classmethod
     async def blacklist_chat_registration(
-        cls, update: ModifiedTeleUpdate, *_, **__
+        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
+        extract_poll_id_result = TelegramHelpers.extract_poll_id(update)
+        if extract_poll_id_result.is_err():
+            error_message = extract_poll_id_result.err()
+            await error_message.call(update.message.reply_text)
+            return False
+
+        poll_id = extract_poll_id_result.unwrap()
         return await TelegramHelpers.set_chat_registration_status(
-            update=update, whitelist=False
+            update, context, whitelist=False, poll_id=poll_id
         )
 
     async def register_user_by_tele_id(
@@ -1294,60 +1345,26 @@ class RankedChoiceBot(BaseAPI):
                 f'{username} replaced'
             )
 
-    async def view_poll(self, update, context: ContextTypes.DEFAULT_TYPE):
+    @classmethod
+    async def view_poll(
+        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+    ):
         """
         example:
         /view_poll 3
         """
         message = update.message
-        tele_user: TeleUser | None = update.message.from_user
-        if tele_user is None:
-            await message.reply_text(f'UNEXPECTED ERROR: NO TELE USER')
-            return False
-
         extract_result = TelegramHelpers.extract_poll_id(update)
-        user_tele_id = tele_user.id
 
         if extract_result.is_err():
             error_message = extract_result.err()
             await error_message.call(message.reply_text)
             return False
 
-        try:
-            user = Users.build_from_fields(tele_id=user_tele_id).get()
-        except Users.DoesNotExist:
-            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
-            return False
-
-        user_id = user.get_user_id()
         poll_id = extract_result.unwrap()
-        view_poll_result = self.get_poll_message(
-            poll_id=poll_id, user_id=user_id,
-            bot_username=context.bot.username,
-            username=user.username
+        return await TelegramHelpers.view_poll_by_id(
+            update, context, poll_id=poll_id
         )
-
-        if view_poll_result.is_err():
-            error_message = view_poll_result.err()
-            await error_message.call(message.reply_text)
-            return False
-
-        fetch_poll_result = self.fetch_poll(poll_id)
-        if fetch_poll_result.is_err():
-            error_message = fetch_poll_result.err()
-            await error_message.call(message.reply)
-            return False
-
-        poll = fetch_poll_result.unwrap()
-        chat_type = update.message.chat.type
-        reply_markup = self.generate_vote_markup(
-            tele_user=tele_user, poll_id=poll_id,
-            chat_type=chat_type, open_registration=poll.open_registration
-        )
-
-        poll_message = view_poll_result.unwrap()
-        await message.reply_text(poll_message.text, reply_markup=reply_markup)
-        return True
 
     @staticmethod
     async def view_all_polls(update: ModifiedTeleUpdate, *_, **__):

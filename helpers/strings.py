@@ -4,6 +4,8 @@ from helpers.commands import Command
 
 __VERSION__ = '1.2.0'
 
+POLL_ID_GET_PARAM = 'poll_id'
+WHITELIST_POLL_ID_GET_PARAM = 'whitelist_poll'
 READ_SUBSCRIPTION_TIER_FAILED = "Unexpected error reading subscription tier"
 POLL_OPTIONS_LIMIT_REACHED_TEXT = textwrap.dedent(f"""
     Poll creation limit reached

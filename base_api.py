@@ -20,6 +20,7 @@ from typing_extensions import Any
 from strenum import StrEnum
 from requests import PreparedRequest
 
+from helpers import strings
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
 from py_rcv import VotesCounter as PyVotesCounter
@@ -659,7 +660,7 @@ class BaseAPI(object):
     @classmethod
     def get_poll_message(
         cls, poll_id: int, user_id: UserID, bot_username: str,
-        username: Optional[str]
+        username: Optional[str], add_webapp_link: bool = True
     ) -> Result[PollMessage, MessageBuilder]:
         if not cls.has_access_to_poll_id(
             poll_id=poll_id, user_id=user_id, username=username
@@ -669,21 +670,25 @@ class BaseAPI(object):
             ))
 
         return Ok(cls._get_poll_message(
-            poll_id=poll_id, bot_username=bot_username
+            poll_id=poll_id, bot_username=bot_username,
+            add_webapp_link=add_webapp_link
         ))
 
     @classmethod
     def _get_poll_message(
-        cls, poll_id: int, bot_username: str
+        cls, poll_id: int, bot_username: str,
+        add_webapp_link: bool = True
     ) -> PollMessage:
         poll_info = cls._read_poll_info(poll_id=poll_id)
         return cls._generate_poll_message(
-            poll_info=poll_info, bot_username=bot_username
+            poll_info=poll_info, bot_username=bot_username,
+            add_webapp_link=add_webapp_link
         )
 
     @classmethod
     def _generate_poll_message(
         cls, poll_info: PollInfo, bot_username: str,
+        add_webapp_link: bool = True
     ) -> PollMessage:
         poll_metadata = poll_info.metadata
         poll_message = cls.generate_poll_info(
@@ -691,7 +696,8 @@ class BaseAPI(object):
             poll_info.poll_options, closed=poll_metadata.closed,
             bot_username=bot_username,
             num_voters=poll_metadata.num_active_voters,
-            num_votes=poll_metadata.num_votes
+            num_votes=poll_metadata.num_votes,
+            add_webapp_link=add_webapp_link
         )
 
         reply_markup = None
@@ -746,7 +752,6 @@ class BaseAPI(object):
         )]]
 
         return markup_layout
-
 
     @classmethod
     def build_group_vote_markup(
@@ -877,7 +882,7 @@ class BaseAPI(object):
     def generate_poll_info(
         poll_id, poll_question, poll_options: list[str],
         bot_username: str, num_votes: int = 0, num_voters: int = 0,
-        closed: bool = False
+        closed: bool = False, add_webapp_link: bool = True
     ):
         close_tag = '(closed)' if closed else ''
         numbered_poll_options = [
@@ -885,11 +890,18 @@ class BaseAPI(object):
             in enumerate(poll_options)
         ]
 
-        args = f'poll_id={poll_id}'
+        args = f'{strings.POLL_ID_GET_PARAM}={poll_id}'
         stamp = int(time.time())
         deep_link_url = (
             f'https://t.me/{bot_username}?start={args}&stamp={stamp}'
         )
+
+        webapp_link_footer = ''
+        if add_webapp_link:
+            webapp_link_footer = (
+                f'\n——————————————————'
+                f'\nvote on the webapp at {deep_link_url}'
+            )
 
         return (
             textwrap.dedent(f"""
@@ -899,9 +911,9 @@ class BaseAPI(object):
             ——————————————————
             {num_votes} / {num_voters} voted
             ——————————————————
-        """) + f'\n'.join(numbered_poll_options) +
-            f'\n——————————————————'
-            f'\nvote on the webapp at {deep_link_url}'
+        """) +
+            f'\n'.join(numbered_poll_options) +
+            webapp_link_footer
         )
 
     @staticmethod

@@ -4,13 +4,15 @@ import telegram
 
 from typing import Callable, Coroutine, Any, Dict
 from result import Result, Err, Ok
+
+from base_api import BaseAPI
 from bot_middleware import track_errors
 from helpers.message_buillder import MessageBuilder
 
 from telegram import Message
 from telegram.ext import (
     Application, MessageHandler, CallbackContext, CallbackQueryHandler,
-    CommandHandler
+    CommandHandler, ContextTypes
 )
 # noinspection PyProtectedMember
 from telegram.ext._utils.types import CCT, RT
@@ -240,20 +242,13 @@ class TelegramHelpers(object):
 
         return Ok(poll_id)
 
-    @staticmethod
+    @classmethod
     async def set_chat_registration_status(
-        update: ModifiedTeleUpdate, whitelist: bool
+        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        whitelist: bool, poll_id: int, add_webapp_link: bool = True
     ) -> bool:
         message = update.message
         tele_user: TeleUser | None = message.from_user
-
-        extract_poll_id_result = TelegramHelpers.extract_poll_id(update)
-        if extract_poll_id_result.is_err():
-            error_message = extract_poll_id_result.err()
-            await error_message.call(update.message.reply_text)
-            return False
-
-        poll_id = extract_poll_id_result.unwrap()
 
         try:
             poll = Polls.select().where(Polls.id == poll_id).get()
@@ -277,12 +272,21 @@ class TelegramHelpers(object):
             return False
 
         if whitelist:
-            ChatWhitelist.insert(
+            _, is_new_whitelist = ChatWhitelist.build_from_fields(
                 poll_id=poll_id, chat_id=message.chat.id
-            ).on_conflict_ignore().execute()
-            await message.reply_text(
-                f'Whitelisted chat for user self-registration'
-            )
+            ).get_or_create()
+
+            if is_new_whitelist:
+                # TODO: BUG whitelist isn't actually working
+                reply_msg = 'Whitelisted chat for user self-registration'
+                await message.reply_text(reply_msg)
+                await cls.view_poll_by_id(
+                    update, context, poll_id=poll_id,
+                    add_webapp_link=add_webapp_link
+                )
+            else:
+                await message.reply_text('Chat has already been whitelisted')
+
             return True
         else:
             try:
@@ -292,14 +296,51 @@ class TelegramHelpers(object):
                 )
             except ChatWhitelist.DoesNotExist:
                 await message.reply_text(
-                    f'Chat was not whitelisted for user self-registration '
-                    f'to begin with'
+                    'Chat was not whitelisted for user self-registration '
+                    'to begin with'
                 )
                 return False
 
             whitelist_row.delete_instance()
-            await message.reply_text(
-                f'Removed user self-registration chat whitelist'
-            )
+            reply_msg = 'Removed user self-registration chat whitelist'
+            await message.reply_text(reply_msg)
             return True
 
+    @classmethod
+    async def view_poll_by_id(
+        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        poll_id: int, add_webapp_link: bool = True
+    ) -> bool:
+        user = update.user
+        message = update.message
+        tele_user: TeleUser | None = update.message.from_user
+
+        user_id = user.get_user_id()
+        view_poll_result = BaseAPI.get_poll_message(
+            poll_id=poll_id, user_id=user_id,
+            bot_username=context.bot.username,
+            username=user.username,
+            add_webapp_link=add_webapp_link
+        )
+
+        if view_poll_result.is_err():
+            error_message = view_poll_result.err()
+            await error_message.call(message.reply_text)
+            return False
+
+        fetch_poll_result = BaseAPI.fetch_poll(poll_id)
+        if fetch_poll_result.is_err():
+            error_message = fetch_poll_result.err()
+            await error_message.call(message.reply_text)
+            return False
+
+        poll = fetch_poll_result.unwrap()
+        chat_type = update.message.chat.type
+        reply_markup = BaseAPI.generate_vote_markup(
+            tele_user=tele_user, poll_id=poll_id,
+            chat_type=chat_type, open_registration=poll.open_registration
+        )
+
+        poll_message = view_poll_result.unwrap()
+        await message.reply_text(poll_message.text, reply_markup=reply_markup)
+        return True
