@@ -5,6 +5,9 @@ from typing import Sequence
 from result import Result, Ok, Err
 
 from helpers import helpers
+from helpers.constants import (
+    BLANK_POLL_ID, POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH
+)
 from helpers.message_buillder import MessageBuilder
 from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT
 from database.subscription_tiers import SubscriptionTiers
@@ -15,9 +18,6 @@ from database.database import (
     ContextStates, SerializableBaseModel, UserID, Users, Polls,
     ChatWhitelist, UsernameWhitelist, PollOptions, PollVoters
 )
-
-POLL_MAX_OPTIONS: int = 20
-POLL_OPTION_MAX_LENGTH: int = 100
 
 
 @dataclasses.dataclass
@@ -224,11 +224,14 @@ class VoteContext(SerializableBaseModel):
 
     poll_id: int
     rankings: list[int]
+    max_options: int = POLL_MAX_OPTIONS
 
-    def __init__(self, max_rankings: int, poll_id: int = -1):
+    def __init__(
+        self, poll_id: int = BLANK_POLL_ID,
+        rankings: Sequence[int] = (), **kwargs
+    ):
         # TODO: type hint the input params somehow?
-        super().__init__(poll_id=poll_id, rankings=[])
-        self.max_rankings = max_rankings
+        super().__init__(poll_id=poll_id, rankings=list(rankings), **kwargs)
 
     def get_user_id(self) -> UserID:
         return UserID(self.user_id)
@@ -239,6 +242,14 @@ class VoteContext(SerializableBaseModel):
     def get_context_type(self) -> ContextStates:
         return ContextStates.CAST_VOTE
 
+    def set_poll_id_from_str(self, raw_poll_id: str) -> Result[bool, ValueError]:
+        try:
+            poll_id = int(raw_poll_id)
+        except ValueError:
+            return Err(ValueError("Invalid poll ID"))
+
+        return self.set_poll_id(poll_id)
+
     def set_poll_id(self, poll_id: int) -> Result[bool, ValueError]:
         if poll_id < 0:
             return Err(ValueError("Invalid poll ID"))
@@ -247,15 +258,24 @@ class VoteContext(SerializableBaseModel):
         return Ok(self.is_complete)
 
     @property
+    def has_poll_id(self):
+        return self.poll_id >= 0
+
+    @property
     def is_complete(self):
-        return (
-            (len(self.rankings) > 0) and
-            (self.poll_id >= 0)
-        )
+        return (len(self.rankings) > 0) and self.has_poll_id
+
+    @property
+    def num_options(self) -> int:
+        return len(self.rankings)
 
     def add_option(self, raw_option_id: int) -> Result[bool, ValueError]:
-        if len(self.rankings) == self.max_rankings:
+        if len(self.rankings) >= POLL_MAX_OPTIONS:
             return Err(ValueError("Max number of rankings reached"))
+        if len(self.rankings) >= self.max_options:
+            return Err(ValueError(
+                f"There are only {self.max_options} options to choose from"
+            ))
 
         new_rankings = self.rankings + [raw_option_id]
         validate_result = PyVotesCounter.validate_raw_vote(new_rankings)
@@ -264,5 +284,3 @@ class VoteContext(SerializableBaseModel):
 
         self.rankings.append(raw_option_id)
         return Ok(self.is_complete)
-
-

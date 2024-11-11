@@ -328,19 +328,14 @@ class TelegramHelpers(object):
             await error_message.call(message.reply_text)
             return False
 
-        fetch_poll_result = BaseAPI.fetch_poll(poll_id)
-        if fetch_poll_result.is_err():
-            error_message = fetch_poll_result.err()
-            await error_message.call(message.reply_text)
-            return False
-
-        poll = fetch_poll_result.unwrap()
         chat_type = update.message.chat.type
+        poll_message = view_poll_result.unwrap()
+        poll = poll_message.poll_info.metadata
+
         reply_markup = BaseAPI.generate_vote_markup(
-            tele_user=tele_user, poll_id=poll_id,
-            chat_type=chat_type, open_registration=poll.open_registration
+            tele_user=tele_user, poll_id=poll_id, chat_type=chat_type,
+            open_registration=poll.open_registration
         )
 
-        poll_message = view_poll_result.unwrap()
         await message.reply_text(poll_message.text, reply_markup=reply_markup)
         return True

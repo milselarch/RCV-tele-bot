@@ -41,7 +41,7 @@ from helpers.strings import (
     POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED
 )
 from contexts import (
-    PollCreationContext, PollCreatorTemplate, POLL_MAX_OPTIONS
+    PollCreationContext, PollCreatorTemplate, POLL_MAX_OPTIONS, VoteContext
 )
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
@@ -266,7 +266,7 @@ class RankedChoiceBot(BaseAPI):
                     )
                 try:
                     poll_id = int(param_value)
-                except ValueError as e:
+                except ValueError:
                     return await update.message.reply_text(invalid_param_msg)
 
                 tele_user: TeleUser = message.from_user
@@ -296,7 +296,7 @@ class RankedChoiceBot(BaseAPI):
             case strings.WHITELIST_POLL_ID_GET_PARAM:
                 try:
                     poll_id = int(param_value)
-                except ValueError as e:
+                except ValueError:
                     return await update.message.reply_text(invalid_param_msg)
 
                 return await TelegramHelpers.set_chat_registration_status(
@@ -331,7 +331,8 @@ class RankedChoiceBot(BaseAPI):
 
         vote_result = self.register_vote(
             poll_id=poll_id, rankings=ranked_option_numbers,
-            user_tele_id=user_tele_id, username=username
+            user_tele_id=user_tele_id, username=username,
+            chat_id=message.chat_id
         )
 
         if vote_result.is_err():
@@ -407,9 +408,47 @@ class RankedChoiceBot(BaseAPI):
 
             poll_creation_context.save_state()
             return await message.reply_text(reply_message)
+
         elif context_type == ContextStates.CAST_VOTE:
-            # TODO: IMPLEMENTED /done ON VOTE CONTEXT
-            raise NotImplementedError
+            # TODO: IMPLEMENT /done ON VOTE CONTEXT
+            vote_context_res = VoteContext.load(chat_context)
+            if vote_context_res.is_err():
+                chat_context.delete()
+                return await message.reply_text(
+                    "Unexpected error loading vote context"
+                )
+
+            vote_context = vote_context_res.unwrap()
+            if not vote_context.has_poll_id:
+                set_poll_id_res = vote_context.set_poll_id_from_str(
+                    message.text
+                )
+                if set_poll_id_res.is_err():
+                    return await message.reply_text(str(
+                        set_poll_id_res.unwrap_err()
+                    ))
+
+                vote_context.save_state()
+                return await message.reply_text(
+                    strings.generate_enter_poll_option_text(1)
+                )
+            else:
+                ranked_option_res = self.parse_ranked_option(message_text)
+                if ranked_option_res.is_err():
+                    error = ranked_option_res.unwrap_err()
+                    return await message.reply_text(str(error))
+
+                ranked_option = ranked_option_res.unwrap()
+                add_ranked_option_res = vote_context.add_option(ranked_option)
+                if add_ranked_option_res.is_err():
+                    error = add_ranked_option_res.unwrap_err()
+                    return await message.reply_text(str(error))
+
+                vote_context.save_state()
+                num_options = vote_context.num_options
+                return await message.reply_text(
+                    strings.generate_enter_poll_option_text(num_options)
+                )
         else:
             # this should never happen
             return await message.reply_text(
@@ -704,7 +743,7 @@ class RankedChoiceBot(BaseAPI):
                     poll_id=poll_id, user_id=user_id,
                     bot_username=context.bot.username,
                     username=user_entry.username,
-                    # set to false to discourage sending webapp
+                    # set to false here to discourage sending webapp
                     # link before group chat has been whitelisted
                     add_webapp_link=False
                 )
@@ -796,7 +835,9 @@ class RankedChoiceBot(BaseAPI):
                 max_options=POLL_MAX_OPTIONS, poll_options=[]
             ).save_state()
 
-            await message.reply_text("Enter the poll question:")
+            await message.reply_text(
+                "Enter the title / question for your new poll:"
+            )
             return True
 
         assert raw_poll_creation_args != ''
@@ -1237,7 +1278,9 @@ class RankedChoiceBot(BaseAPI):
         tele_id = int(capture_groups[0])
         username: str = capture_groups[1]
         force: bool = capture_groups[2] is not None
-        if username.startswith('@'): username = username[1:]
+        if username.startswith('@'):
+            username = username[1:]
+
         assert len(username) >= 1
 
         if not force:
@@ -1319,7 +1362,9 @@ class RankedChoiceBot(BaseAPI):
         tele_id = int(capture_groups[0])
         username: str = capture_groups[1]
         force: bool = capture_groups[2] is not None
-        if username.startswith('@'): username = username[1:]
+        if username.startswith('@'):
+            username = username[1:]
+
         assert len(username) >= 1
 
         if not force:
@@ -1410,11 +1455,11 @@ class RankedChoiceBot(BaseAPI):
 
     async def vote_and_report(
         self, raw_text: str, user_tele_id: int, message: Message,
-        username: Optional[str]
+        username: Optional[str], chat_id: Optional[int]
     ):
         vote_result = self._vote_for_poll(
             raw_text=raw_text, user_tele_id=user_tele_id,
-            username=username
+            username=username, chat_id=chat_id
         )
 
         if vote_result.is_err():
@@ -1608,10 +1653,12 @@ class RankedChoiceBot(BaseAPI):
 
         await self.vote_and_report(
             raw_text, user_tele_id=user_tele_id, message=message,
-            username=username
+            username=username, chat_id=message.chat_id
         )
 
-    async def vote_for_poll(self, update, *_, **__):
+    async def vote_for_poll(
+        self, update: ModifiedTeleUpdate, context: CallbackContext
+    ):
         """
         telegram command formats
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n}
@@ -1621,24 +1668,51 @@ class RankedChoiceBot(BaseAPI):
         /vote 3 1 > 2 > 3
         """
         message = update.message
+        user_entry: Users = update.user
+        raw_command_args = TelegramHelpers.read_raw_command_args(update)
+        query = update.callback_query
+        tele_user: TeleUser | None = query.from_user
+
+        if raw_command_args == '':
+            VoteContext(
+                user_id=user_entry.get_user_id(), chat_id=message.chat.id,
+                max_options=POLL_MAX_OPTIONS
+            ).save_state()
+            return await message.reply_text(
+                "Enter the poll ID of the poll you want to vote for:"
+            )
+        elif ID_PATTERN.match(raw_command_args) is not None:
+            poll_id = int(raw_command_args)
+            view_poll_result = self.get_poll_message(
+                poll_id=poll_id, user_id=user_entry.get_user_id(),
+                bot_username=context.bot.username,
+                username=tele_user.username
+            )
+            if view_poll_result.is_err():
+                error_message = view_poll_result.err()
+                return await error_message.call(message.reply_text)
+
+            VoteContext(
+                user_id=user_entry.get_user_id(), chat_id=message.chat.id,
+                max_options=POLL_MAX_OPTIONS, poll_id=poll_id
+            ).save_state()
+            return await message.reply_text(
+                strings.generate_enter_poll_option_text(1)
+            )
+
         raw_text = message.text.strip()
         tele_user: TeleUser | None = update.message.from_user
-
-        try:
-            Users.build_from_fields(tele_id=tele_user.id).get()
-        except Users.DoesNotExist:
-            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
-            return False
-
         username = tele_user.username
         user_tele_id = tele_user.id
 
-        await self.vote_and_report(
-            raw_text, user_tele_id, message, username=username
+        return await self.vote_and_report(
+            raw_text, user_tele_id, message, username=username,
+            chat_id=message.chat_id
         )
 
     def _vote_for_poll(
-        self, raw_text: str, user_tele_id: int, username: Optional[str]
+        self, raw_text: str, user_tele_id: int, username: Optional[str],
+        chat_id: Optional[int]
     ) -> Result[int, MessageBuilder]:
         """
         telegram command format
@@ -1667,7 +1741,8 @@ class RankedChoiceBot(BaseAPI):
         # print('PRE_REGISTER')
         return self.register_vote(
             poll_id=poll_id, rankings=rankings,
-            user_tele_id=user_tele_id, username=username
+            user_tele_id=user_tele_id, username=username,
+            chat_id=chat_id
         )
 
     @classmethod

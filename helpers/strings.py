@@ -96,7 +96,7 @@ HELP_TEXT = textwrap.dedent(f"""
 """)
 
 
-def generate_delete_text(deletion_token: str):
+def generate_delete_text(deletion_token: str) -> str:
     return textwrap.dedent(f"""
         Deleting your account will accomplish the following:
         - all polls you've created will be deleted
@@ -116,3 +116,13 @@ def generate_delete_text(deletion_token: str):
         ——————————————————
         /{Command.DELETE_ACCOUNT} {deletion_token}
     """)
+
+
+def generate_enter_poll_option_text(rank: int) -> str:
+    if rank == 1:
+        return f"Enter the poll option you want to rank #{rank}:"
+    else:
+        return (
+            f"Enter the poll option you want to rank #{rank}, "
+            f"or use /done if you're done:"
+        )

@@ -41,7 +41,7 @@ from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup, User as TeleUser,
     ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 )
-from database.database import PollWinners, BaseModel, UserID, PollMetadata
+from database.database import PollWinners, BaseModel, UserID, PollMetadata, ChatWhitelist
 from aioredlock import Aioredlock, LockError
 
 
@@ -70,10 +70,28 @@ class UserRegistrationStatus(StrEnum):
     FAILED = 'FAILED'
 
 
+class PollInfo(object):
+    def __init__(
+        self, metadata: PollMetadata,
+        poll_options: List[str], option_numbers: List[int]
+    ):
+        assert len(poll_options) == len(option_numbers)
+        # description of each option within the poll
+        self.poll_options: List[str] = poll_options
+        # numerical ranking of each option within the poll
+        self.option_numbers: List[int] = option_numbers
+        self.metadata: PollMetadata = metadata
+
+    @property
+    def max_options(self) -> int:
+        return len(self.poll_options)
+
+
 @dataclasses.dataclass
 class PollMessage(object):
     text: str
     reply_markup: Optional[InlineKeyboardMarkup]
+    poll_info: PollInfo
 
 
 class GetPollWinnerStatus(IntEnum):
@@ -81,15 +99,6 @@ class GetPollWinnerStatus(IntEnum):
     NEWLY_COMPUTED = 1
     COMPUTING = 2
     FAILED = 3
-
-
-@dataclasses.dataclass
-class PollInfo(object):
-    metadata: PollMetadata
-    # description of each option within the poll
-    poll_options: List[str]
-    # numerical ranking of each option within the poll
-    option_numbers: List[int]
 
 
 class BaseAPI(object):
@@ -346,7 +355,8 @@ class BaseAPI(object):
 
     @classmethod
     def verify_voter(
-        cls, poll_id: int, user_id: UserID, username: Optional[str] = None
+        cls, poll_id: int, user_id: UserID, username: Optional[str] = None,
+        chat_id: Optional[int] = None
     ) -> Result[int, UserRegistrationStatus]:
         """
         Checks if the user is a member of the poll
@@ -372,6 +382,14 @@ class BaseAPI(object):
         username_str = username
         assert isinstance(username_str, str)
 
+        chat_register_result = cls._register_voter_from_chat_whitelist(
+            poll_id=poll_id, user_id=user_id,
+            ignore_voter_limit=False, chat_id=chat_id
+        )
+        if chat_register_result.is_ok():
+            poll_voter: PollVoters = chat_register_result.unwrap()
+            return Ok(poll_voter.id)
+
         whitelist_user_result = cls.get_whitelist_entry(
             username=username_str, poll_id=poll_id,
             user_id=user_id
@@ -385,19 +403,50 @@ class BaseAPI(object):
             (whitelisted_user.user == user_id)
         )
 
-        register_result = cls._register_voter_from_whitelist(
+        register_result = cls._register_voter_from_username_whitelist(
             poll_id=poll_id, user_id=user_id,
             ignore_voter_limit=False, username=username_str
         )
-
-        if register_result.is_err():
-            return register_result
-        else:
+        if register_result.is_ok():
             poll_voter: PollVoters = register_result.unwrap()
             return Ok(poll_voter.id)
 
+        return register_result
+
     @classmethod
-    def _register_voter_from_whitelist(
+    def _register_voter_from_chat_whitelist(
+        cls, poll_id: int, user_id: UserID, ignore_voter_limit: bool = False,
+        chat_id: int | None = None
+    ) -> Result[PollVoters, UserRegistrationStatus]:
+        if chat_id is None:
+            return Err(UserRegistrationStatus.NOT_WHITELISTED)
+
+        assert isinstance(chat_id, int)
+        assert isinstance(poll_id, int)
+        assert isinstance(user_id, int)
+        # print('CHAT_WHITELIST', chat_id)
+        chat_whitelist_res = ChatWhitelist.build_from_fields(
+            poll_id=poll_id, chat_id=chat_id
+        ).safe_get()
+
+        if chat_whitelist_res.is_err():
+            return Err(UserRegistrationStatus.NOT_WHITELISTED)
+
+        with db.atomic() as transaction:
+            register_result = cls._register_user_id(
+                poll_id=poll_id, user_id=user_id,
+                ignore_voter_limit=ignore_voter_limit,
+                from_whitelist=False
+            )
+            if register_result.is_err():
+                transaction.rollback()
+                return register_result
+
+            poll_voter_row, _ = register_result.unwrap()
+            return Ok(poll_voter_row)
+
+    @classmethod
+    def _register_voter_from_username_whitelist(
         cls, poll_id: int, user_id: UserID, ignore_voter_limit: bool,
         username: str
     ) -> Result[PollVoters, UserRegistrationStatus]:
@@ -418,7 +467,6 @@ class BaseAPI(object):
                 username=username, poll_id=poll_id,
                 user_id=user_id
             )
-
             if whitelist_user_result.is_err():
                 transaction.rollback()
                 return whitelist_user_result
@@ -609,7 +657,7 @@ class BaseAPI(object):
                         return UserRegistrationStatus.ALREADY_REGISTERED
                     elif whitelist_entry.user is None:
                         # print("POP", poll_id, user_id, username_str)
-                        register_result = cls._register_voter_from_whitelist(
+                        register_result = cls._register_voter_from_username_whitelist(
                             poll_id=poll_id, user_id=user_id,
                             ignore_voter_limit=ignore_voter_limit,
                             username=username_str
@@ -647,11 +695,9 @@ class BaseAPI(object):
 
     @staticmethod
     def check_has_voted(poll_id: int, user_id: UserID) -> bool:
-        return PollVoters.select().where(
-            (PollVoters.user == user_id) &
-            (PollVoters.poll == poll_id) &
-            (PollVoters.voted == True)
-        ).exists()
+        return PollVoters.build_from_fields(
+            user_id=user_id, poll_id=poll_id, voted=True
+        ).safe_get().is_ok()
 
     @classmethod
     def is_poll_voter(cls, poll_id: int, user_id: UserID) -> bool:
@@ -708,7 +754,8 @@ class BaseAPI(object):
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
         return PollMessage(
-            text=poll_message, reply_markup=reply_markup
+            text=poll_message, reply_markup=reply_markup,
+            poll_info=poll_info
         )
 
     @classmethod
@@ -1021,8 +1068,8 @@ class BaseAPI(object):
             separator_index = raw_arguments.index(' ')
             raw_poll_id = int(raw_arguments[:separator_index])
             raw_votes = raw_arguments[separator_index:].strip()
-            rankings = [
-                cls.parse_ranking(ranking)
+            ranked_options: list[int] = [
+                cls.parse_ranked_option(ranking).unwrap()
                 for ranking in raw_votes.split('>')
             ]
         elif pattern_match2:
@@ -1031,15 +1078,15 @@ class BaseAPI(object):
             raw_arguments_arr = raw_arguments.split(' ')
             raw_poll_id = int(raw_arguments_arr[0])
             raw_votes = raw_arguments_arr[1:]
-            rankings = [
-                cls.parse_ranking(ranking)
+            ranked_options: list[int] = [
+                cls.parse_ranked_option(ranking).unwrap()
                 for ranking in raw_votes
             ]
         else:
             error_message.add('input format is invalid')
             return Err(error_message)
 
-        validate_result = cls.validate_rankings(rankings)
+        validate_result = cls.validate_ranked_options(ranked_options)
         if validate_result.is_err():
             return validate_result
 
@@ -1049,20 +1096,28 @@ class BaseAPI(object):
             error_message.add(f'invalid poll id: {raw_arguments}')
             return Err(error_message)
 
-        return Ok((poll_id, rankings))
+        return Ok((poll_id, ranked_options))
 
     @staticmethod
-    def parse_ranking(raw_ranking: str) -> int:
-        raw_ranking = raw_ranking.strip()
+    def parse_ranked_option(
+        raw_ranked_option: str
+    ) -> Result[int, ValueError]:
+        # TODO: refactor this to use PyO3 validator
+        raw_ranked_option = raw_ranked_option.strip()
 
         try:
-            special_ranking = SpecialVotes.from_string(raw_ranking)
-            assert special_ranking.value < 0
-            return special_ranking.value
+            special_ranking = SpecialVotes.from_string(raw_ranked_option)
         except ValueError:
-            ranking = int(raw_ranking)
-            assert ranking > 0
-            return ranking
+            ranking = int(raw_ranked_option)
+            if ranking <= 0:
+                return Err(ValueError("Ranking must be > 0"))
+
+            return Ok(ranking)
+
+        if special_ranking.value >= 0:
+            return Err(ValueError("Ranking must be < 0"))
+
+        return Ok(special_ranking.value)
 
     @staticmethod
     def stringify_ranking(ranking_no: int) -> str:
@@ -1072,9 +1127,10 @@ class BaseAPI(object):
             return SpecialVotes(ranking_no).to_string()
 
     @staticmethod
-    def validate_rankings(
+    def validate_ranked_options(
         rankings: List[int]
     ) -> Result[bool, MessageBuilder]:
+        # TODO: refactor this to use PyO3 validator
         error_message = MessageBuilder()
 
         # print('rankings =', rankings)
@@ -1094,7 +1150,7 @@ class BaseAPI(object):
     @classmethod
     def register_vote(
         cls, poll_id: int, rankings: List[int], user_tele_id: int,
-        username: Optional[str]
+        username: Optional[str], chat_id: Optional[int]
     ) -> Result[int, MessageBuilder]:
         """
         registers a vote for the poll
@@ -1110,6 +1166,7 @@ class BaseAPI(object):
         :param rankings:
         :param user_tele_id: voter's telegram user tele id
         :param username: voter's telegram username
+        :param chat_id: telegram chat id that message originated from
         :return:
         """
         error_message = MessageBuilder()
@@ -1117,7 +1174,7 @@ class BaseAPI(object):
             error_message.add('At least one ranking must be provided')
             return Err(error_message)
 
-        validate_result = cls.validate_rankings(rankings)
+        validate_result = cls.validate_ranked_options(rankings)
         if validate_result.is_err():
             return validate_result
 
@@ -1140,7 +1197,9 @@ class BaseAPI(object):
         user_id = user.get_user_id()
         # verify that the user can vote for the poll
         # print('PRE_VERIFY', poll_id, user_id, username)
-        verify_result = cls.verify_voter(poll_id, user_id, username)
+        verify_result = cls.verify_voter(
+            poll_id, user_id, username=username, chat_id=chat_id
+        )
         if verify_result.is_err():
             error_message.add(f"You're not a voter of poll {poll_id}")
             return Err(error_message)

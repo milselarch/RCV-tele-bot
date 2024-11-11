@@ -264,9 +264,11 @@ class PollVoters(BaseModel):
     def build_from_fields(
         cls, user_id: UserID | EmptyField = Empty,
         poll_id: int | EmptyField = Empty,
+        voted: bool | EmptyField = Empty
     ) -> BoundRowFields[Self]:
         return BoundRowFields(cls, {
-            cls.user: user_id, cls.poll: poll_id
+            cls.user: user_id, cls.poll: poll_id,
+            cls.voted: voted
         })
 
     def get_voter_user(self) -> Users:
