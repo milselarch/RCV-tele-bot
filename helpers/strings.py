@@ -1,3 +1,4 @@
+import re
 import textwrap
 
 from helpers.commands import Command
@@ -118,7 +119,15 @@ def generate_delete_text(deletion_token: str) -> str:
     """)
 
 
-def generate_enter_poll_option_text(rank: int) -> str:
+def escape_markdown(string: str) -> str:
+    # https://stackoverflow.com/questions/40626896/
+    return re.sub(
+        r'[_*[\]()~>#+\-=|{}.!]', lambda x: '\\' + x.group(),
+        string
+    )
+
+
+def generate_vote_option_prompt(rank: int) -> str:
     if rank == 1:
         return f"Enter the poll option you want to rank #{rank}:"
     else:

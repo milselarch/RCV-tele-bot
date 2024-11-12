@@ -425,11 +425,7 @@ class BaseAPI(object):
         assert isinstance(poll_id, int)
         assert isinstance(user_id, int)
         # print('CHAT_WHITELIST', chat_id)
-        chat_whitelist_res = ChatWhitelist.build_from_fields(
-            poll_id=poll_id, chat_id=chat_id
-        ).safe_get()
-
-        if chat_whitelist_res.is_err():
+        if not ChatWhitelist.is_whitelisted(poll_id, chat_id):
             return Err(UserRegistrationStatus.NOT_WHITELISTED)
 
         with db.atomic() as transaction:
@@ -814,10 +810,17 @@ class BaseAPI(object):
 
     @classmethod
     def read_poll_info(
-        cls, poll_id: int, user_id: UserID, username: Optional[str]
+        cls, poll_id: int, user_id: UserID, username: Optional[str],
+        chat_id: Optional[int]
     ) -> Result[PollInfo, MessageBuilder]:
         error_message = MessageBuilder()
-        has_poll_access = cls.has_access_to_poll_id(
+        chat_whitelisted = False
+
+        if chat_id is not None:
+            assert isinstance(chat_id, int)
+            chat_whitelisted = ChatWhitelist.is_whitelisted(poll_id, chat_id)
+
+        has_poll_access = chat_whitelisted or cls.has_access_to_poll_id(
             poll_id, user_id, username=username
         )
         if not has_poll_access:
@@ -1104,18 +1107,24 @@ class BaseAPI(object):
     ) -> Result[int, ValueError]:
         # TODO: refactor this to use PyO3 validator
         raw_ranked_option = raw_ranked_option.strip()
+        err = Err(ValueError(f"{raw_ranked_option} is not a valid option"))
 
         try:
             special_ranking = SpecialVotes.from_string(raw_ranked_option)
         except ValueError:
-            ranking = int(raw_ranked_option)
+            try:
+                # TODO: check if this is a valid ranking number first
+                ranking = int(raw_ranked_option)
+            except ValueError:
+                return err
+
             if ranking <= 0:
-                return Err(ValueError("Ranking must be > 0"))
+                return err
 
             return Ok(ranking)
 
         if special_ranking.value >= 0:
-            return Err(ValueError("Ranking must be < 0"))
+            return err
 
         return Ok(special_ranking.value)
 

@@ -270,6 +270,7 @@ class RankedChoiceBot(BaseAPI):
                     return await update.message.reply_text(invalid_param_msg)
 
                 tele_user: TeleUser = message.from_user
+                assert tele_user is not None
                 user: Users = update.user
 
                 user_id = user.get_user_id()
@@ -363,7 +364,7 @@ class RankedChoiceBot(BaseAPI):
     @track_errors
     async def handle_other_messages(self, update: ModifiedTeleUpdate, _):
         # handles messages not explicitly invoked as a part of a command
-        # TODO: implement callback contexts.rs voting and poll creation
+        # TODO: refactor this to its own class for context message handlers
         message: Message = update.message
         chat_context_res = TelegramHelpers.extract_chat_context(update)
         if chat_context_res.is_err():
@@ -420,9 +421,25 @@ class RankedChoiceBot(BaseAPI):
 
             vote_context = vote_context_res.unwrap()
             if not vote_context.has_poll_id:
-                set_poll_id_res = vote_context.set_poll_id_from_str(
-                    message.text
+                # accept the current text message as the poll_id and set it
+                try:
+                    poll_id = int(message.text)
+                except ValueError:
+                    return await message.reply_text("Invalid poll ID")
+
+                tele_user: TeleUser = update.message.from_user
+                poll_info_res = self.read_poll_info(
+                    poll_id=poll_id, user_id=update.user.get_user_id(),
+                    username=tele_user.username, chat_id=message.chat_id
                 )
+
+                if poll_info_res.is_err():
+                    error_message = poll_info_res.err()
+                    return await error_message.call(message.reply_text)
+
+                poll_info = poll_info_res.unwrap()
+                vote_context.set_max_options(poll_info.max_options)
+                set_poll_id_res = vote_context.set_poll_id(poll_id)
                 if set_poll_id_res.is_err():
                     return await message.reply_text(str(
                         set_poll_id_res.unwrap_err()
@@ -430,7 +447,7 @@ class RankedChoiceBot(BaseAPI):
 
                 vote_context.save_state()
                 return await message.reply_text(
-                    strings.generate_enter_poll_option_text(1)
+                    vote_context.generate_vote_option_prompt()
                 )
             else:
                 ranked_option_res = self.parse_ranked_option(message_text)
@@ -440,14 +457,15 @@ class RankedChoiceBot(BaseAPI):
 
                 ranked_option = ranked_option_res.unwrap()
                 add_ranked_option_res = vote_context.add_option(ranked_option)
+                # print('ADD_OPTIONS', ranked_option, add_ranked_option_res)
                 if add_ranked_option_res.is_err():
                     error = add_ranked_option_res.unwrap_err()
                     return await message.reply_text(str(error))
 
                 vote_context.save_state()
-                num_options = vote_context.num_options
+                # print('CURRENT_RANKINGS', vote_context.rankings)
                 return await message.reply_text(
-                    strings.generate_enter_poll_option_text(num_options)
+                    vote_context.generate_vote_option_prompt()
                 )
         else:
             # this should never happen
@@ -617,10 +635,10 @@ class RankedChoiceBot(BaseAPI):
         returns current user id and username
         """
         # when command /user_details is invoked
-        user: TeleUser = update.message.from_user
+        tele_user: TeleUser = update.message.from_user
         await update.message.reply_text(textwrap.dedent(f"""
-            user id: {user.id}
-            username: {user.username}
+            user id: {tele_user.id}
+            username: {tele_user.username}
         """))
 
     @staticmethod
@@ -763,11 +781,7 @@ class RankedChoiceBot(BaseAPI):
                     f'https://t.me/{bot_username}?startgroup='
                     f'{strings.WHITELIST_POLL_ID_GET_PARAM}={poll_id}'
                 )
-                # https://stackoverflow.com/questions/40626896/
-                escaped_deep_link_url = re.sub(
-                    r'[_*[\]()~>#+\-=|{}.!]', lambda x: '\\' + x.group(),
-                    deep_link_url
-                )
+                escaped_deep_link_url = strings.escape_markdown(deep_link_url)
 
                 await reply_text(poll_message.text, reply_markup=reply_markup)
                 # https://stackoverflow.com/questions/76538913/
@@ -780,7 +794,7 @@ class RankedChoiceBot(BaseAPI):
                     Alternatively, click the following link to share the 
                     poll to the group chat of your choice:  
                     [{escaped_deep_link_url}]({escaped_deep_link_url})
-                """))  # TODO: test parse mode works
+                """))
         elif extracted_context.context_type == ContextStates.CAST_VOTE:
             # TODO: do this lol
             raise NotImplementedError
@@ -1670,8 +1684,8 @@ class RankedChoiceBot(BaseAPI):
         message = update.message
         user_entry: Users = update.user
         raw_command_args = TelegramHelpers.read_raw_command_args(update)
-        query = update.callback_query
-        tele_user: TeleUser | None = query.from_user
+        tele_user: TeleUser = message.from_user
+        assert tele_user is not None
 
         if raw_command_args == '':
             VoteContext(
@@ -1692,12 +1706,16 @@ class RankedChoiceBot(BaseAPI):
                 error_message = view_poll_result.err()
                 return await error_message.call(message.reply_text)
 
-            VoteContext(
+            poll_message = view_poll_result.unwrap()
+            max_options = poll_message.poll_info.max_options
+            vote_context = VoteContext(
                 user_id=user_entry.get_user_id(), chat_id=message.chat.id,
-                max_options=POLL_MAX_OPTIONS, poll_id=poll_id
-            ).save_state()
+                max_options=max_options, poll_id=poll_id
+            )
+
+            vote_context.save_state()
             return await message.reply_text(
-                strings.generate_enter_poll_option_text(1)
+                vote_context.generate_vote_option_prompt()
             )
 
         raw_text = message.text.strip()

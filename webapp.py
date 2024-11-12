@@ -138,7 +138,7 @@ class VotingWebApp(BaseAPI):
         username = user_info['username']
         read_poll_result = self.read_poll_info(
             poll_id=payload.poll_id, user_id=user_id,
-            username=username
+            username=username, chat_id=None
         )
 
         if read_poll_result.is_err():

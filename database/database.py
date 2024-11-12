@@ -242,6 +242,12 @@ class ChatWhitelist(BaseModel):
             cls.poll: poll_id, cls.chat_id: chat_id
         })
 
+    @classmethod
+    def is_whitelisted(cls, poll_id: int, chat_id: int) -> bool:
+        return ChatWhitelist.build_from_fields(
+            poll_id=poll_id, chat_id=chat_id
+        ).safe_get().is_ok()
+
 
 class PollVoters(BaseModel):
     id = AutoField(primary_key=True)

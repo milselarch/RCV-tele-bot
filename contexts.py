@@ -4,11 +4,12 @@ import textwrap
 from typing import Sequence
 from result import Result, Ok, Err
 
-from helpers import helpers
+from helpers import helpers, strings
 from helpers.constants import (
     BLANK_POLL_ID, POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH
 )
 from helpers.message_buillder import MessageBuilder
+from helpers.special_votes import SpecialVotes
 from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT
 from database.subscription_tiers import SubscriptionTiers
 from database.db_helpers import BoundRowFields
@@ -257,6 +258,9 @@ class VoteContext(SerializableBaseModel):
         self.poll_id = poll_id
         return Ok(self.is_complete)
 
+    def set_max_options(self, max_options: int):
+        self.max_options = max_options
+
     @property
     def has_poll_id(self):
         return self.poll_id >= 0
@@ -269,18 +273,34 @@ class VoteContext(SerializableBaseModel):
     def num_options(self) -> int:
         return len(self.rankings)
 
-    def add_option(self, raw_option_id: int) -> Result[bool, ValueError]:
-        if len(self.rankings) >= POLL_MAX_OPTIONS:
-            return Err(ValueError("Max number of rankings reached"))
-        if len(self.rankings) >= self.max_options:
+    def to_vote_message(self) -> str:
+        return f'{self.poll_id}: ' + ' > '.join([
+            str(raw_option) if raw_option > 0 else
+            SpecialVotes(raw_option).to_string()
+            for raw_option in self.rankings
+        ])
+
+    def generate_vote_option_prompt(self) -> str:
+        if len(self.rankings) == 0:
+            return strings.generate_vote_option_prompt(1)
+        else:
+            return (
+                self.to_vote_message() + '\n' +
+                strings.generate_vote_option_prompt(self.num_options+1)
+            )
+
+    def add_option(self, raw_option_number: int) -> Result[bool, ValueError]:
+        # print('MAX_OPTIONS', self.max_options)
+        if not (self.max_options >= raw_option_number >= 1):
             return Err(ValueError(
-                f"There are only {self.max_options} options to choose from"
+                f"Please enter an option from 1 to {self.max_options}, "
+                f"or enter /abstain or /withhold"
             ))
 
-        new_rankings = self.rankings + [raw_option_id]
+        new_rankings = self.rankings + [raw_option_number]
         validate_result = PyVotesCounter.validate_raw_vote(new_rankings)
         if not validate_result.valid:
             return Err(ValueError(validate_result.error_message))
 
-        self.rankings.append(raw_option_id)
+        self.rankings.append(raw_option_number)
         return Ok(self.is_complete)
