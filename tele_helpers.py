@@ -1,8 +1,9 @@
 import dataclasses
 import logging
+import textwrap
 import telegram
 
-from typing import Callable, Coroutine, Any, Dict
+from typing import Callable, Coroutine, Any, Dict, Optional, List
 from result import Result, Err, Ok
 
 from base_api import BaseAPI
@@ -98,6 +99,73 @@ class TelegramHelpers(object):
             user=user_entry, message_text=message_text,
             chat_context=chat_context, context_type=chat_context_type
         ))
+
+    @classmethod
+    def _vote_for_poll(
+        cls, raw_text: str, user_tele_id: int, username: Optional[str],
+        chat_id: Optional[int]
+    ) -> Result[int, MessageBuilder]:
+        """
+        telegram command format
+        /vote {poll_id}: {option_1} > {option_2} > ... > {option_n}
+        /vote {poll_id} {option_1} > {option_2} > ... > {option_n}
+        example:
+        /vote 3: 1 > 2 > 3
+        /vote 3 1 > 2 > 3
+        """
+        error_message = MessageBuilder()
+        # print('RAW_VOTE_TEXT', [raw_text, user_id])
+        if ' ' not in raw_text:
+            error_message.add('no poll id specified')
+            return Err(error_message)
+
+        unpack_result = BaseAPI.unpack_rankings_and_poll_id(raw_text)
+
+        if unpack_result.is_err():
+            assert isinstance(unpack_result, Err)
+            return unpack_result
+
+        unpacked_result = unpack_result.unwrap()
+        poll_id: int = unpacked_result[0]
+        rankings: List[int] = unpacked_result[1]
+
+        # print('PRE_REGISTER')
+        return BaseAPI.register_vote(
+            poll_id=poll_id, rankings=rankings,
+            user_tele_id=user_tele_id, username=username,
+            chat_id=chat_id
+        )
+
+    @classmethod
+    async def vote_and_report(
+        cls, raw_text: str, user_tele_id: int, message: Message,
+        username: Optional[str], chat_id: Optional[int]
+    ) -> bool:
+        # returns whether vote was successful
+        vote_result = cls._vote_for_poll(
+            raw_text=raw_text, user_tele_id=user_tele_id,
+            username=username, chat_id=chat_id
+        )
+
+        if vote_result.is_err():
+            error_message = vote_result.err()
+            await error_message.call(message.reply_text)
+            return False
+
+        poll_id = vote_result.unwrap()
+        await cls.send_post_vote_reply(message=message, poll_id=poll_id)
+        return True
+
+    @classmethod
+    async def send_post_vote_reply(cls, message: Message, poll_id: int):
+        poll_metadata = Polls.read_poll_metadata(poll_id)
+        num_voters = poll_metadata.num_active_voters
+        num_votes = poll_metadata.num_votes
+
+        await message.reply_text(textwrap.dedent(f"""
+            vote has been registered
+            {num_votes} / {num_voters} voted
+        """))
 
     @staticmethod
     def users_middleware(
@@ -277,7 +345,6 @@ class TelegramHelpers(object):
             ).get_or_create()
 
             if is_new_whitelist:
-                # TODO: BUG whitelist isn't actually working
                 reply_msg = 'Whitelisted chat for user self-registration'
                 await message.reply_text(reply_msg)
                 await cls.view_poll_by_id(

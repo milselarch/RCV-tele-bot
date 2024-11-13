@@ -5,6 +5,7 @@ from typing import Sequence
 from result import Result, Ok, Err
 
 from helpers import helpers, strings
+from helpers.commands import Command
 from helpers.constants import (
     BLANK_POLL_ID, POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH
 )
@@ -290,11 +291,16 @@ class VoteContext(SerializableBaseModel):
             )
 
     def add_option(self, raw_option_number: int) -> Result[bool, ValueError]:
-        # print('MAX_OPTIONS', self.max_options)
-        if not (self.max_options >= raw_option_number >= 1):
+        special_vote_res = SpecialVotes.try_from(raw_option_number)
+        is_valid = (
+            special_vote_res.is_ok() or
+            (self.max_options >= raw_option_number >= 1)
+        )
+        if not is_valid:
             return Err(ValueError(
                 f"Please enter an option from 1 to {self.max_options}, "
-                f"or enter /abstain or /withhold"
+                f"or enter abstain or withhold, or "
+                f"/{Command.DONE} if you're done"
             ))
 
         new_rankings = self.rankings + [raw_option_number]

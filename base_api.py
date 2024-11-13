@@ -10,7 +10,6 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-import telegram
 
 import database
 import aioredlock
@@ -39,11 +38,12 @@ from database import (
 )
 from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup, User as TeleUser,
-    ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+    ReplyKeyboardMarkup, KeyboardButton, WebAppInfo, Bot as TelegramBot
 )
-from database.database import PollWinners, BaseModel, UserID, PollMetadata, ChatWhitelist
 from aioredlock import Aioredlock, LockError
-
+from database.database import (
+    PollWinners, BaseModel, UserID, PollMetadata, ChatWhitelist
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +61,11 @@ class UserRegistrationStatus(StrEnum):
     POLL_NOT_FOUND = 'POLL_NOT_FOUND'
     VOTER_LIMIT_REACHED = 'VOTER_LIMIT_REACHED'
     NOT_WHITELISTED = 'NOT_WHITELISTED'
+    POLL_CLOSED = 'POLL_CLOSED'
     """
     Another user (different user_tele_id) has already registered for the
     same poll using the same username
     """
-    POLL_CLOSED = 'POLL_CLOSED'
     USERNAME_TAKEN = 'USERNAME_TAKEN'
     FAILED = 'FAILED'
 
@@ -156,7 +156,7 @@ class BaseAPI(object):
 
     @classmethod
     def create_tele_bot(cls):
-        return telegram.Bot(token=cls.__get_telegram_token())
+        return TelegramBot(token=cls.__get_telegram_token())
 
     @classmethod
     def create_application_builder(cls):
@@ -1113,7 +1113,6 @@ class BaseAPI(object):
             special_ranking = SpecialVotes.from_string(raw_ranked_option)
         except ValueError:
             try:
-                # TODO: check if this is a valid ranking number first
                 ranking = int(raw_ranked_option)
             except ValueError:
                 return err
