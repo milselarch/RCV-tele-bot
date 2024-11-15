@@ -19,7 +19,7 @@ from typing_extensions import Any
 from strenum import StrEnum
 from requests import PreparedRequest
 
-from helpers import strings
+from helpers import strings, constants
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
 from py_rcv import VotesCounter as PyVotesCounter
@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 class CallbackCommands(StrEnum):
     REGISTER = 'REGISTER'
     DELETE = 'DELETE'
+    ADD_VOTE_OPTION = 'ADD_VOTE_OPTION'
 
 
 class UserRegistrationStatus(StrEnum):
@@ -798,15 +799,53 @@ class BaseAPI(object):
 
     @classmethod
     def build_group_vote_markup(
-        cls, poll_id: int
+        cls, poll_id: int, num_options: int = 16
     ) -> List[List[InlineKeyboardButton]]:
-        callback_data = json.dumps(cls.kwargify(
+        """
+        TODO: implement button vote context
+        < poll registration button >
+        < vote option rows >
+        < undo, abstain, withhold, reset >
+        < submit / check button >
+        """
+        register_callback_data = json.dumps(cls.kwargify(
             poll_id=poll_id, command=str(CallbackCommands.REGISTER)
         ))
-        markup_layout = [[InlineKeyboardButton(
-            text=f'Register for poll', callback_data=callback_data
-        )]]
-        return markup_layout
+
+        markup_rows, current_row = [], []
+        markup_rows.append([InlineKeyboardButton(
+            text=f'Register for Poll', callback_data=register_callback_data
+        )])
+
+        for ranking in range(1, num_options+1):
+            current_row.append(InlineKeyboardButton(
+                text=f'{ranking}', callback_data=register_callback_data
+            ))
+            flush_row = (
+                (ranking == num_options) or
+                (len(current_row) >= constants.MAX_OPTIONS_PER_ROW)
+            )
+            if flush_row:
+                markup_rows.append(current_row)
+                current_row = []
+
+        markup_rows.append([
+            InlineKeyboardButton(
+                text='undo', callback_data=register_callback_data
+            ), InlineKeyboardButton(
+                text='abstain', callback_data=register_callback_data
+            ), InlineKeyboardButton(
+                text='withhold', callback_data=register_callback_data
+            ), InlineKeyboardButton(
+                text='reset', callback_data=register_callback_data
+            )
+        ])
+        markup_rows.append([
+            InlineKeyboardButton(
+                text='Submit Vote', callback_data=register_callback_data
+            )
+        ])
+        return markup_rows
 
     @classmethod
     def read_poll_info(
@@ -1324,6 +1363,7 @@ class BaseAPI(object):
         poll_id: int, open_registration: bool
     ) -> None | ReplyKeyboardMarkup | InlineKeyboardMarkup:
         reply_markup = None
+        print('CHAT_TYPE', chat_type)
         if chat_type == 'private':
             # create vote button for reply message
             vote_markup_data = cls.build_private_vote_markup(

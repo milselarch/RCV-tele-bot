@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import peewee
 
 from peewee import Model
@@ -124,3 +122,7 @@ class BoundRowFields(ModelRowFields, Generic[T]):
 
     def apply_update(self, model_instance: T):
         return model_instance.update(**self._fields)
+
+
+class UserID(int):
+    pass

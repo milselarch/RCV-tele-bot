@@ -13,35 +13,22 @@ from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok, Err
 from enum import StrEnum
 
-from .subscription_tiers import SubscriptionTiers
+from database.setup import DB, BaseModel, database_proxy
+from database.users import Users
+from helpers import constants
 from load_config import YAML_CONFIG
-from typing import Self, Optional, Type, TypeVar
+from typing import Self, Optional, Type, TypeVar, List
 from database.db_helpers import (
-    BoundRowFields, Empty, EmptyField, TypedModel
+    BoundRowFields, Empty, EmptyField, UserID
 )
 from peewee import (
-    MySQLDatabase, BigIntegerField, CharField,
+    BigIntegerField, CharField,
     IntegerField, AutoField, TextField, DateTimeField,
-    BooleanField, ForeignKeyField, SQL, BigAutoField, Proxy, Database,
+    BooleanField, ForeignKeyField, SQL, BigAutoField, Database,
 )
 
-
-class DB(ReconnectMixin, MySQLDatabase):
-    pass
-
-
-database_proxy = Proxy()
 initialised_db: DB | None = None
-
-
-class BaseModel(TypedModel):
-    class Meta:
-        database = database_proxy
-        table_settings = ['DEFAULT CHARSET=utf8mb4']
-
-
-class UserID(int):
-    pass
+# TODO: refactor each individual table into its own file
 
 
 def get_tables() -> list[Type[BaseModel]]:
@@ -67,61 +54,6 @@ def initialize_db(db: Database | None = None):
     # Create tables (if they don't exist)
     database_proxy.connect()
     database_proxy.create_tables(get_tables(), safe=True)
-
-
-# maps telegram user ids to their usernames
-class Users(BaseModel):
-    id = BigAutoField(primary_key=True)
-    # telegram user id
-    tele_id = BigIntegerField(null=False, index=True, unique=True)
-    username = CharField(max_length=255, default=None, null=True)
-    credits = IntegerField(default=0)
-    subscription_tier = IntegerField(default=0)
-    deleted_at = DateTimeField(default=None, null=True)
-
-    class Meta:
-        database = database_proxy
-        indexes = (
-            # Non-unique index for usernames
-            # telegram usernames have to be unique, however because
-            # every username changes can't be tracked instantly
-            # it possible there will be collisions here regardless
-            (('username',), False),
-        )
-
-    def is_deleted(self) -> bool:
-        return self.deleted_at is not None
-
-    def get_subscription_tier(self) -> Result[SubscriptionTiers, ValueError]:
-        try:
-            return Ok(SubscriptionTiers(self.subscription_tier))
-        except ValueError as e:
-            return Err(e)
-
-    @classmethod
-    def build_from_fields(
-        cls, user_id: int | EmptyField = Empty,
-        tele_id: int | EmptyField = Empty,
-        username: str | None | EmptyField = Empty
-    ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
-            cls.id: user_id, cls.tele_id: tele_id, cls.username: username
-        })
-
-    def get_user_id(self) -> UserID:
-        # TODO: do a unit test for this
-        assert isinstance(self.id, int)
-        return UserID(self.id)
-
-    def get_tele_id(self) -> int:
-        assert isinstance(self.tele_id, int)
-        return self.tele_id
-
-    @classmethod
-    def get_from_tele_id(
-        cls, tele_id: int
-    ) -> Result[Users, Users.DoesNotExist]:
-        return cls.build_from_fields(tele_id=tele_id).safe_get()
 
 
 @dataclasses.dataclass
@@ -189,10 +121,6 @@ class Polls(BaseModel):
         )
 
     @classmethod
-    def count_polls_created(cls, user_id: UserID) -> int:
-        return cls.select().where(cls.creator == user_id).count()
-
-    @classmethod
     def build_from_fields(
         cls, poll_id: int | EmptyField = Empty,
         desc: str | EmptyField = Empty,
@@ -216,6 +144,17 @@ class Polls(BaseModel):
         return cls.build_from_fields(
             poll_id=poll_id, creator_id=user_id
         ).get()
+
+    @classmethod
+    def count_polls_created(cls, user_id: UserID) -> int:
+        return cls.select().where(cls.creator == user_id).count()
+
+    @classmethod
+    def get_owned_polls(cls, user_id: UserID) -> List[Polls]:
+        return [
+            poll for poll in
+            cls.select().where(cls.creator == user_id)
+        ]
 
 
 # whitelisted group chats from which users are
@@ -452,7 +391,7 @@ class CallbackContextState(BaseModel):
     chat_id = BigIntegerField(null=False)  # telegram chat ID
     context_type = CharField(max_length=255, null=False)
     state = TextField(null=False)
-    # TODO: add last update date and clear all context states
+    last_updated_at = DateTimeField(default=datetime.datetime.now, null=False)
 
     indexes = (
         # Unique multi-column index for user-chat_id pairs
@@ -461,6 +400,7 @@ class CallbackContextState(BaseModel):
 
     def update_state(self, new_state: SerializableBaseModel):
         self.state = new_state.dump_to_json_str()
+        self.last_updated_at = datetime.datetime.now()
         self.save()
 
     def get_context_type(self) -> Result[ContextStates, ValueError]:
@@ -471,6 +411,15 @@ class CallbackContextState(BaseModel):
 
     def deserialize_state(self) -> dict[str, any]:
         return json.loads(self.state)
+
+    @classmethod
+    def prune_expired_contexts(cls):
+        date_stamp = datetime.datetime.now()
+        user_deletion_cutoff = date_stamp - constants.DELETE_CONTEXTS_BACKLOG
+        # actually remove deleted users from the database
+        cls.delete().where(
+            cls.last_updated_at < user_deletion_cutoff
+        ).execute()
 
     @classmethod
     def build_from_fields(

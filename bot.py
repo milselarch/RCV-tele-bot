@@ -6,7 +6,6 @@ import multiprocessing
 import time
 import textwrap
 import asyncio
-import datetime
 import re
 
 from peewee import JOIN
@@ -15,16 +14,17 @@ from result import Ok, Result
 from helpers.commands import Command
 from helpers.message_buillder import MessageBuilder
 from json import JSONDecodeError
-from datetime import datetime as _datetime
+from datetime import datetime
 
 from helpers import strings
 from tele_helpers import ModifiedTeleUpdate
 from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
-from database.database import UserID
+from database.database import UserID, CallbackContextState
 from database.db_helpers import EmptyField, Empty
 from helpers.locks_manager import PollsLockManager
 from handlers.context_handlers import context_handlers
+from helpers import constants
 
 from telegram import (
     Message, ReplyKeyboardMarkup,
@@ -55,9 +55,6 @@ from base_api import (
 
 from tele_helpers import TelegramHelpers
 
-ID_PATTERN = re.compile(r"^[1-9]\d*$")
-MAX_DISPLAY_VOTE_COUNT = 30
-MAX_CONCURRENT_UPDATES = 256
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -68,11 +65,6 @@ logger = logging.getLogger(__name__)
 
 
 class RankedChoiceBot(BaseAPI):
-    # how long before the delete poll button expires
-    DELETE_POLL_BUTTON_EXPIRY = 60
-    DELETE_USERS_BACKLOG = datetime.timedelta(days=28)
-    FLUSH_USERS_INTERVAL = 600
-
     def __init__(self, config_path='config.yml'):
         super().__init__()
         self.config_path = config_path
@@ -84,19 +76,16 @@ class RankedChoiceBot(BaseAPI):
         self.webhook_url = None
 
     @classmethod
-    def run_flush_deleted_users(cls):
-        asyncio.run(cls.flush_deleted_users())
+    def run_polling_tasks(cls):
+        asyncio.run(cls._run_polling_tasks_routine())
 
     @classmethod
-    async def flush_deleted_users(cls):
+    async def _run_polling_tasks_routine(cls):
         # TODO: write tests for this
         while True:
-            deletion_cutoff = _datetime.now() - cls.DELETE_USERS_BACKLOG
-            Users.delete().where(
-                Users.deleted_at < deletion_cutoff
-            ).execute()
-
-            await asyncio.sleep(cls.FLUSH_USERS_INTERVAL)
+            Users.prune_deleted_users()
+            CallbackContextState.prune_expired_contexts()
+            await asyncio.sleep(constants.POLLING_TASKS_INTERVAL)
 
     def schedule_tasks(self, tasks: List[Callable[[], None]]):
         assert len(self.scheduled_processes) == 0
@@ -109,12 +98,10 @@ class RankedChoiceBot(BaseAPI):
     def start_bot(self):
         assert self.bot is None
         self.bot = self.create_tele_bot()
-        self.schedule_tasks([
-            self.run_flush_deleted_users
-        ])
+        self.schedule_tasks([self.run_polling_tasks])
 
         builder = self.create_application_builder()
-        builder.concurrent_updates(MAX_CONCURRENT_UPDATES)
+        builder.concurrent_updates(constants.MAX_CONCURRENT_UPDATES)
         builder.post_init(self.post_init)
         self.app = builder.build()
 
@@ -420,7 +407,7 @@ class RankedChoiceBot(BaseAPI):
         elif command == CallbackCommands.DELETE:
             poll_id = int(callback_data['poll_id'])
             init_stamp = int(callback_data.get('stamp', 0))
-            if time.time() - init_stamp > self.DELETE_POLL_BUTTON_EXPIRY:
+            if time.time() - init_stamp > constants.DELETE_POLL_BUTTON_EXPIRY:
                 await query.answer("Delete button has expired")
                 return False
 
@@ -635,7 +622,8 @@ class RankedChoiceBot(BaseAPI):
 
             PollCreationContext(
                 user_id=user_entry.get_user_id(), chat_id=message.chat.id,
-                max_options=POLL_MAX_OPTIONS, poll_options=[]
+                max_options=POLL_MAX_OPTIONS, poll_options=[],
+                open_registration=True
             ).save_state()
 
             await message.reply_text(
@@ -692,7 +680,7 @@ class RankedChoiceBot(BaseAPI):
         for raw_poll_user in raw_poll_usernames:
             if raw_poll_user.startswith('#'):
                 raw_poll_user_tele_id = raw_poll_user[1:]
-                if ID_PATTERN.match(raw_poll_user_tele_id) is None:
+                if constants.ID_PATTERN.match(raw_poll_user_tele_id) is None:
                     await message.reply_text(
                         f'Invalid poll user id: {raw_poll_user}'
                     )
@@ -1223,6 +1211,7 @@ class RankedChoiceBot(BaseAPI):
     @staticmethod
     async def view_all_polls(update: ModifiedTeleUpdate, *_, **__):
         # TODO: show voted / voters count + open / close status for each poll
+        # TODO: write test to check that user can only read their own polls
         message: Message = update.message
         tele_user: TeleUser = update.message.from_user
 
@@ -1239,8 +1228,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
             return False
 
-        user_id = user.get_user_id()
-        polls = Polls.select().where(Polls.creator == user_id)
+        polls = user.get_owned_polls()
         poll_descriptions = []
 
         if len(polls) == 0:
@@ -1408,7 +1396,7 @@ class RankedChoiceBot(BaseAPI):
         elif username_or_id.startswith('#'):
             # try to parse user_id directly
             raw_tele_id = username_or_id[1:].strip()
-            if ID_PATTERN.match(raw_tele_id) is None:
+            if constants.ID_PATTERN.match(raw_tele_id) is None:
                 await message.reply_text(f'invalid user id: {raw_tele_id}')
                 return False
 
@@ -1465,7 +1453,7 @@ class RankedChoiceBot(BaseAPI):
             return await message.reply_text(
                 "Enter the poll ID of the poll you want to vote for:"
             )
-        elif ID_PATTERN.match(raw_command_args) is not None:
+        elif constants.ID_PATTERN.match(raw_command_args) is not None:
             poll_id = int(raw_command_args)
             view_poll_result = self.get_poll_message(
                 poll_id=poll_id, user_id=user_entry.get_user_id(),
@@ -1605,7 +1593,7 @@ class RankedChoiceBot(BaseAPI):
             with db.atomic():
                 # delete all polls created by the user
                 Polls.delete().where(Polls.creator == user_id).execute()
-                user.deleted_at = _datetime.now()  # mark as deleted
+                user.deleted_at = datetime.now()  # mark as deleted
                 user.save()
 
                 poll_registrations: Iterable[PollVoters] = (
@@ -1692,10 +1680,10 @@ class RankedChoiceBot(BaseAPI):
             PollVoters.poll == poll_id
         )
 
-        if vote_count >= MAX_DISPLAY_VOTE_COUNT:
+        if vote_count >= constants.MAX_DISPLAY_VOTE_COUNT:
             await message.reply_text(
                 f'Can only display voters when vote count is '
-                f'under {MAX_DISPLAY_VOTE_COUNT}'
+                f'under {constants.MAX_DISPLAY_VOTE_COUNT}'
             )
             return False
 

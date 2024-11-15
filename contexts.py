@@ -159,7 +159,7 @@ class PollCreationContext(SerializableBaseModel):
     poll_options: list[str]
 
     whitelisted_chat_ids: Sequence[int] = ()
-    open_registration: bool = False
+    open_registration: bool = True
     question: str = ''
 
     def __init__(self, **kwargs):
