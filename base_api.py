@@ -194,6 +194,17 @@ class BaseAPI(object):
 
         return Ok(poll_id)
 
+    @classmethod
+    def spawn_inline_keyboard_button(
+        cls, text: str, command: CallbackCommands,
+        callback_data: dict[str, any]
+    ) -> InlineKeyboardButton:
+        return InlineKeyboardButton(
+            text=text, callback_data=json.dumps(dict(
+                command=str(command), **callback_data
+            ))
+        )
+
     @staticmethod
     def fetch_poll(poll_id: int) -> Result[Polls, MessageBuilder]:
         error_message = MessageBuilder()
@@ -699,23 +710,18 @@ class BaseAPI(object):
         markup_rows, current_row = [], []
 
         # create first row with just registration button
-        register_callback_data = json.dumps(cls.kwargify(
-            poll_id=poll_id, command=str(CallbackCommands.REGISTER_FOR_POLL)
-        ))
-        markup_rows.append([InlineKeyboardButton(
-            text=f'Register for Poll',
-            callback_data=register_callback_data
+        markup_rows.append([cls.spawn_inline_keyboard_button(
+            text='Register for Poll',
+            command=CallbackCommands.REGISTER_FOR_POLL,
+            callback_data=dict(poll_id=poll_id)
         )])
 
         # fill in rows containing poll option numbers
         for ranking in range(1, num_options+1):
-            current_row.append(InlineKeyboardButton(
+            current_row.append(cls.spawn_inline_keyboard_button(
                 text=str(ranking),
-                callback_data=json.dumps(dict(
-                    poll_id=poll_id,
-                    command=str(CallbackCommands.ADD_VOTE_OPTION),
-                    option=ranking
-                ))
+                command=CallbackCommands.ADD_VOTE_OPTION,
+                callback_data=dict(poll_id=poll_id, option=ranking)
             ))
             flush_row = (
                 (ranking == num_options) or
@@ -727,38 +733,37 @@ class BaseAPI(object):
 
         # add row with undo, abstain, withhold, reset buttons
         markup_rows.append([
-            InlineKeyboardButton(
-                text='undo', callback_data=json.dumps(dict(
+            cls.spawn_inline_keyboard_button(
+                text='undo',
+                command=CallbackCommands.UNDO_OPTION,
+                callback_data=dict(poll_id=poll_id)
+            ), cls.spawn_inline_keyboard_button(
+                text='abstain',
+                command=CallbackCommands.ADD_VOTE_OPTION,
+                callback_data=dict(
                     poll_id=poll_id,
-                    command=str(CallbackCommands.UNDO_OPTION)
-                ))
-            ), InlineKeyboardButton(
-                text='abstain', callback_data=json.dumps(dict(
-                    poll_id=poll_id,
-                    command=str(CallbackCommands.ADD_VOTE_OPTION),
                     option=SpecialVotes.ABSTAIN_VOTE.value
-                ))
-            ), InlineKeyboardButton(
-                text='withhold', callback_data=json.dumps(dict(
+                )
+            ), cls.spawn_inline_keyboard_button(
+                text='withhold',
+                command=CallbackCommands.ADD_VOTE_OPTION,
+                callback_data=dict(
                     poll_id=poll_id,
-                    command=str(CallbackCommands.ADD_VOTE_OPTION),
                     option=SpecialVotes.WITHHOLD_VOTE.value
-                ))
-            ), InlineKeyboardButton(
-                text='reset', callback_data=json.dumps(dict(
-                    poll_id=poll_id,
-                    command=str(CallbackCommands.RESET_VOTE)
-                ))
+                )
+            ), cls.spawn_inline_keyboard_button(
+                text='reset',
+                command=CallbackCommands.RESET_VOTE,
+                callback_data=dict(poll_id=poll_id)
             )
         ])
 
         # add final row with submit vote button
         markup_rows.append([
-            InlineKeyboardButton(
-                text='Submit Vote', callback_data=json.dumps(dict(
-                    poll_id=poll_id,
-                    command=str(CallbackCommands.SUBMIT_VOTE)
-                ))
+            cls.spawn_inline_keyboard_button(
+                text='Submit Vote',
+                command=CallbackCommands.SUBMIT_VOTE,
+                callback_data=dict(poll_id=poll_id)
             )
         ])
         return markup_rows

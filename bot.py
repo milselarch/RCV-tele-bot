@@ -26,8 +26,7 @@ from handlers.context_handlers import context_handlers
 from helpers import constants
 
 from telegram import (
-    Message, ReplyKeyboardMarkup,
-    InlineKeyboardMarkup, InlineKeyboardButton,
+    Message, ReplyKeyboardMarkup, InlineKeyboardMarkup,
     User as TeleUser, Update as BaseTeleUpdate
 )
 from telegram.ext import (
@@ -41,7 +40,7 @@ from helpers.strings import (
     POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED
 )
 from contexts import (
-    PollCreationContext, PollCreatorTemplate, POLL_MAX_OPTIONS, VoteContext
+    PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS, VoteChatContext
 )
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
@@ -470,7 +469,7 @@ class RankedChoiceBot(BaseAPI):
                 await message.reply_text(POLL_OPTIONS_LIMIT_REACHED_TEXT)
                 return False
 
-            PollCreationContext(
+            PollCreationChatContext(
                 user_id=user_entry.get_user_id(), chat_id=message.chat.id,
                 max_options=POLL_MAX_OPTIONS, poll_options=[],
                 open_registration=True
@@ -1296,7 +1295,7 @@ class RankedChoiceBot(BaseAPI):
         assert tele_user is not None
 
         if raw_command_args == '':
-            VoteContext(
+            VoteChatContext(
                 user_id=user_entry.get_user_id(), chat_id=message.chat.id,
                 max_options=POLL_MAX_OPTIONS
             ).save_state()
@@ -1316,7 +1315,7 @@ class RankedChoiceBot(BaseAPI):
 
             poll_message = view_poll_result.unwrap()
             max_options = poll_message.poll_info.max_options
-            vote_context = VoteContext(
+            vote_context = VoteChatContext(
                 user_id=user_entry.get_user_id(), chat_id=message.chat.id,
                 max_options=max_options, poll_id=poll_id
             )
@@ -1397,12 +1396,12 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'poll #{poll_id} must be closed first')
             return False
 
-        callback_data = json.dumps(cls.kwargify(
-            poll_id=poll_id, command=str(CallbackCommands.DELETE_POLL),
-            stamp=int(time.time())
-        ))
-        markup_layout = [[InlineKeyboardButton(
-            text=f'Delete poll #{poll_id}', callback_data=callback_data
+        markup_layout = [[BaseAPI.spawn_inline_keyboard_button(
+            text=f'Delete poll #{poll_id}',
+            command=CallbackCommands.DELETE_POLL,
+            callback_data=dict(
+                poll_id=poll_id, stamp=int(time.time())
+            )
         )]]
 
         reply_markup = InlineKeyboardMarkup(markup_layout)

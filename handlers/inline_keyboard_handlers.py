@@ -130,8 +130,8 @@ class PollMessageHandlers(object):
                 if whitelist_user_result.is_ok():
                     whitelist_entry = whitelist_user_result.unwrap()
                     assert (
-                            (whitelist_entry.user is None) or
-                            (whitelist_entry.user == user_id)
+                        (whitelist_entry.user is None) or
+                        (whitelist_entry.user == user_id)
                     )
 
                     if whitelist_entry.user == user_id:
@@ -162,7 +162,6 @@ class PollMessageHandlers(object):
                 poll_id=poll_id, user_id=user_id,
                 ignore_voter_limit=ignore_voter_limit
             )
-
             # print("REGISTER_RESULT", register_result)
             if register_result.is_ok():
                 _, newly_registered = register_result.unwrap()
@@ -173,6 +172,13 @@ class PollMessageHandlers(object):
             else:
                 assert register_result.is_err()
                 return register_result.err_value
+
+    def add_vote_option(
+        self, update: ModifiedTeleUpdate, context: CallbackContext,
+        callback_data: dict[str, any]
+    ):
+        # TODO: implement this
+        raise NotImplementedError
 
 
 class InlineKeyboardHandlers(object):
@@ -188,7 +194,9 @@ class InlineKeyboardHandlers(object):
         ] = {
             CallbackCommands.REGISTER_FOR_POLL:
                 self.poll_message_handlers.register_for_poll,
-            CallbackCommands.DELETE_POLL: self.delete_poll
+            CallbackCommands.DELETE_POLL: self.delete_poll,
+            CallbackCommands.ADD_VOTE_OPTION:
+                self.poll_message_handlers.add_vote_option,
         }
 
     @track_errors

@@ -5,13 +5,13 @@ from telegram import Message, User as TeleUser
 from telegram.ext import ContextTypes
 from base_api import BaseAPI
 from bot_middleware import track_errors
-from contexts import PollCreationContext, VoteContext
-from database import Users, CallbackContextState
-from database.database import ContextStates
+from contexts import PollCreationChatContext, VoteChatContext
 from helpers import strings
 from helpers.commands import Command
 from helpers.strings import READ_SUBSCRIPTION_TIER_FAILED
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers, ExtractedContext
+
+from database import Users, CallbackContextState, ContextStates
 
 
 class BaseContextHandler(object, metaclass=ABCMeta):
@@ -40,7 +40,7 @@ class PollCreationContextHandler(BaseContextHandler):
         chat_context = extracted_context.chat_context
         message_text = extracted_context.message_text
 
-        poll_creation_context_res = PollCreationContext.load(chat_context)
+        poll_creation_context_res = PollCreationChatContext.load(chat_context)
         if poll_creation_context_res.is_err():
             chat_context.delete()
             return await message.reply_text(
@@ -83,7 +83,7 @@ class PollCreationContextHandler(BaseContextHandler):
         chat_type = message.chat.type
         user_id = user_entry.get_user_id()
 
-        poll_creation_context_res = PollCreationContext.load(chat_context)
+        poll_creation_context_res = PollCreationChatContext.load(chat_context)
         if poll_creation_context_res.is_err():
             chat_context.delete()
             return await message.reply_text(
@@ -158,7 +158,7 @@ class VoteContextHandler(BaseContextHandler):
         message: Message = update.message
         chat_context = extracted_context.chat_context
         message_text = extracted_context.message_text
-        vote_context_res = VoteContext.load(chat_context)
+        vote_context_res = VoteChatContext.load(chat_context)
 
         if vote_context_res.is_err():
             chat_context.delete()
@@ -222,7 +222,7 @@ class VoteContextHandler(BaseContextHandler):
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         message: Message = update.message
-        vote_creation_context_res = VoteContext.load(chat_context)
+        vote_creation_context_res = VoteChatContext.load(chat_context)
         if vote_creation_context_res.is_err():
             chat_context.delete()
             return await message.reply_text(

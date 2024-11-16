@@ -3,7 +3,6 @@ import textwrap
 
 from typing import Sequence
 from result import Result, Ok, Err
-
 from helpers import helpers, strings
 from helpers.commands import Command
 from helpers.constants import (
@@ -12,12 +11,13 @@ from helpers.constants import (
 from helpers.message_buillder import MessageBuilder
 from helpers.special_votes import SpecialVotes
 from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT
-from database.subscription_tiers import SubscriptionTiers
-from database.db_helpers import BoundRowFields
 from py_rcv import VotesCounter as PyVotesCounter
+
+from database.subscription_tiers import SubscriptionTiers
+from database.db_helpers import BoundRowFields, UserID
 from database import db
-from database.database import (
-    ContextStates, SerializableBaseModel, UserID, Users, Polls,
+from database import (
+    ContextStates, SerializableChatContext, Users, Polls,
     ChatWhitelist, UsernameWhitelist, PollOptions, PollVoters
 )
 
@@ -153,7 +153,7 @@ class PollCreatorTemplate(object):
         return Ok(new_poll_id)
 
 
-class PollCreationContext(SerializableBaseModel):
+class PollCreationChatContext(SerializableChatContext):
     chat_id: int
     user_id: int
     poll_options: list[str]
@@ -220,7 +220,7 @@ class PollCreationContext(SerializableBaseModel):
         )
 
 
-class VoteContext(SerializableBaseModel):
+class VoteChatContext(SerializableChatContext):
     chat_id: int
     user_id: int
 

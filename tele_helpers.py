@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import logging
 import textwrap
 import telegram
@@ -23,9 +24,9 @@ from telegram import (
     Update as BaseTeleUpdate, User as TeleUser
 )
 
-from database import Users, Polls, ChatWhitelist
+from database import Users, Polls, ChatWhitelist, ContextStates
 from database.database import (
-    UserID, CallbackContextState, ContextStates
+    UserID, CallbackContextState
 )
 
 logging.basicConfig(
