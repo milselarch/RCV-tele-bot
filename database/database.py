@@ -414,9 +414,10 @@ class CallbackContextState(BaseModel):
 
     @classmethod
     def prune_expired_contexts(cls):
+        # remove expired contexts from the database
         date_stamp = datetime.datetime.now()
         user_deletion_cutoff = date_stamp - constants.DELETE_CONTEXTS_BACKLOG
-        # actually remove deleted users from the database
+        # noinspection PyTypeChecker
         cls.delete().where(
             cls.last_updated_at < user_deletion_cutoff
         ).execute()

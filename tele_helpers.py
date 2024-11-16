@@ -6,8 +6,9 @@ import telegram
 from typing import Callable, Coroutine, Any, Dict, Optional, List
 from result import Result, Err, Ok
 
-from base_api import BaseAPI
+from base_api import BaseAPI, PollInfo
 from bot_middleware import track_errors
+from helpers.locks_manager import PollsLockManager
 from helpers.message_buillder import MessageBuilder
 
 from telegram import Message
@@ -406,3 +407,47 @@ class TelegramHelpers(object):
 
         await message.reply_text(poll_message.text, reply_markup=reply_markup)
         return True
+
+    @classmethod
+    async def update_poll_message(
+        cls, poll_info: PollInfo, chat_id: int, message_id: int,
+        context: CallbackContext, poll_locks_manager: PollsLockManager,
+        verbose: bool = False
+    ):
+        """
+        attempts to update the poll info message such that in
+        the event that there are multiple simultaneous update attempts
+        only the latest update will be propagated
+        """
+        poll_id = poll_info.metadata.id
+        bot_username = context.bot.username
+        voter_count = poll_info.metadata.num_active_voters
+        poll_locks = await poll_locks_manager.get_poll_locks(
+            poll_id=poll_id
+        )
+
+        await poll_locks.update_voter_count(voter_count)
+        chat_lock = await poll_locks.get_chat_lock(chat_id=chat_id)
+        if verbose:
+            print('PRE_LOCK', poll_locks_manager.poll_locks_map)
+
+        async with chat_lock:
+            if await poll_locks.has_correct_voter_count(voter_count):
+                try:
+                    poll_display_message = BaseAPI.generate_poll_message(
+                        poll_info=poll_info, bot_username=bot_username
+                    )
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id, message_id=message_id,
+                        text=poll_display_message.text,
+                        reply_markup=poll_display_message.reply_markup
+                    )
+                finally:
+                    await poll_locks_manager.remove_chat_lock(
+                        poll_id=poll_id, chat_id=chat_id
+                    )
+            elif verbose:
+                print('IGNORE', voter_count)
+
+        if verbose:
+            print('POST_LOCK', poll_locks_manager.poll_locks_map)

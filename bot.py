@@ -11,9 +11,9 @@ import re
 from peewee import JOIN
 from result import Ok, Result
 
+from handlers.inline_keyboard_handlers import InlineKeyboardHandlers
 from helpers.commands import Command
 from helpers.message_buillder import MessageBuilder
-from json import JSONDecodeError
 from datetime import datetime
 
 from helpers import strings
@@ -22,7 +22,6 @@ from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from database.database import UserID, CallbackContextState
 from database.db_helpers import EmptyField, Empty
-from helpers.locks_manager import PollsLockManager
 from handlers.context_handlers import context_handlers
 from helpers import constants
 
@@ -49,7 +48,7 @@ from database import (
     PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
 )
 from base_api import (
-    BaseAPI, UserRegistrationStatus, PollInfo,
+    BaseAPI, UserRegistrationStatus,
     CallbackCommands, GetPollWinnerStatus
 )
 
@@ -69,11 +68,9 @@ class RankedChoiceBot(BaseAPI):
         super().__init__()
         self.config_path = config_path
         self.scheduled_processes = []
+        self.webhook_url = None
         self.bot = None
         self.app = None
-
-        self.poll_locks_manager = PollsLockManager()
-        self.webhook_url = None
 
     @classmethod
     def run_polling_tasks(cls):
@@ -156,8 +153,9 @@ class RankedChoiceBot(BaseAPI):
             self.app, filters.Regex(r'.*') & filters.TEXT,
             context_handlers.handle_other_messages
         )
+        inline_keyboard_handlers = InlineKeyboardHandlers()
         TelegramHelpers.register_callback_handler(
-            self.app, self.inline_keyboard_handler
+            self.app, inline_keyboard_handlers.route
         )
 
         # self.app.add_error_handler(self.error_handler)
@@ -337,154 +335,6 @@ class RankedChoiceBot(BaseAPI):
     @track_errors
     async def handle_unknown_command(self, update: ModifiedTeleUpdate, _):
         await update.message.reply_text("Command not found")
-
-    @track_errors
-    async def inline_keyboard_handler(
-        self, update: ModifiedTeleUpdate, context: CallbackContext
-    ):
-        """
-        callback method for buttons in chat group messages
-        """
-        query = update.callback_query
-        chat_id = query.message.chat_id
-        message_id = query.message.message_id
-        raw_callback_data = query.data
-        tele_user: TeleUser | None = query.from_user
-
-        if tele_user is None:
-            await query.answer("Only users can be registered")
-            return False
-        if raw_callback_data is None:
-            await query.answer("Invalid callback data")
-            return False
-
-        try:
-            callback_data = json.loads(raw_callback_data)
-        except JSONDecodeError:
-            await query.answer("Invalid callback data format")
-            return False
-
-        if 'command' not in callback_data:
-            await query.answer("Callback command unknown")
-            return False
-
-        user_tele_id = tele_user.id
-        command = callback_data['command']
-
-        try:
-            user = Users.build_from_fields(tele_id=user_tele_id).get()
-            user_id = user.get_user_id()
-        except Users.DoesNotExist:
-            await query.answer(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
-            return False
-
-        if command == CallbackCommands.REGISTER:
-            poll_id = int(callback_data['poll_id'])
-
-            if not self.is_whitelisted_chat(poll_id=poll_id, chat_id=chat_id):
-                await query.answer("Not allowed to register from this chat")
-                return False
-
-            registration_status = self._register_voter(
-                poll_id=poll_id, user_id=user_id,
-                username=tele_user.username
-            )
-
-            reply_text = self._reg_status_to_msg(registration_status, poll_id)
-            if registration_status != UserRegistrationStatus.REGISTERED:
-                await query.answer(reply_text)
-                return False
-
-            assert registration_status == UserRegistrationStatus.REGISTERED
-            poll_info = self._read_poll_info(poll_id=poll_id)
-            notification = query.answer(reply_text)
-            poll_message_update = self.update_poll_message(
-                poll_info=poll_info, chat_id=chat_id,
-                message_id=message_id, context=context
-            )
-            await asyncio.gather(notification, poll_message_update)
-
-        elif command == CallbackCommands.DELETE:
-            poll_id = int(callback_data['poll_id'])
-            init_stamp = int(callback_data.get('stamp', 0))
-            if time.time() - init_stamp > constants.DELETE_POLL_BUTTON_EXPIRY:
-                await query.answer("Delete button has expired")
-                return False
-
-            poll_query = (Polls.id == poll_id) & (Polls.creator == user_id)
-            # TODO: write test to check that only poll creator can delete poll
-            poll = Polls.get_or_none(poll_query)
-
-            if poll is None:
-                await query.answer(f"Poll #{poll_id} does not exist")
-                return False
-
-            assert isinstance(poll, Polls)
-            poll_creator = poll.get_creator()
-            is_poll_creator = user_id == poll_creator.get_user_id()
-
-            if not is_poll_creator:
-                await query.answer(f"Not creator of poll #{poll_id}")
-                return False
-            elif not poll.closed:
-                await query.answer(f"Poll #{poll_id} must be closed first")
-                return False
-
-            Polls.delete().where(poll_query).execute()
-            await query.answer(f"Poll #{poll_id} deleted")
-            # remove delete button after deletion is complete
-            await context.bot.edit_message_text(
-                chat_id=chat_id, message_id=message_id,
-                text=f'Poll #{poll_id} ({poll.desc}) deleted',
-                reply_markup=None
-            )
-            return True
-
-        else:
-            await query.answer("Unknown callback command")
-            return False
-
-    async def update_poll_message(
-        self, poll_info: PollInfo, chat_id: int, message_id: int,
-        context: CallbackContext, verbose: bool = False
-    ):
-        """
-        attempts to update the poll info message such that in
-        the event that there are multiple simultaneous update attempts
-        only the latest update will be propagated
-        """
-        poll_id = poll_info.metadata.id
-        bot_username = context.bot.username
-        voter_count = poll_info.metadata.num_active_voters
-        poll_locks = await self.poll_locks_manager.get_poll_locks(
-            poll_id=poll_id
-        )
-
-        await poll_locks.update_voter_count(voter_count)
-        chat_lock = await poll_locks.get_chat_lock(chat_id=chat_id)
-        if verbose:
-            print('PRE_LOCK', self.poll_locks_manager.poll_locks_map)
-
-        async with chat_lock:
-            if await poll_locks.has_correct_voter_count(voter_count):
-                try:
-                    poll_display_message = self._generate_poll_message(
-                        poll_info=poll_info, bot_username=bot_username
-                    )
-                    await context.bot.edit_message_text(
-                        chat_id=chat_id, message_id=message_id,
-                        text=poll_display_message.text,
-                        reply_markup=poll_display_message.reply_markup
-                    )
-                finally:
-                    await self.poll_locks_manager.remove_chat_lock(
-                        poll_id=poll_id, chat_id=chat_id
-                    )
-            elif verbose:
-                print('IGNORE', voter_count)
-
-        if verbose:
-            print('POST_LOCK', self.poll_locks_manager.poll_locks_map)
 
     @staticmethod
     def is_whitelisted_chat(poll_id: int, chat_id: int):
@@ -848,7 +698,7 @@ class RankedChoiceBot(BaseAPI):
         except PollVoters.DoesNotExist:
             pass
 
-        register_result = self._register_user_id(
+        register_result = self.register_user_id(
             poll_id=poll_id, user_id=user_id,
             ignore_voter_limit=False, from_whitelist=False
         )
@@ -856,7 +706,7 @@ class RankedChoiceBot(BaseAPI):
         if register_result.is_err():
             err: UserRegistrationStatus = register_result.err_value
             assert isinstance(err, UserRegistrationStatus)
-            response_text = self._reg_status_to_msg(err, poll_id)
+            response_text = self.reg_status_to_msg(err, poll_id)
             await message.reply_text(response_text)
             return False
 
@@ -1548,7 +1398,7 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         callback_data = json.dumps(cls.kwargify(
-            poll_id=poll_id, command=str(CallbackCommands.DELETE),
+            poll_id=poll_id, command=str(CallbackCommands.DELETE_POLL),
             stamp=int(time.time())
         ))
         markup_layout = [[InlineKeyboardButton(

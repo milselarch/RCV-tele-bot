@@ -23,7 +23,6 @@ from helpers import strings, constants
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
 from py_rcv import VotesCounter as PyVotesCounter
-from database.subscription_tiers import SubscriptionTiers
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
@@ -49,9 +48,13 @@ logger = logging.getLogger(__name__)
 
 
 class CallbackCommands(StrEnum):
-    REGISTER = 'REGISTER'
-    DELETE = 'DELETE'
-    ADD_VOTE_OPTION = 'ADD_VOTE_OPTION'
+    REGISTER_FOR_POLL = 'REGISTER'
+    DELETE_POLL = 'DELETE'
+
+    ADD_VOTE_OPTION = 'ADD'
+    UNDO_OPTION = 'UNDO'
+    RESET_VOTE = 'RESET'
+    SUBMIT_VOTE = 'SUBMIT_VOTE'
 
 
 class UserRegistrationStatus(StrEnum):
@@ -404,7 +407,7 @@ class BaseAPI(object):
             (whitelisted_user.user == user_id)
         )
 
-        register_result = cls._register_voter_from_username_whitelist(
+        register_result = cls.register_from_username_whitelist(
             poll_id=poll_id, user_id=user_id,
             ignore_voter_limit=False, username=username_str
         )
@@ -430,7 +433,7 @@ class BaseAPI(object):
             return Err(UserRegistrationStatus.NOT_WHITELISTED)
 
         with db.atomic() as transaction:
-            register_result = cls._register_user_id(
+            register_result = cls.register_user_id(
                 poll_id=poll_id, user_id=user_id,
                 ignore_voter_limit=ignore_voter_limit,
                 from_whitelist=False
@@ -443,7 +446,7 @@ class BaseAPI(object):
             return Ok(poll_voter_row)
 
     @classmethod
-    def _register_voter_from_username_whitelist(
+    def register_from_username_whitelist(
         cls, poll_id: int, user_id: UserID, ignore_voter_limit: bool,
         username: str
     ) -> Result[PollVoters, UserRegistrationStatus]:
@@ -489,7 +492,7 @@ class BaseAPI(object):
                     UsernameWhitelist.id == whitelist_entry_id
                 ).execute()
 
-            register_result = cls._register_user_id(
+            register_result = cls.register_user_id(
                 poll_id=poll_id, user_id=user_id,
                 ignore_voter_limit=ignore_voter_limit,
                 from_whitelist=True
@@ -503,7 +506,7 @@ class BaseAPI(object):
             return Ok(poll_voter_row)
 
     @staticmethod
-    def _reg_status_to_msg(
+    def reg_status_to_msg(
         registration_status: UserRegistrationStatus, poll_id: int
     ):
         match registration_status:
@@ -526,7 +529,7 @@ class BaseAPI(object):
                 return "Unexpected registration error"
 
     @staticmethod
-    def _register_user_id(
+    def register_user_id(
         poll_id: int, user_id: UserID, ignore_voter_limit: bool,
         from_whitelist: bool = False
     ) -> Result[Tuple[PollVoters, bool], UserRegistrationStatus]:
@@ -575,121 +578,6 @@ class BaseAPI(object):
 
             return Ok((poll_voter, voter_row_created))
 
-    @classmethod
-    def _register_voter(
-        cls, poll_id: int, user_id: UserID, username: Optional[str]
-    ) -> UserRegistrationStatus:
-        """
-        Registers a user by using the username whitelist if applicable,
-        or by directly creating a PollVoters entry otherwise
-        Does NOT validate if the user is allowed to register for the poll
-        """
-        poll = Polls.get_or_none(Polls.id == poll_id)
-        if poll is None:
-            return UserRegistrationStatus.POLL_NOT_FOUND
-        elif poll.closed:
-            return UserRegistrationStatus.POLL_CLOSED
-
-        try:
-            PollVoters.build_from_fields(
-                user_id=user_id, poll_id=poll_id
-            ).get()
-            return UserRegistrationStatus.ALREADY_REGISTERED
-        except PollVoters.DoesNotExist:
-            pass
-
-        try:
-            user = Users.build_from_fields(user_id=user_id).get()
-        except Users.DoesNotExist:
-            return UserRegistrationStatus.USER_NOT_FOUND
-
-        try:
-            subscription_tier = SubscriptionTiers(user.subscription_tier)
-        except ValueError:
-            return UserRegistrationStatus.INVALID_SUBSCRIPTION_TIER
-
-        has_empty_whitelist_entry = False
-        ignore_voter_limit = subscription_tier != SubscriptionTiers.FREE
-
-        if username is not None:
-            assert isinstance(username, str)
-            whitelist_entry_result = cls.get_whitelist_entry(
-                poll_id=poll_id, user_id=user_id, username=username
-            )
-
-            # checks if there is a username whitelist entry that is unoccupied
-            if whitelist_entry_result.is_ok():
-                whitelist_entry = whitelist_entry_result.unwrap()
-
-                if whitelist_entry.username == username:
-                    return UserRegistrationStatus.ALREADY_REGISTERED
-                elif whitelist_entry.username is None:
-                    has_empty_whitelist_entry = True
-
-        with db.atomic():
-            if has_empty_whitelist_entry:
-                """
-                Try to register user via the username whitelist
-                if there is a unoccupied username whitelist entry
-                We verify again that the username whitelist entry is empty
-                here because there is a small chance that the whitelist entry
-                is set between the last check and acquisition of database lock
-                """
-                assert isinstance(username, str)
-                username_str = username
-
-                whitelist_user_result = cls.get_whitelist_entry(
-                    username=username_str, poll_id=poll_id,
-                    user_id=user_id
-                )
-
-                if whitelist_user_result.is_ok():
-                    whitelist_entry = whitelist_user_result.unwrap()
-                    assert (
-                        (whitelist_entry.user is None) or
-                        (whitelist_entry.user == user_id)
-                    )
-
-                    if whitelist_entry.user == user_id:
-                        return UserRegistrationStatus.ALREADY_REGISTERED
-                    elif whitelist_entry.user is None:
-                        # print("POP", poll_id, user_id, username_str)
-                        register_result = cls._register_voter_from_username_whitelist(
-                            poll_id=poll_id, user_id=user_id,
-                            ignore_voter_limit=ignore_voter_limit,
-                            username=username_str
-                        )
-
-                        if register_result.is_ok():
-                            return UserRegistrationStatus.REGISTERED
-                        else:
-                            assert register_result.is_err()
-                            return register_result.err_value
-
-                    # username whitelist entry assigned to different user_id
-                    assert isinstance(whitelist_entry.user, int)
-                    assert whitelist_entry.user != user_id
-
-            """
-            Register by adding user to PollVoters directly if and only if
-            registration via username whitelist didn't happen
-            """
-            register_result = cls._register_user_id(
-                poll_id=poll_id, user_id=user_id,
-                ignore_voter_limit=ignore_voter_limit
-            )
-
-            # print("REGISTER_RESULT", register_result)
-            if register_result.is_ok():
-                _, newly_registered = register_result.unwrap()
-                if newly_registered:
-                    return UserRegistrationStatus.REGISTERED
-                else:
-                    return UserRegistrationStatus.ALREADY_REGISTERED
-            else:
-                assert register_result.is_err()
-                return register_result.err_value
-
     @staticmethod
     def check_has_voted(poll_id: int, user_id: UserID) -> bool:
         return PollVoters.build_from_fields(
@@ -722,14 +610,14 @@ class BaseAPI(object):
         cls, poll_id: int, bot_username: str,
         add_webapp_link: bool = True
     ) -> PollMessage:
-        poll_info = cls._read_poll_info(poll_id=poll_id)
-        return cls._generate_poll_message(
+        poll_info = cls.unverified_read_poll_info(poll_id=poll_id)
+        return cls.generate_poll_message(
             poll_info=poll_info, bot_username=bot_username,
             add_webapp_link=add_webapp_link
         )
 
     @classmethod
-    def _generate_poll_message(
+    def generate_poll_message(
         cls, poll_info: PollInfo, bot_username: str,
         add_webapp_link: bool = True
     ) -> PollMessage:
@@ -808,18 +696,26 @@ class BaseAPI(object):
         < undo, abstain, withhold, reset >
         < submit / check button >
         """
-        register_callback_data = json.dumps(cls.kwargify(
-            poll_id=poll_id, command=str(CallbackCommands.REGISTER)
-        ))
-
         markup_rows, current_row = [], []
+
+        # create first row with just registration button
+        register_callback_data = json.dumps(cls.kwargify(
+            poll_id=poll_id, command=str(CallbackCommands.REGISTER_FOR_POLL)
+        ))
         markup_rows.append([InlineKeyboardButton(
-            text=f'Register for Poll', callback_data=register_callback_data
+            text=f'Register for Poll',
+            callback_data=register_callback_data
         )])
 
+        # fill in rows containing poll option numbers
         for ranking in range(1, num_options+1):
             current_row.append(InlineKeyboardButton(
-                text=f'{ranking}', callback_data=register_callback_data
+                text=str(ranking),
+                callback_data=json.dumps(dict(
+                    poll_id=poll_id,
+                    command=str(CallbackCommands.ADD_VOTE_OPTION),
+                    option=ranking
+                ))
             ))
             flush_row = (
                 (ranking == num_options) or
@@ -829,20 +725,40 @@ class BaseAPI(object):
                 markup_rows.append(current_row)
                 current_row = []
 
+        # add row with undo, abstain, withhold, reset buttons
         markup_rows.append([
             InlineKeyboardButton(
-                text='undo', callback_data=register_callback_data
+                text='undo', callback_data=json.dumps(dict(
+                    poll_id=poll_id,
+                    command=str(CallbackCommands.UNDO_OPTION)
+                ))
             ), InlineKeyboardButton(
-                text='abstain', callback_data=register_callback_data
+                text='abstain', callback_data=json.dumps(dict(
+                    poll_id=poll_id,
+                    command=str(CallbackCommands.ADD_VOTE_OPTION),
+                    option=SpecialVotes.ABSTAIN_VOTE.value
+                ))
             ), InlineKeyboardButton(
-                text='withhold', callback_data=register_callback_data
+                text='withhold', callback_data=json.dumps(dict(
+                    poll_id=poll_id,
+                    command=str(CallbackCommands.ADD_VOTE_OPTION),
+                    option=SpecialVotes.WITHHOLD_VOTE.value
+                ))
             ), InlineKeyboardButton(
-                text='reset', callback_data=register_callback_data
+                text='reset', callback_data=json.dumps(dict(
+                    poll_id=poll_id,
+                    command=str(CallbackCommands.RESET_VOTE)
+                ))
             )
         ])
+
+        # add final row with submit vote button
         markup_rows.append([
             InlineKeyboardButton(
-                text='Submit Vote', callback_data=register_callback_data
+                text='Submit Vote', callback_data=json.dumps(dict(
+                    poll_id=poll_id,
+                    command=str(CallbackCommands.SUBMIT_VOTE)
+                ))
             )
         ])
         return markup_rows
@@ -866,10 +782,10 @@ class BaseAPI(object):
             error_message.add(f'You have no access to poll {poll_id}')
             return Err(error_message)
 
-        return Ok(cls._read_poll_info(poll_id=poll_id))
+        return Ok(cls.unverified_read_poll_info(poll_id=poll_id))
 
     @classmethod
-    def _read_poll_info(cls, poll_id: int) -> PollInfo:
+    def unverified_read_poll_info(cls, poll_id: int) -> PollInfo:
         poll_metadata = Polls.read_poll_metadata(poll_id)
         poll_option_rows = PollOptions.select().where(
             PollOptions.poll == poll_id

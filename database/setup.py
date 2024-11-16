@@ -1,4 +1,5 @@
 from peewee import MySQLDatabase, Proxy
+# noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
 
 from database.db_helpers import TypedModel
@@ -15,4 +16,3 @@ class BaseModel(TypedModel):
     class Meta:
         database = database_proxy
         table_settings = ['DEFAULT CHARSET=utf8mb4']
-

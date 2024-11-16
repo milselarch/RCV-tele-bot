@@ -53,9 +53,10 @@ class Users(BaseModel):
 
     @classmethod
     def prune_deleted_users(cls):
+        # actually remove deleted users from the database
         date_stamp = datetime.datetime.now()
         user_deletion_cutoff = date_stamp - constants.DELETE_USERS_BACKLOG
-        # actually remove deleted users from the database
+        # noinspection PyTypeChecker
         cls.delete().where(
             cls.deleted_at < user_deletion_cutoff
         ).execute()
