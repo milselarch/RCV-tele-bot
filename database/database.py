@@ -7,28 +7,37 @@ import sys
 
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
-from result import Result, Ok
+from result import Result, Ok, Err
+
+from database.setup import DB, BaseModel, database_proxy
+from database.users import Users
+from database.callback_context_state import CallbackContextState
+from database.message_context_state import MessageContextState
+
 from load_config import YAML_CONFIG
-from typing import Self, Optional
+from typing import Self, Optional, Type, List
 from database.db_helpers import (
-    BoundRowFields, Empty, EmptyField, TypedModel
+    BoundRowFields, Empty, EmptyField, UserID
 )
 from peewee import (
-    MySQLDatabase, BigIntegerField, CharField,
+    BigIntegerField, CharField,
     IntegerField, AutoField, TextField, DateTimeField,
-    BooleanField, ForeignKeyField, SQL, BigAutoField, Proxy
+    BooleanField, ForeignKeyField, SQL, Database,
 )
 
-
-class DB(ReconnectMixin, MySQLDatabase):
-    pass
-
-
-database_proxy = Proxy()
 initialised_db: DB | None = None
+# TODO: refactor each individual table into its own file
 
 
-def initialize_db(db: DB | None = None):
+def get_tables() -> list[Type[BaseModel]]:
+    return [
+        Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
+        PollOptions, VoteRankings, PollWinners, CallbackContextState,
+        MessageContextState
+    ]
+
+
+def initialize_db(db: Database | None = None):
     if db is None:
         db = DB(
             database='ranked_choice_voting',
@@ -43,69 +52,7 @@ def initialize_db(db: DB | None = None):
 
     # Create tables (if they don't exist)
     database_proxy.connect()
-    database_proxy.create_tables([
-        Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
-        PollOptions, VoteRankings, PollWinners
-    ], safe=True)
-
-
-class BaseModel(TypedModel):
-    class Meta:
-        database = database_proxy
-        table_settings = ['DEFAULT CHARSET=utf8mb4']
-
-
-class UserID(int):
-    pass
-
-
-# maps telegram user ids to their usernames
-class Users(BaseModel):
-    id = BigAutoField(primary_key=True)
-    # telegram user id
-    tele_id = BigIntegerField(null=False, index=True, unique=True)
-    username = CharField(max_length=255, default=None, null=True)
-    credits = IntegerField(default=0)
-    subscription_tier = IntegerField(default=0)
-    deleted_at = DateTimeField(default=None, null=True)
-
-    class Meta:
-        database = database_proxy
-        indexes = (
-            # Non-unique index for usernames
-            # telegram usernames have to be unique, however because
-            # every username changes can't be tracked instantly
-            # it possible there will be collisions here regardless
-            (('username',), False),
-        )
-
-    def is_deleted(self) -> bool:
-        return self.deleted_at is not None
-
-    @classmethod
-    def build_from_fields(
-        cls, user_id: int | EmptyField = Empty,
-        tele_id: int | EmptyField = Empty,
-        username: str | None | EmptyField = Empty
-    ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
-            cls.id: user_id, cls.tele_id: tele_id, cls.username: username
-        })
-
-    def get_user_id(self) -> UserID:
-        # TODO: do a unit test for this
-        assert isinstance(self.id, int)
-        return UserID(self.id)
-
-    def get_tele_id(self) -> int:
-        assert isinstance(self.tele_id, int)
-        return self.tele_id
-
-    @classmethod
-    def get_from_tele_id(
-        cls, tele_id: int
-    ) -> Result[Users, Users.DoesNotExist]:
-        return cls.build_from_fields(tele_id=tele_id).safe_get()
+    database_proxy.create_tables(get_tables(), safe=True)
 
 
 @dataclasses.dataclass
@@ -163,6 +110,15 @@ class Polls(BaseModel):
         return self.get_creator().get_user_id()
 
     @classmethod
+    def get_is_closed(cls, poll_id: int) -> Result[bool, None]:
+        try:
+            poll = cls.select().where(cls.id == poll_id).get()
+        except Polls.DoesNotExist:
+            return Err(None)
+
+        return Ok(poll.closed)
+
+    @classmethod
     def read_poll_metadata(cls, poll_id: int) -> PollMetadata:
         poll = cls.select().where(cls.id == poll_id).get()
         return PollMetadata(
@@ -197,6 +153,17 @@ class Polls(BaseModel):
             poll_id=poll_id, creator_id=user_id
         ).get()
 
+    @classmethod
+    def count_polls_created(cls, user_id: UserID) -> int:
+        return cls.select().where(cls.creator == user_id).count()
+
+    @classmethod
+    def get_owned_polls(cls, user_id: UserID) -> List[Polls]:
+        return [
+            poll for poll in
+            cls.select().where(cls.creator == user_id)
+        ]
+
 
 # whitelisted group chats from which users are
 # allowed to register as voters for a poll
@@ -222,6 +189,12 @@ class ChatWhitelist(BaseModel):
             cls.poll: poll_id, cls.chat_id: chat_id
         })
 
+    @classmethod
+    def is_whitelisted(cls, poll_id: int, chat_id: int) -> bool:
+        return ChatWhitelist.build_from_fields(
+            poll_id=poll_id, chat_id=chat_id
+        ).safe_get().is_ok()
+
 
 class PollVoters(BaseModel):
     id = AutoField(primary_key=True)
@@ -244,9 +217,11 @@ class PollVoters(BaseModel):
     def build_from_fields(
         cls, user_id: UserID | EmptyField = Empty,
         poll_id: int | EmptyField = Empty,
+        voted: bool | EmptyField = Empty
     ) -> BoundRowFields[Self]:
         return BoundRowFields(cls, {
-            cls.user: user_id, cls.poll: poll_id
+            cls.user: user_id, cls.poll: poll_id,
+            cls.voted: voted
         })
 
     def get_voter_user(self) -> Users:
@@ -357,5 +332,6 @@ class PollWinners(BaseModel):
 # database should be connected if called from pem db migrations
 called_from_pem = os.path.basename(sys.argv[0]) == 'pem'
 if (__name__ == '__main__') or called_from_pem:
+    print('TESTING')
     # Create tables (if they don't exist)
     initialize_db()

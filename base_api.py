@@ -1,75 +1,62 @@
 import asyncio
 import hmac
 import json
+import logging
+import re
 import secrets
 import string
 
-import telegram
 import time
 import hashlib
 import textwrap
 import dataclasses
 
-from telegram.ext import ApplicationBuilder
-
 import database
 import aioredlock
-import ranked_choice_vote
-import redis
 
 from enum import IntEnum
 from typing_extensions import Any
-from collections import defaultdict
 from strenum import StrEnum
+from requests import PreparedRequest
+
+from helpers import strings, constants
+from helpers.strings import generate_poll_closed_message
 from load_config import TELEGRAM_BOT_TOKEN
+from telegram.ext import ApplicationBuilder
+from py_rcv import VotesCounter as PyVotesCounter
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
 from concurrent.futures import ThreadPoolExecutor
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from MessageBuilder import MessageBuilder
-from SpecialVotes import SpecialVotes
+from helpers.message_buillder import MessageBuilder
+from helpers.special_votes import SpecialVotes
+from load_config import WEBHOOK_URL
+
 from database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
     db, Users
 )
-from database.database import PollWinners, BaseModel, UserID, PollMetadata
+from telegram import (
+    InlineKeyboardButton, InlineKeyboardMarkup, User as TeleUser,
+    ReplyKeyboardMarkup, KeyboardButton, WebAppInfo, Bot as TelegramBot
+)
 from aioredlock import Aioredlock, LockError
+from database.database import (
+    PollWinners, BaseModel, UserID, PollMetadata, ChatWhitelist
+)
+
+logger = logging.getLogger(__name__)
 
 
 class CallbackCommands(StrEnum):
-    REGISTER = 'REGISTER'
-    DELETE = 'DELETE'
+    REGISTER_FOR_POLL = 'REGISTER'
+    DELETE_POLL = 'DELETE'
 
-
-class SubscriptionTiers(IntEnum):
-    FREE = 0
-    TIER_1 = 1
-    TIER_2 = 2
-
-    def get_max_voters(self):
-        # returns the maximum number of voters that can join a poll created
-        # by a user with the given subscription tier
-        match self:
-            case SubscriptionTiers.FREE:
-                return 20
-            case SubscriptionTiers.TIER_1:
-                return 50
-            case SubscriptionTiers.TIER_2:
-                return 200
-            case _:
-                raise ValueError(f"Invalid SubscriptionTiers value: {self}")
-
-    def get_max_polls(self):
-        match self:
-            case SubscriptionTiers.FREE:
-                return 10
-            case SubscriptionTiers.TIER_1:
-                return 20
-            case SubscriptionTiers.TIER_2:
-                return 40
-            case _:
-                raise ValueError(f"Invalid SubscriptionTiers value: {self}")
+    ADD_VOTE_OPTION = 'ADD'
+    UNDO_OPTION = 'UNDO'
+    RESET_VOTE = 'RESET'
+    SUBMIT_VOTE = 'SUBMIT_VOTE'
+    VIEW_VOTE = 'VIEW_VOTE'
 
 
 class UserRegistrationStatus(StrEnum):
@@ -80,19 +67,37 @@ class UserRegistrationStatus(StrEnum):
     POLL_NOT_FOUND = 'POLL_NOT_FOUND'
     VOTER_LIMIT_REACHED = 'VOTER_LIMIT_REACHED'
     NOT_WHITELISTED = 'NOT_WHITELISTED'
+    POLL_CLOSED = 'POLL_CLOSED'
     """
     Another user (different user_tele_id) has already registered for the
     same poll using the same username
     """
-    POLL_CLOSED = 'POLL_CLOSED'
     USERNAME_TAKEN = 'USERNAME_TAKEN'
     FAILED = 'FAILED'
+
+
+class PollInfo(object):
+    def __init__(
+        self, metadata: PollMetadata,
+        poll_options: List[str], option_numbers: List[int]
+    ):
+        assert len(poll_options) == len(option_numbers)
+        # description of each option within the poll
+        self.poll_options: List[str] = poll_options
+        # numerical ranking of each option within the poll
+        self.option_numbers: List[int] = option_numbers
+        self.metadata: PollMetadata = metadata
+
+    @property
+    def max_options(self) -> int:
+        return len(self.poll_options)
 
 
 @dataclasses.dataclass
 class PollMessage(object):
     text: str
     reply_markup: Optional[InlineKeyboardMarkup]
+    poll_info: PollInfo
 
 
 class GetPollWinnerStatus(IntEnum):
@@ -100,15 +105,6 @@ class GetPollWinnerStatus(IntEnum):
     NEWLY_COMPUTED = 1
     COMPUTING = 2
     FAILED = 3
-
-
-@dataclasses.dataclass
-class PollInfo(object):
-    metadata: PollMetadata
-    # description of each option within the poll
-    poll_options: List[str]
-    # numerical ranking of each option within the poll
-    option_numbers: List[int]
 
 
 class BaseAPI(object):
@@ -121,8 +117,16 @@ class BaseAPI(object):
 
     def __init__(self):
         database.initialize_db()
-        self.redis_cache = redis.Redis()
-        self.redis_lock_manager = Aioredlock()
+        self.redis_lock_manager = self.create_redis_lock_manager()
+
+    @staticmethod
+    def create_redis_lock_manager(
+        connections: list[dict[str, str | int]] | None = None
+    ):
+        if connections is not None:
+            return Aioredlock(connections)
+        else:
+            return Aioredlock()
 
     @staticmethod
     def __get_telegram_token():
@@ -158,7 +162,7 @@ class BaseAPI(object):
 
     @classmethod
     def create_tele_bot(cls):
-        return telegram.Bot(token=cls.__get_telegram_token())
+        return TelegramBot(token=cls.__get_telegram_token())
 
     @classmethod
     def create_application_builder(cls):
@@ -191,6 +195,17 @@ class BaseAPI(object):
             return Err(error_message)
 
         return Ok(poll_id)
+
+    @classmethod
+    def spawn_inline_keyboard_button(
+        cls, text: str, command: CallbackCommands,
+        callback_data: dict[str, any]
+    ) -> InlineKeyboardButton:
+        return InlineKeyboardButton(
+            text=text, callback_data=json.dumps(dict(
+                command=str(command), **callback_data
+            ))
+        )
 
     @staticmethod
     def fetch_poll(poll_id: int) -> Result[Polls, MessageBuilder]:
@@ -319,7 +334,7 @@ class BaseAPI(object):
         )
 
         prev_voter_id, num_votes_cast = None, 0
-        votes_aggregator = ranked_choice_vote.VotesAggregator()
+        votes_aggregator = PyVotesCounter()
 
         for vote_ranking in votes:
             option_row = vote_ranking.option
@@ -346,14 +361,6 @@ class BaseAPI(object):
         return winning_option_id
 
     @staticmethod
-    def get_duplicate_nums(nums: List[int]) -> List[int]:
-        num_count = defaultdict(int)
-        for num in nums:
-            num_count[num] += 1
-
-        return [num for num, count in num_count.items() if count > 1]
-
-    @staticmethod
     def get_poll_voter(
         poll_id: int, user_id: UserID
     ) -> Result[PollVoters, Optional[BaseModel.DoesNotExist]]:
@@ -365,7 +372,8 @@ class BaseAPI(object):
 
     @classmethod
     def verify_voter(
-        cls, poll_id: int, user_id: UserID, username: Optional[str] = None
+        cls, poll_id: int, user_id: UserID, username: Optional[str] = None,
+        chat_id: Optional[int] = None
     ) -> Result[int, UserRegistrationStatus]:
         """
         Checks if the user is a member of the poll
@@ -391,6 +399,14 @@ class BaseAPI(object):
         username_str = username
         assert isinstance(username_str, str)
 
+        chat_register_result = cls._register_voter_from_chat_whitelist(
+            poll_id=poll_id, user_id=user_id,
+            ignore_voter_limit=False, chat_id=chat_id
+        )
+        if chat_register_result.is_ok():
+            poll_voter: PollVoters = chat_register_result.unwrap()
+            return Ok(poll_voter.id)
+
         whitelist_user_result = cls.get_whitelist_entry(
             username=username_str, poll_id=poll_id,
             user_id=user_id
@@ -404,19 +420,46 @@ class BaseAPI(object):
             (whitelisted_user.user == user_id)
         )
 
-        register_result = cls._register_voter_from_whitelist(
+        register_result = cls.register_from_username_whitelist(
             poll_id=poll_id, user_id=user_id,
             ignore_voter_limit=False, username=username_str
         )
-
-        if register_result.is_err():
-            return register_result
-        else:
+        if register_result.is_ok():
             poll_voter: PollVoters = register_result.unwrap()
             return Ok(poll_voter.id)
 
+        return register_result
+
     @classmethod
-    def _register_voter_from_whitelist(
+    def _register_voter_from_chat_whitelist(
+        cls, poll_id: int, user_id: UserID, ignore_voter_limit: bool = False,
+        chat_id: int | None = None
+    ) -> Result[PollVoters, UserRegistrationStatus]:
+        if chat_id is None:
+            return Err(UserRegistrationStatus.NOT_WHITELISTED)
+
+        assert isinstance(chat_id, int)
+        assert isinstance(poll_id, int)
+        assert isinstance(user_id, int)
+        # print('CHAT_WHITELIST', chat_id)
+        if not ChatWhitelist.is_whitelisted(poll_id, chat_id):
+            return Err(UserRegistrationStatus.NOT_WHITELISTED)
+
+        with db.atomic() as transaction:
+            register_result = cls.register_user_id(
+                poll_id=poll_id, user_id=user_id,
+                ignore_voter_limit=ignore_voter_limit,
+                from_whitelist=False
+            )
+            if register_result.is_err():
+                transaction.rollback()
+                return register_result
+
+            poll_voter_row, _ = register_result.unwrap()
+            return Ok(poll_voter_row)
+
+    @classmethod
+    def register_from_username_whitelist(
         cls, poll_id: int, user_id: UserID, ignore_voter_limit: bool,
         username: str
     ) -> Result[PollVoters, UserRegistrationStatus]:
@@ -437,7 +480,6 @@ class BaseAPI(object):
                 username=username, poll_id=poll_id,
                 user_id=user_id
             )
-
             if whitelist_user_result.is_err():
                 transaction.rollback()
                 return whitelist_user_result
@@ -463,7 +505,7 @@ class BaseAPI(object):
                     UsernameWhitelist.id == whitelist_entry_id
                 ).execute()
 
-            register_result = cls._register_user_id(
+            register_result = cls.register_user_id(
                 poll_id=poll_id, user_id=user_id,
                 ignore_voter_limit=ignore_voter_limit,
                 from_whitelist=True
@@ -477,7 +519,7 @@ class BaseAPI(object):
             return Ok(poll_voter_row)
 
     @staticmethod
-    def _reg_status_to_msg(
+    def reg_status_to_msg(
         registration_status: UserRegistrationStatus, poll_id: int
     ):
         match registration_status:
@@ -495,12 +537,12 @@ class BaseAPI(object):
             case UserRegistrationStatus.POLL_NOT_FOUND:
                 return f"Poll #{poll_id} not found"
             case UserRegistrationStatus.POLL_CLOSED:
-                return f"Poll #{poll_id} has been closed"
+                return generate_poll_closed_message(poll_id)
             case _:
                 return "Unexpected registration error"
 
     @staticmethod
-    def _register_user_id(
+    def register_user_id(
         poll_id: int, user_id: UserID, ignore_voter_limit: bool,
         from_whitelist: bool = False
     ) -> Result[Tuple[PollVoters, bool], UserRegistrationStatus]:
@@ -549,128 +591,11 @@ class BaseAPI(object):
 
             return Ok((poll_voter, voter_row_created))
 
-    @classmethod
-    def _register_voter(
-        cls, poll_id: int, user_id: UserID, username: Optional[str]
-    ) -> UserRegistrationStatus:
-        """
-        Registers a user by using the username whitelist if applicable,
-        or by directly creating a PollVoters entry otherwise
-        Does NOT validate if the user is allowed to register for the poll
-        """
-        poll = Polls.get_or_none(Polls.id == poll_id)
-        if poll is None:
-            return UserRegistrationStatus.POLL_NOT_FOUND
-        elif poll.closed:
-            return UserRegistrationStatus.POLL_CLOSED
-
-        try:
-            PollVoters.build_from_fields(
-                user_id=user_id, poll_id=poll_id
-            ).get()
-            return UserRegistrationStatus.ALREADY_REGISTERED
-        except PollVoters.DoesNotExist:
-            pass
-
-        try:
-            user = Users.build_from_fields(user_id=user_id).get()
-        except Users.DoesNotExist:
-            return UserRegistrationStatus.USER_NOT_FOUND
-
-        try:
-            subscription_tier = SubscriptionTiers(user.subscription_tier)
-        except ValueError:
-            return UserRegistrationStatus.INVALID_SUBSCRIPTION_TIER
-
-        has_empty_whitelist_entry = False
-        ignore_voter_limit = subscription_tier != SubscriptionTiers.FREE
-
-        if username is not None:
-            assert isinstance(username, str)
-            whitelist_entry_result = cls.get_whitelist_entry(
-                poll_id=poll_id, user_id=user_id, username=username
-            )
-
-            # checks if there is a username whitelist entry that is unoccupied
-            if whitelist_entry_result.is_ok():
-                whitelist_entry = whitelist_entry_result.unwrap()
-
-                if whitelist_entry.username == username:
-                    return UserRegistrationStatus.ALREADY_REGISTERED
-                elif whitelist_entry.username is None:
-                    has_empty_whitelist_entry = True
-
-        with db.atomic():
-            if has_empty_whitelist_entry:
-                """
-                Try to register user via the username whitelist
-                if there is a unoccupied username whitelist entry
-                We verify again that the username whitelist entry is empty
-                here because there is a small chance that the whitelist entry
-                is set between the last check and acquisition of database lock
-                """
-                assert isinstance(username, str)
-                username_str = username
-
-                whitelist_user_result = cls.get_whitelist_entry(
-                    username=username_str, poll_id=poll_id,
-                    user_id=user_id
-                )
-
-                if whitelist_user_result.is_ok():
-                    whitelist_entry = whitelist_user_result.unwrap()
-                    assert (
-                        (whitelist_entry.user is None) or
-                        (whitelist_entry.user == user_id)
-                    )
-
-                    if whitelist_entry.user == user_id:
-                        return UserRegistrationStatus.ALREADY_REGISTERED
-                    elif whitelist_entry.user is None:
-                        # print("POP", poll_id, user_id, username_str)
-                        register_result = cls._register_voter_from_whitelist(
-                            poll_id=poll_id, user_id=user_id,
-                            ignore_voter_limit=ignore_voter_limit,
-                            username=username_str
-                        )
-
-                        if register_result.is_ok():
-                            return UserRegistrationStatus.REGISTERED
-                        else:
-                            assert register_result.is_err()
-                            return register_result.err_value
-
-                    # username whitelist entry assigned to different user_id
-                    assert isinstance(whitelist_entry.user, int)
-                    assert whitelist_entry.user != user_id
-
-            """
-            Register by adding user to PollVoters directly if and only if
-            registration via username whitelist didn't happen
-            """
-            register_result = cls._register_user_id(
-                poll_id=poll_id, user_id=user_id,
-                ignore_voter_limit=ignore_voter_limit
-            )
-
-            # print("REGISTER_RESULT", register_result)
-            if register_result.is_ok():
-                _, newly_registered = register_result.unwrap()
-                if newly_registered:
-                    return UserRegistrationStatus.REGISTERED
-                else:
-                    return UserRegistrationStatus.ALREADY_REGISTERED
-            else:
-                assert register_result.is_err()
-                return register_result.err_value
-
     @staticmethod
     def check_has_voted(poll_id: int, user_id: UserID) -> bool:
-        return PollVoters.select().where(
-            (PollVoters.user == user_id) &
-            (PollVoters.poll == poll_id) &
-            (PollVoters.voted == True)
-        ).exists()
+        return PollVoters.build_from_fields(
+            user_id=user_id, poll_id=poll_id, voted=True
+        ).safe_get().is_ok()
 
     @classmethod
     def is_poll_voter(cls, poll_id: int, user_id: UserID) -> bool:
@@ -679,7 +604,7 @@ class BaseAPI(object):
     @classmethod
     def get_poll_message(
         cls, poll_id: int, user_id: UserID, bot_username: str,
-        username: Optional[str]
+        username: Optional[str], add_webapp_link: bool = True
     ) -> Result[PollMessage, MessageBuilder]:
         if not cls.has_access_to_poll_id(
             poll_id=poll_id, user_id=user_id, username=username
@@ -689,21 +614,25 @@ class BaseAPI(object):
             ))
 
         return Ok(cls._get_poll_message(
-            poll_id=poll_id, bot_username=bot_username
+            poll_id=poll_id, bot_username=bot_username,
+            add_webapp_link=add_webapp_link
         ))
 
     @classmethod
     def _get_poll_message(
-        cls, poll_id: int, bot_username: str
+        cls, poll_id: int, bot_username: str,
+        add_webapp_link: bool = True
     ) -> PollMessage:
-        poll_info = cls._read_poll_info(poll_id=poll_id)
-        return cls._generate_poll_message(
-            poll_info=poll_info, bot_username=bot_username
+        poll_info = cls.unverified_read_poll_info(poll_id=poll_id)
+        return cls.generate_poll_message(
+            poll_info=poll_info, bot_username=bot_username,
+            add_webapp_link=add_webapp_link
         )
 
     @classmethod
-    def _generate_poll_message(
+    def generate_poll_message(
         cls, poll_info: PollInfo, bot_username: str,
+        add_webapp_link: bool = True
     ) -> PollMessage:
         poll_metadata = poll_info.metadata
         poll_message = cls.generate_poll_info(
@@ -711,52 +640,167 @@ class BaseAPI(object):
             poll_info.poll_options, closed=poll_metadata.closed,
             bot_username=bot_username,
             num_voters=poll_metadata.num_active_voters,
-            num_votes=poll_metadata.num_votes
+            num_votes=poll_metadata.num_votes,
+            add_webapp_link=add_webapp_link
         )
 
         reply_markup = None
         if poll_metadata.open_registration:
             vote_markup_data = cls.build_group_vote_markup(
-                poll_id=poll_metadata.id
+                poll_id=poll_metadata.id,
+                num_options=poll_info.max_options
             )
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
         return PollMessage(
-            text=poll_message, reply_markup=reply_markup
+            text=poll_message, reply_markup=reply_markup,
+            poll_info=poll_info
         )
 
-    @staticmethod
-    def count_polls_created(user_id: UserID) -> int:
-        return Polls.select().where(Polls.creator == user_id).count()
+    @classmethod
+    def generate_poll_url(cls, poll_id: int, tele_user: TeleUser) -> str:
+        req = PreparedRequest()
+        auth_date = str(int(time.time()))
+        query_id = cls.generate_secret()
+        user_info = json.dumps({
+            'id': tele_user.id,
+            'username': tele_user.username
+        })
+
+        data_check_string = cls.make_data_check_string(
+            auth_date=auth_date, query_id=query_id, user=user_info
+        )
+        validation_hash = cls.sign_data_check_string(
+            data_check_string=data_check_string
+        )
+
+        params = {
+            'poll_id': str(poll_id),
+            'auth_date': auth_date,
+            'query_id': query_id,
+            'user': user_info,
+            'hash': validation_hash
+        }
+        req.prepare_url(WEBHOOK_URL, params)
+        return req.url
 
     @classmethod
-    def build_group_vote_markup(
-        cls, poll_id: int
-    ) -> List[List[InlineKeyboardButton]]:
-        callback_data = json.dumps(cls.kwargify(
-            poll_id=poll_id, command=str(CallbackCommands.REGISTER)
-        ))
-        markup_layout = [[InlineKeyboardButton(
-            text=f'Register for poll', callback_data=callback_data
+    def build_private_vote_markup(
+        cls, poll_id: int, tele_user: TeleUser
+    ) -> List[List[KeyboardButton]]:
+        poll_url = cls.generate_poll_url(
+            poll_id=poll_id, tele_user=tele_user
+        )
+        logger.info(f'POLL_URL = {poll_url}')
+        # create vote button for reply message
+        markup_layout = [[KeyboardButton(
+            text=f'Vote for Poll #{poll_id}', web_app=WebAppInfo(url=poll_url)
         )]]
+
         return markup_layout
 
     @classmethod
+    def build_group_vote_markup(
+        cls, poll_id: int, num_options: int
+    ) -> List[List[InlineKeyboardButton]]:
+        """
+        TODO: implement button vote context
+        < poll registration button >
+        < vote option rows >
+        < undo, abstain, withhold, reset >
+        < submit / check button >
+        """
+        markup_rows, current_row = [], []
+
+        # create first row with just registration button
+        markup_rows.append([cls.spawn_inline_keyboard_button(
+            text='Register for Poll',
+            command=CallbackCommands.REGISTER_FOR_POLL,
+            callback_data=dict(poll_id=poll_id)
+        )])
+
+        # fill in rows containing poll option numbers
+        for ranking in range(1, num_options+1):
+            current_row.append(cls.spawn_inline_keyboard_button(
+                text=str(ranking),
+                command=CallbackCommands.ADD_VOTE_OPTION,
+                callback_data=dict(
+                    poll_id=poll_id, option=ranking
+                )
+            ))
+            flush_row = (
+                (ranking == num_options) or
+                (len(current_row) >= constants.MAX_OPTIONS_PER_ROW)
+            )
+            if flush_row:
+                markup_rows.append(current_row)
+                current_row = []
+
+        # add row with undo, abstain, withhold, reset buttons
+        markup_rows.append([
+            cls.spawn_inline_keyboard_button(
+                text='undo',
+                command=CallbackCommands.UNDO_OPTION,
+                callback_data=dict(poll_id=poll_id)
+            ), cls.spawn_inline_keyboard_button(
+                text='abstain',
+                command=CallbackCommands.ADD_VOTE_OPTION,
+                callback_data=dict(
+                    poll_id=poll_id,
+                    option=SpecialVotes.ABSTAIN_VOTE.value
+                )
+            ), cls.spawn_inline_keyboard_button(
+                text='withhold',
+                command=CallbackCommands.ADD_VOTE_OPTION,
+                callback_data=dict(
+                    poll_id=poll_id,
+                    option=SpecialVotes.WITHHOLD_VOTE.value
+                )
+            ), cls.spawn_inline_keyboard_button(
+                text='reset',
+                command=CallbackCommands.RESET_VOTE,
+                callback_data=dict(poll_id=poll_id)
+            )
+        ])
+
+        # add final row with view vote, submit vote buttons
+        markup_rows.append([
+            cls.spawn_inline_keyboard_button(
+                text='View Vote',
+                command=CallbackCommands.VIEW_VOTE,
+                callback_data=dict(poll_id=poll_id)
+            ),
+            cls.spawn_inline_keyboard_button(
+                text='Submit Vote',
+                command=CallbackCommands.SUBMIT_VOTE,
+                callback_data=dict(poll_id=poll_id)
+            )
+        ])
+        return markup_rows
+
+    @classmethod
     def read_poll_info(
-        cls, poll_id: int, user_id: UserID, username: Optional[str]
+        cls, poll_id: int, user_id: UserID, username: Optional[str],
+        chat_id: Optional[int]
     ) -> Result[PollInfo, MessageBuilder]:
         error_message = MessageBuilder()
-        has_poll_access = cls.has_access_to_poll_id(
+        chat_whitelisted = False
+
+        if chat_id is not None:
+            assert isinstance(chat_id, int)
+            chat_whitelisted = ChatWhitelist.is_whitelisted(poll_id, chat_id)
+
+        has_poll_access = chat_whitelisted or cls.has_access_to_poll_id(
             poll_id, user_id, username=username
         )
         if not has_poll_access:
             error_message.add(f'You have no access to poll {poll_id}')
             return Err(error_message)
 
-        return Ok(cls._read_poll_info(poll_id=poll_id))
+        return Ok(cls.unverified_read_poll_info(poll_id=poll_id))
 
     @classmethod
-    def _read_poll_info(cls, poll_id: int) -> PollInfo:
+    def unverified_read_poll_info(cls, poll_id: int) -> PollInfo:
         poll_metadata = Polls.read_poll_metadata(poll_id)
         poll_option_rows = PollOptions.select().where(
             PollOptions.poll == poll_id
@@ -858,7 +902,7 @@ class BaseAPI(object):
     def generate_poll_info(
         poll_id, poll_question, poll_options: list[str],
         bot_username: str, num_votes: int = 0, num_voters: int = 0,
-        closed: bool = False
+        closed: bool = False, add_webapp_link: bool = True
     ):
         close_tag = '(closed)' if closed else ''
         numbered_poll_options = [
@@ -866,23 +910,29 @@ class BaseAPI(object):
             in enumerate(poll_options)
         ]
 
-        args = f'poll_id={poll_id}'
+        args = f'{strings.POLL_ID_GET_PARAM}={poll_id}'
         stamp = int(time.time())
         deep_link_url = (
             f'https://t.me/{bot_username}?start={args}&stamp={stamp}'
         )
 
+        webapp_link_footer = ''
+        if add_webapp_link:
+            webapp_link_footer = (
+                f'\n——————————————————'
+                f'\nvote on the webapp at {deep_link_url}'
+            )
+
         return (
             textwrap.dedent(f"""
-            POLL ID: {poll_id} {close_tag}
-            POLL QUESTION: 
+            Poll #{poll_id} {close_tag}
             {poll_question}
             ——————————————————
             {num_votes} / {num_voters} voted
             ——————————————————
-        """) + f'\n'.join(numbered_poll_options) +
-            f'\n——————————————————'
-            f'\nvote on the webapp at {deep_link_url}'
+        """) +
+            f'\n'.join(numbered_poll_options) +
+            webapp_link_footer
         )
 
     @staticmethod
@@ -937,10 +987,127 @@ class BaseAPI(object):
 
         return pwd
 
+    @classmethod
+    def unpack_rankings_and_poll_id(
+        cls, raw_text: str
+    ) -> Result[Tuple[int, List[int]], MessageBuilder]:
+        """
+        raw_text format:
+        {command} {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
+        """
+        # print("RAW_TEXT", raw_text)
+        error_message = MessageBuilder()
+        # remove starting command from raw_text
+        raw_arguments = raw_text[raw_text.index(' '):].strip()
+
+        r"""
+        catches input of format:
+        {poll_id}: {choice_1} > {choice_2} > ... > {choice_n}
+        {poll_id} {choice_1} > {choice_2} > ... > {choice_n}
+
+        regex breakdown:
+        ^ -> start of string
+        ^[0-9]+:*\s+ -> poll_id, optional colon, and space 
+        (\s*[1-9]+0*\s*>)* -> ranking number (>0) then arrow
+        \s*([0-9]+|withhold|abstain) -> final ranking number or special vote
+        $ -> end of string        
+        """
+        # print('RAW_ARGS', [raw_arguments])
+        pattern1 = r'^[0-9]+:?\s+(\s*[1-9]+0*\s*>)*\s*([0-9]+|{}|{})$'.format(
+            *SpecialVotes.get_str_values()
+        )
+        r"""
+        catches input of format:
+        {poll_id} {choice_1} {choice_2} ... {choice_n}
+
+        regex breakdown:
+        ^ -> start of string
+        ([0-9]+):*\s* -> poll_id, optional colon
+        ([1-9]+0*\s+)* -> ranking number (>0) then space
+        ([0-9]+|withhold|abstain) -> final ranking number or special vote
+        $ -> end of string        
+        """
+        pattern2 = r'^([0-9]+):?\s*([1-9]+0*\s+)*([0-9]+|{}|{})$'.format(
+            *SpecialVotes.get_str_values()
+        )
+
+        pattern_match1 = re.match(pattern1, raw_arguments)
+        pattern_match2 = re.match(pattern2, raw_arguments)
+        # print("P1P2", pattern1, pattern2)
+
+        if pattern_match1:
+            raw_arguments = raw_arguments.replace(':', '')
+            separator_index = raw_arguments.index(' ')
+            raw_poll_id = int(raw_arguments[:separator_index])
+            raw_votes = raw_arguments[separator_index:].strip()
+            ranked_options: list[int] = [
+                cls.parse_ranked_option(ranking).unwrap()
+                for ranking in raw_votes.split('>')
+            ]
+        elif pattern_match2:
+            raw_arguments = raw_arguments.replace(':', '')
+            raw_arguments = re.sub(r'\s+', ' ', raw_arguments)
+            raw_arguments_arr = raw_arguments.split(' ')
+            raw_poll_id = int(raw_arguments_arr[0])
+            raw_votes = raw_arguments_arr[1:]
+            ranked_options: list[int] = [
+                cls.parse_ranked_option(ranking).unwrap()
+                for ranking in raw_votes
+            ]
+        else:
+            error_message.add('input format is invalid')
+            return Err(error_message)
+
+        validate_result = cls.validate_ranked_options(ranked_options)
+        if validate_result.is_err():
+            return validate_result
+
+        try:
+            poll_id = int(raw_poll_id)
+        except ValueError:
+            error_message.add(f'invalid poll id: {raw_arguments}')
+            return Err(error_message)
+
+        return Ok((poll_id, ranked_options))
+
     @staticmethod
-    def validate_rankings(
+    def parse_ranked_option(
+        raw_ranked_option: str
+    ) -> Result[int, ValueError]:
+        # TODO: refactor this to use PyO3 validator
+        raw_ranked_option = raw_ranked_option.strip()
+        err = Err(ValueError(f"{raw_ranked_option} is not a valid option"))
+
+        try:
+            special_ranking = SpecialVotes.from_string(raw_ranked_option)
+        except ValueError:
+            try:
+                ranking = int(raw_ranked_option)
+            except ValueError:
+                return err
+
+            if ranking <= 0:
+                return err
+
+            return Ok(ranking)
+
+        if special_ranking.value >= 0:
+            return err
+
+        return Ok(special_ranking.value)
+
+    @staticmethod
+    def stringify_ranking(ranking_no: int) -> str:
+        if ranking_no > 0:
+            return str(ranking_no)
+        else:
+            return SpecialVotes(ranking_no).to_string()
+
+    @staticmethod
+    def validate_ranked_options(
         rankings: List[int]
     ) -> Result[bool, MessageBuilder]:
+        # TODO: refactor this to use PyO3 validator
         error_message = MessageBuilder()
 
         # print('rankings =', rankings)
@@ -960,7 +1127,7 @@ class BaseAPI(object):
     @classmethod
     def register_vote(
         cls, poll_id: int, rankings: List[int], user_tele_id: int,
-        username: Optional[str]
+        username: Optional[str], chat_id: Optional[int]
     ) -> Result[int, MessageBuilder]:
         """
         registers a vote for the poll
@@ -976,6 +1143,7 @@ class BaseAPI(object):
         :param rankings:
         :param user_tele_id: voter's telegram user tele id
         :param username: voter's telegram username
+        :param chat_id: telegram chat id that message originated from
         :return:
         """
         error_message = MessageBuilder()
@@ -983,7 +1151,7 @@ class BaseAPI(object):
             error_message.add('At least one ranking must be provided')
             return Err(error_message)
 
-        validate_result = cls.validate_rankings(rankings)
+        validate_result = cls.validate_ranked_options(rankings)
         if validate_result.is_err():
             return validate_result
 
@@ -1006,7 +1174,9 @@ class BaseAPI(object):
         user_id = user.get_user_id()
         # verify that the user can vote for the poll
         # print('PRE_VERIFY', poll_id, user_id, username)
-        verify_result = cls.verify_voter(poll_id, user_id, username)
+        verify_result = cls.verify_voter(
+            poll_id, user_id, username=username, chat_id=chat_id
+        )
         if verify_result.is_err():
             error_message.add(f"You're not a voter of poll {poll_id}")
             return Err(error_message)
@@ -1116,6 +1286,27 @@ class BaseAPI(object):
                 ).execute()
 
         return Ok(True)
+
+    @classmethod
+    def generate_vote_markup(
+        cls, tele_user: TeleUser | None, chat_type: str,
+        poll_id: int, open_registration: bool, num_options: int
+    ) -> None | ReplyKeyboardMarkup | InlineKeyboardMarkup:
+        reply_markup = None
+        print('CHAT_TYPE', chat_type)
+        if chat_type == 'private':
+            # create vote button for reply message
+            vote_markup_data = cls.build_private_vote_markup(
+                poll_id=poll_id, tele_user=tele_user
+            )
+            reply_markup = ReplyKeyboardMarkup(vote_markup_data)
+        elif open_registration:
+            vote_markup_data = cls.build_group_vote_markup(
+                poll_id=poll_id, num_options=num_options
+            )
+            reply_markup = InlineKeyboardMarkup(vote_markup_data)
+
+        return reply_markup
 
     @staticmethod
     def kwargify(**kwargs):

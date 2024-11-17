@@ -17,3 +17,4 @@ requests==2.31.0
 aioredlock==0.7.3
 redis==5.0.3
 pytest==8.3.3
+peewee-jsonfield==0.0.4

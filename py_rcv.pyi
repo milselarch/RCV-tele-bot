@@ -2,13 +2,25 @@
 # ruff: noqa: E501, F401
 
 import typing
+from enum import Enum, auto
 
-class VotesAggregator:
+class ValidateVoteResult:
+    valid: bool
+    error_message: str
+    def to_tuple(self) -> tuple:
+        ...
+
+
+class VotesCounter:
     def __new__(cls,): ...
     def flush_votes(self) -> bool:
         ...
 
     def get_num_votes(self) -> int:
+        ...
+
+    @staticmethod
+    def validate_raw_vote(rankings:typing.Sequence[int]) -> ValidateVoteResult:
         ...
 
     def insert_vote_ranking(self, vote_id:int, vote_ranking:int) -> None:
@@ -20,4 +32,8 @@ class VotesAggregator:
     def determine_winner(self) -> typing.Optional[int]:
         ...
 
+
+class PySpecialVotes(Enum):
+    WITHHOLD = auto()
+    ABSTAIN = auto()
 

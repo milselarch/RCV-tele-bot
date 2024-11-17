@@ -1,9 +1,7 @@
 import unittest
-# noinspection PyUnresolvedReferences
-# import ParentImport
-import ranked_choice_vote
 
-from SpecialVotes import SpecialVotes
+from helpers.special_votes import SpecialVotes
+from py_rcv import VotesCounter as PyVotesCounter
 
 
 class TestRankedChoiceVote(unittest.TestCase):
@@ -16,7 +14,7 @@ class TestRankedChoiceVote(unittest.TestCase):
     """
     def test_basic_scenario(self):
         # Basic test with predefined votes
-        votes_aggregator = ranked_choice_vote.VotesAggregator()
+        votes_aggregator = PyVotesCounter()
         votes = [
             [1, 2, 3, 4],
             [1, 2, 3],
@@ -39,7 +37,7 @@ class TestRankedChoiceVote(unittest.TestCase):
 
     def test_simple_majority(self):
         # Basic test where there is a winner in round 1
-        votes_aggregator = ranked_choice_vote.VotesAggregator()
+        votes_aggregator = PyVotesCounter()
         votes = [
             [1, 2, 3, 4],
             [1, 2, 3],
@@ -62,7 +60,7 @@ class TestRankedChoiceVote(unittest.TestCase):
 
     def test_tie_scenario(self):
         # Test for a tie
-        votes_aggregator = ranked_choice_vote.VotesAggregator()
+        votes_aggregator = PyVotesCounter()
         votes = [
             [1, 2],
             [2, 1]
@@ -78,7 +76,7 @@ class TestRankedChoiceVote(unittest.TestCase):
 
     def test_zero_vote_end(self):
         # Test that a zero vote ends with no one winning
-        votes_aggregator = ranked_choice_vote.VotesAggregator()
+        votes_aggregator = PyVotesCounter()
         votes = [
             [1, SpecialVotes.WITHHOLD_VOTE],
             [2, 1],
@@ -100,7 +98,7 @@ class TestRankedChoiceVote(unittest.TestCase):
     def test_zero_nil_votes_only(self):
         # Test that having only zero and nil votes ends with no one winning,
         # and also that there are no errors in computing the poll result
-        votes_aggregator = ranked_choice_vote.VotesAggregator()
+        votes_aggregator = PyVotesCounter()
         votes = [
             [SpecialVotes.WITHHOLD_VOTE],
             [SpecialVotes.WITHHOLD_VOTE],
@@ -121,7 +119,7 @@ class TestRankedChoiceVote(unittest.TestCase):
 
     def test_null_vote_end(self):
         # Test that a null vote ends with someone winning
-        votes_aggregator = ranked_choice_vote.VotesAggregator()
+        votes_aggregator = PyVotesCounter()
         votes = [
             [1, SpecialVotes.ABSTAIN_VOTE],
             [2, 1],
@@ -141,7 +139,7 @@ class TestRankedChoiceVote(unittest.TestCase):
         )
 
     def test_majoritarian_rule(self):
-        votes_aggregator = ranked_choice_vote.VotesAggregator()
+        votes_aggregator = PyVotesCounter()
         votes = [
             [1, 6, 15],
             [1, 2, 6, 15, 5, 4, 7, 3, 11],
@@ -159,6 +157,59 @@ class TestRankedChoiceVote(unittest.TestCase):
         self.assertEqual(
             winner, 6,
             "Candidate 6 should be the majoritarian winner"
+        )
+
+
+class TestVoteValidation(unittest.TestCase):
+    def __init__(self, *args, verbose=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.verbose = verbose
+
+    def test_valid_votes(self):
+        votes_aggregator = PyVotesCounter()
+        valid_votes = [
+            [1, 2, 7, 3], [1, 2, 3], [4], [-2], [-1], [1, 0, 3, 5],
+            [2, 5, 1, -1], [2, 5, 1, 11, -2]
+        ]
+
+        for valid_vote in valid_votes:
+            validate_result = votes_aggregator.validate_raw_vote(valid_vote)
+            assert isinstance(validate_result.error_message, str)
+            assert isinstance(validate_result.valid, bool)
+
+            is_valid = validate_result.valid
+            self.assertTrue(is_valid, "Vote should be valid")
+            self.assertTrue(
+                len(validate_result.error_message) == 0,
+                "Error message should be empty"
+            )
+
+    def test_duplicate_rankings(self):
+        votes_aggregator = PyVotesCounter()
+        validate_result = votes_aggregator.validate_raw_vote([1, 2, 2])
+        assert isinstance(validate_result.error_message, str)
+        assert isinstance(validate_result.valid, bool)
+        # print('validate_result', validate_result)
+
+        is_valid = validate_result.valid
+        self.assertFalse(is_valid, "non-unique vote is invalid")
+        self.assertTrue(
+            len(validate_result.error_message) > 0,
+            "Error message should be non-empty"
+        )
+
+    def test_non_final_special_vote(self):
+        votes_aggregator = PyVotesCounter()
+        validate_result = votes_aggregator.validate_raw_vote([1, 2, -1, 2])
+        assert isinstance(validate_result.error_message, str)
+        assert isinstance(validate_result.valid, bool)
+        # print('validate_result', validate_result)
+
+        is_valid = validate_result.valid
+        self.assertFalse(is_valid, "vote with non-final special vote is invalid")
+        self.assertTrue(
+            len(validate_result.error_message) > 0,
+            "Error message should be non-empty"
         )
 
 

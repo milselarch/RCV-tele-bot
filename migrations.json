@@ -10,6 +10,7 @@
     "database.UsernameWhitelist",
     "database.PollOptions",
     "database.VoteRankings",
-    "database.PollWinners"
+    "database.PollWinners",
+    "database.CallbackContextState"
   ]
 }

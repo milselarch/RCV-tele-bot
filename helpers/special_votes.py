@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from enum import IntEnum
 from typing import Dict
+from result import Result, Ok, Err
 
 
 class SpecialVotes(IntEnum):
@@ -15,8 +18,15 @@ class SpecialVotes(IntEnum):
     __inv_string_map__ = None
 
     @classmethod
-    def get_string_map(cls) -> Dict:
+    def get_string_map(cls) -> Dict[SpecialVotes, str]:
         return getattr(cls, '__string_map__')
+
+    @classmethod
+    def try_from(cls, value: int) -> Result[SpecialVotes, ValueError]:
+        try:
+            return Ok(cls(value))
+        except ValueError:
+            return Err(ValueError(f'Invalid SpecialVotes value: {value}'))
 
     @classmethod
     def get_str_values(cls):
