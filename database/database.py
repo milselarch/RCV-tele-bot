@@ -7,7 +7,7 @@ import sys
 
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
-from result import Result, Ok
+from result import Result, Ok, Err
 
 from database.setup import DB, BaseModel, database_proxy
 from database.users import Users
@@ -108,6 +108,15 @@ class Polls(BaseModel):
 
     def get_creator_id(self) -> UserID:
         return self.get_creator().get_user_id()
+
+    @classmethod
+    def get_is_closed(cls, poll_id: int) -> Result[bool, None]:
+        try:
+            poll = cls.select().where(cls.id == poll_id).get()
+        except Polls.DoesNotExist:
+            return Err(None)
+
+        return Ok(poll.closed)
 
     @classmethod
     def read_poll_metadata(cls, poll_id: int) -> PollMetadata:

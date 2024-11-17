@@ -1,37 +1,25 @@
 import pydantic
 
 from abc import ABCMeta
-from typing import Sequence
 from result import Result, Err, Ok
 
 from database.db_helpers import UserID
 from helpers import strings
 from helpers.commands import Command
-from helpers.constants import POLL_MAX_OPTIONS, BLANK_POLL_ID
+from helpers.constants import POLL_MAX_OPTIONS
 from helpers.special_votes import SpecialVotes
 from py_rcv import VotesCounter as PyVotesCounter
 
 
-class GenericVoteContext(pydantic.BaseModel, metaclass=ABCMeta):
-    chat_id: int
+class BaseVoteContext(pydantic.BaseModel, metaclass=ABCMeta):
     user_id: int
 
     poll_id: int
     rankings: list[int]
     max_options: int = POLL_MAX_OPTIONS
 
-    def __init__(
-        self, poll_id: int = BLANK_POLL_ID,
-        rankings: Sequence[int] = (), **kwargs
-    ):
-        # TODO: type hint the input params somehow?
-        super().__init__(poll_id=poll_id, rankings=list(rankings), **kwargs)
-
     def get_user_id(self) -> UserID:
         return UserID(self.user_id)
-
-    def get_chat_id(self) -> int:
-        return self.chat_id
 
     def set_poll_id_from_str(
         self, raw_poll_id: str
@@ -50,6 +38,13 @@ class GenericVoteContext(pydantic.BaseModel, metaclass=ABCMeta):
         self.poll_id = poll_id
         return Ok(self.is_complete)
 
+    def pop(self) -> int:
+        if len(self.rankings) == 0:
+            return -1
+
+        self.rankings.pop()
+        return len(self.rankings)
+
     def set_max_options(self, max_options: int):
         self.max_options = max_options
 
@@ -66,7 +61,10 @@ class GenericVoteContext(pydantic.BaseModel, metaclass=ABCMeta):
         return len(self.rankings)
 
     def to_vote_message(self) -> str:
-        return f'{self.poll_id}: ' + ' > '.join([
+        return f'{self.poll_id}: ' + self.rankings_to_str()
+
+    def rankings_to_str(self):
+        return ' > '.join([
             str(raw_option) if raw_option > 0 else
             SpecialVotes(raw_option).to_string()
             for raw_option in self.rankings

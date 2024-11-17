@@ -1,5 +1,3 @@
-import dataclasses
-import json
 import logging
 import textwrap
 import telegram
@@ -24,10 +22,8 @@ from telegram import (
     Update as BaseTeleUpdate, User as TeleUser
 )
 
-from database import Users, Polls, ChatWhitelist, ChatContextStateTypes
-from database.database import (
-    UserID, CallbackContextState
-)
+from database import Users, Polls, ChatWhitelist
+from database.database import UserID
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -35,14 +31,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-@dataclasses.dataclass
-class ExtractedContext(object):
-    user: Users
-    message_text: str
-    chat_context: CallbackContextState
-    context_type: ChatContextStateTypes
 
 
 class ModifiedTeleUpdate(object):
@@ -66,42 +54,6 @@ class ModifiedTeleUpdate(object):
 
 
 class TelegramHelpers(object):
-    @staticmethod
-    def extract_chat_context(
-        update: ModifiedTeleUpdate
-    ) -> Result[ExtractedContext, MessageBuilder]:
-        message: Message = update.message
-        user_entry: Users = update.user
-        assert isinstance(message.text, str)
-        assert len(message.text) > 0
-        message_text: str = message.text
-
-        error_message = MessageBuilder()
-        chat_context_res = CallbackContextState.build_from_fields(
-            user_id=user_entry.get_user_id(), chat_id=message.chat.id
-        ).safe_get()
-
-        if chat_context_res.is_err():
-            return Err(error_message.add(
-                "Use /help to view all available commands, "
-                "/create_poll to create a new poll, "
-                "or /vote to vote for an existing poll "
-            ))
-
-        chat_context = chat_context_res.unwrap()
-        chat_context_type_res = chat_context.get_context_type()
-        if chat_context_type_res.is_err():
-            chat_context.delete()
-            return Err(error_message.add(
-                "Unexpected error loading chat context type"
-            ))
-
-        chat_context_type = chat_context_type_res.unwrap()
-        return Ok(ExtractedContext(
-            user=user_entry, message_text=message_text,
-            chat_context=chat_context, context_type=chat_context_type
-        ))
-
     @classmethod
     def _vote_for_poll(
         cls, raw_text: str, user_tele_id: int, username: Optional[str],
@@ -403,7 +355,8 @@ class TelegramHelpers(object):
 
         reply_markup = BaseAPI.generate_vote_markup(
             tele_user=tele_user, poll_id=poll_id, chat_type=chat_type,
-            open_registration=poll.open_registration
+            open_registration=poll.open_registration,
+            num_options=poll_message.poll_info.max_options
         )
 
         await message.reply_text(poll_message.text, reply_markup=reply_markup)

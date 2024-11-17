@@ -11,6 +11,7 @@ READ_SUBSCRIPTION_TIER_FAILED = "Unexpected error reading subscription tier"
 POLL_OPTIONS_LIMIT_REACHED_TEXT = textwrap.dedent(f"""
     Poll creation limit reached
     Use /{Command.DELETE_POLL} {{POLL_ID}} to remove unused polls
+    Use /{Command.VIEW_POLLS} to view created polls
 """)
 
 COMMAND_OPTIONS_EXAMPLE = "{option_1} > {option_2} > ... > {option_n}"
@@ -135,3 +136,7 @@ def generate_vote_option_prompt(rank: int) -> str:
             f"Enter the poll option you want to rank #{rank}, "
             f"or use /done if you're done:"
         )
+
+
+def generate_poll_closed_message(poll_id: int):
+    return f"Poll #{poll_id} has been closed already"

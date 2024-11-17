@@ -1,15 +1,20 @@
 import textwrap
 
 from abc import ABCMeta, abstractmethod
+from typing import Type
+
 from telegram import Message, User as TeleUser
 from telegram.ext import ContextTypes
 from base_api import BaseAPI
 from bot_middleware import track_errors
-from helpers.chat_contexts import PollCreationChatContext, VoteChatContext
 from helpers import strings
 from helpers.commands import Command
 from helpers.strings import READ_SUBSCRIPTION_TIER_FAILED
-from tele_helpers import ModifiedTeleUpdate, TelegramHelpers, ExtractedContext
+from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
+from helpers.chat_contexts import (
+    PollCreationChatContext, VoteChatContext, ExtractedChatContext,
+    extract_chat_context
+)
 
 from database import Users, CallbackContextState, ChatContextStateTypes
 
@@ -25,7 +30,7 @@ class BaseContextHandler(object, metaclass=ABCMeta):
 
     @abstractmethod
     async def handle_messages(
-        self, extracted_context: ExtractedContext,
+        self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         ...
@@ -33,7 +38,7 @@ class BaseContextHandler(object, metaclass=ABCMeta):
 
 class PollCreationContextHandler(BaseContextHandler):
     async def handle_messages(
-        self, extracted_context: ExtractedContext,
+        self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         message: Message = update.message
@@ -124,7 +129,8 @@ class PollCreationContextHandler(BaseContextHandler):
         poll_message = view_poll_result.unwrap()
         reply_markup = BaseAPI.generate_vote_markup(
             tele_user=tele_user, poll_id=poll_id,
-            chat_type=chat_type, open_registration=True
+            chat_type=chat_type, open_registration=True,
+            num_options=poll_message.poll_info.max_options
         )
 
         reply_text = message.reply_text
@@ -138,21 +144,21 @@ class PollCreationContextHandler(BaseContextHandler):
         await reply_text(poll_message.text, reply_markup=reply_markup)
         # https://stackoverflow.com/questions/76538913/
         return await message.reply_markdown_v2(textwrap.dedent(f"""
-              Poll created successfully\\. Run the following command:  
-              `/{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}`
-              in the group chat of your choice to allow chat members
-              to register and vote for the poll\\.  
-
-              Alternatively, click the following link to share the 
-              poll to the group chat of your choice:  
-              [{escaped_deep_link_url}]({escaped_deep_link_url})
-          """))
+            Poll created successfully\\. Run the following command:  
+            `/{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}`
+            in the group chat of your choice to allow chat members
+            to register and vote for the poll\\.  
+            
+            Alternatively, click the following link to share the 
+            poll to the group chat of your choice:  
+            [{escaped_deep_link_url}]({escaped_deep_link_url})
+        """))
 
 
 class VoteContextHandler(BaseContextHandler):
     @track_errors
     async def handle_messages(
-        self, extracted_context: ExtractedContext,
+        self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         message: Message = update.message
@@ -251,9 +257,11 @@ class VoteContextHandler(BaseContextHandler):
 
 class ContextHandlers(object):
     def __init__(self):
-        self.context_handlers: dict[ChatContextStateTypes, BaseContextHandler] = {
-            ChatContextStateTypes.POLL_CREATION: PollCreationContextHandler(),
-            ChatContextStateTypes.VOTE: VoteContextHandler()
+        self.context_handlers: dict[
+            ChatContextStateTypes, Type[BaseContextHandler]
+        ] = {
+            ChatContextStateTypes.POLL_CREATION: PollCreationContextHandler,
+            ChatContextStateTypes.VOTE: VoteContextHandler
         }
 
     @track_errors
@@ -261,10 +269,10 @@ class ContextHandlers(object):
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         message: Message = update.message
-        chat_context_res = TelegramHelpers.extract_chat_context(update)
+        chat_context_res = extract_chat_context(update)
         if chat_context_res.is_err():
-            error_message = chat_context_res.unwrap_err()
-            return await error_message.call(message.reply_text)
+            error = chat_context_res.unwrap_err()
+            return await message.reply_text(error.to_message())
 
         extracted_context = chat_context_res.unwrap()
         context_type = extracted_context.context_type
@@ -273,7 +281,8 @@ class ContextHandlers(object):
                 f"{context_type} context unsupported"
             )
 
-        context_handler = self.context_handlers[context_type]
+        context_handler_cls = self.context_handlers[context_type]
+        context_handler = context_handler_cls()
         return await context_handler.handle_messages(
             extracted_context, update, context
         )
@@ -283,13 +292,13 @@ class ContextHandlers(object):
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         message: Message = update.message
-        extract_context_res = TelegramHelpers.extract_chat_context(update)
+        extract_context_res = extract_chat_context(update)
 
         if extract_context_res.is_err():
-            error_message = extract_context_res.unwrap_err()
-            return await error_message.call(message.reply_text)
+            error = extract_context_res.unwrap_err()
+            return await message.reply_text(error.to_message())
 
-        extracted_context: ExtractedContext = extract_context_res.unwrap()
+        extracted_context: ExtractedChatContext = extract_context_res.unwrap()
         chat_context: CallbackContextState = extracted_context.chat_context
         context_type = extracted_context.context_type
         if context_type not in self.context_handlers:
@@ -297,7 +306,8 @@ class ContextHandlers(object):
                 f"CONTEXT_NOT_IMPLEMENTED: {chat_context}"
             )
 
-        context_handler = self.context_handlers[context_type]
+        context_handler_cls = self.context_handlers[context_type]
+        context_handler = context_handler_cls()
         return await context_handler.complete_chat_context(
             chat_context, update, context
         )

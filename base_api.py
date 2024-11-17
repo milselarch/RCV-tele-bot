@@ -20,6 +20,7 @@ from strenum import StrEnum
 from requests import PreparedRequest
 
 from helpers import strings, constants
+from helpers.strings import generate_poll_closed_message
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
 from py_rcv import VotesCounter as PyVotesCounter
@@ -55,6 +56,7 @@ class CallbackCommands(StrEnum):
     UNDO_OPTION = 'UNDO'
     RESET_VOTE = 'RESET'
     SUBMIT_VOTE = 'SUBMIT_VOTE'
+    VIEW_VOTE = 'VIEW_VOTE'
 
 
 class UserRegistrationStatus(StrEnum):
@@ -535,7 +537,7 @@ class BaseAPI(object):
             case UserRegistrationStatus.POLL_NOT_FOUND:
                 return f"Poll #{poll_id} not found"
             case UserRegistrationStatus.POLL_CLOSED:
-                return f"Poll #{poll_id} has been closed"
+                return generate_poll_closed_message(poll_id)
             case _:
                 return "Unexpected registration error"
 
@@ -645,7 +647,8 @@ class BaseAPI(object):
         reply_markup = None
         if poll_metadata.open_registration:
             vote_markup_data = cls.build_group_vote_markup(
-                poll_id=poll_metadata.id
+                poll_id=poll_metadata.id,
+                num_options=poll_info.max_options
             )
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
@@ -698,7 +701,7 @@ class BaseAPI(object):
 
     @classmethod
     def build_group_vote_markup(
-        cls, poll_id: int, num_options: int = 16
+        cls, poll_id: int, num_options: int
     ) -> List[List[InlineKeyboardButton]]:
         """
         TODO: implement button vote context
@@ -721,7 +724,9 @@ class BaseAPI(object):
             current_row.append(cls.spawn_inline_keyboard_button(
                 text=str(ranking),
                 command=CallbackCommands.ADD_VOTE_OPTION,
-                callback_data=dict(poll_id=poll_id, option=ranking)
+                callback_data=dict(
+                    poll_id=poll_id, option=ranking
+                )
             ))
             flush_row = (
                 (ranking == num_options) or
@@ -758,8 +763,13 @@ class BaseAPI(object):
             )
         ])
 
-        # add final row with submit vote button
+        # add final row with view vote, submit vote buttons
         markup_rows.append([
+            cls.spawn_inline_keyboard_button(
+                text='View Vote',
+                command=CallbackCommands.VIEW_VOTE,
+                callback_data=dict(poll_id=poll_id)
+            ),
             cls.spawn_inline_keyboard_button(
                 text='Submit Vote',
                 command=CallbackCommands.SUBMIT_VOTE,
@@ -915,8 +925,7 @@ class BaseAPI(object):
 
         return (
             textwrap.dedent(f"""
-            POLL ID: {poll_id} {close_tag}
-            POLL QUESTION: 
+            Poll #{poll_id} {close_tag}
             {poll_question}
             ——————————————————
             {num_votes} / {num_voters} voted
@@ -1281,7 +1290,7 @@ class BaseAPI(object):
     @classmethod
     def generate_vote_markup(
         cls, tele_user: TeleUser | None, chat_type: str,
-        poll_id: int, open_registration: bool
+        poll_id: int, open_registration: bool, num_options: int
     ) -> None | ReplyKeyboardMarkup | InlineKeyboardMarkup:
         reply_markup = None
         print('CHAT_TYPE', chat_type)
@@ -1293,7 +1302,7 @@ class BaseAPI(object):
             reply_markup = ReplyKeyboardMarkup(vote_markup_data)
         elif open_registration:
             vote_markup_data = cls.build_group_vote_markup(
-                poll_id=poll_id
+                poll_id=poll_id, num_options=num_options
             )
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 

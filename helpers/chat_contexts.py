@@ -1,26 +1,82 @@
 import dataclasses
 import textwrap
+from enum import StrEnum
 
 from typing import Sequence
 from result import Result, Ok, Err
-from helpers import helpers, strings
+from telegram import Message
+
+from helpers import helpers
 from helpers.commands import Command
 from helpers.constants import (
-    BLANK_POLL_ID, POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH
+    POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH, BLANK_POLL_ID
 )
-from helpers.contexts import GenericVoteContext
+from helpers.contexts import BaseVoteContext
 from helpers.message_buillder import MessageBuilder
-from helpers.special_votes import SpecialVotes
 from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT
-from py_rcv import VotesCounter as PyVotesCounter
 
 from database.subscription_tiers import SubscriptionTiers
 from database.db_helpers import BoundRowFields, UserID
-from database import db
+from database import db, CallbackContextState
 from database import (
     ChatContextStateTypes, SerializableChatContext, Users, Polls,
     ChatWhitelist, UsernameWhitelist, PollOptions, PollVoters
 )
+from tele_helpers import ModifiedTeleUpdate
+
+
+@dataclasses.dataclass
+class ExtractedChatContext(object):
+    user: Users
+    message_text: str
+    chat_context: CallbackContextState
+    context_type: ChatContextStateTypes
+
+
+class ExtractChatContextErrors(StrEnum):
+    NO_CHAT_CONTEXT = "NO_MESSAGE_CONTEXT"
+    LOAD_FAILED = "LOAD_FAILED"
+
+    def to_message(self):
+        if self == ExtractChatContextErrors.NO_CHAT_CONTEXT:
+            return (
+                f"Use /{Command.HELP} to view all available commands, "
+                f"/{Command.CREATE_POLL} to create a new poll, "
+                f"or /{Command.VOTE} to vote for an existing poll "
+            )
+        elif self == ExtractChatContextErrors.LOAD_FAILED:
+            return "Unexpected error loading chat context type"
+        else:
+            return "CONTEXT_TYPE_UNKNOWN"
+
+
+def extract_chat_context(
+    update: ModifiedTeleUpdate
+) -> Result[ExtractedChatContext, ExtractChatContextErrors]:
+    message: Message = update.message
+    user_entry: Users = update.user
+    assert isinstance(message.text, str)
+    assert len(message.text) > 0
+    message_text: str = message.text
+
+    chat_context_res = CallbackContextState.build_from_fields(
+        user_id=user_entry.get_user_id(), chat_id=message.chat.id
+    ).safe_get()
+
+    if chat_context_res.is_err():
+        return Err(ExtractChatContextErrors.NO_CHAT_CONTEXT)
+
+    chat_context = chat_context_res.unwrap()
+    chat_context_type_res = chat_context.get_context_type()
+    if chat_context_type_res.is_err():
+        chat_context.delete()
+        return Err(ExtractChatContextErrors.LOAD_FAILED)
+
+    chat_context_type = chat_context_type_res.unwrap()
+    return Ok(ExtractedChatContext(
+        user=user_entry, message_text=message_text,
+        chat_context=chat_context, context_type=chat_context_type
+    ))
 
 
 @dataclasses.dataclass
@@ -221,7 +277,16 @@ class PollCreationChatContext(SerializableChatContext):
         )
 
 
-class VoteChatContext(SerializableChatContext, GenericVoteContext):
+class VoteChatContext(SerializableChatContext, BaseVoteContext):
+    chat_id: int
+
+    def __init__(
+        self, poll_id: int = BLANK_POLL_ID,
+        rankings: Sequence[int] = (), **kwargs
+    ):
+        # TODO: type hint the input params somehow?
+        super().__init__(poll_id=poll_id, rankings=list(rankings), **kwargs)
+
     def get_user_id(self) -> UserID:
         return UserID(self.user_id)
 

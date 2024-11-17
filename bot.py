@@ -89,6 +89,7 @@ class RankedChoiceBot(BaseAPI):
     def start_bot(self):
         assert self.bot is None
         self.bot = self.create_tele_bot()
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         # ensure scheduled tasks don't crash before running them in background
@@ -595,7 +596,8 @@ class RankedChoiceBot(BaseAPI):
             reply_markup = ReplyKeyboardMarkup(vote_markup_data)
         elif open_registration:
             vote_markup_data = self.build_group_vote_markup(
-                poll_id=new_poll_id
+                poll_id=new_poll_id,
+                num_options=len(poll_options)
             )
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 

@@ -49,9 +49,9 @@ class MessageContextState(BaseModel):
         MessageContextStateTypes, ValueError
     ]:
         try:
-            return Result.Ok(MessageContextStateTypes(self.context_type))
+            return Ok(MessageContextStateTypes(self.context_type))
         except ValueError as e:
-            return Result.Err(e)
+            return Err(e)
 
     def deserialize_state(self) -> dict[str, any]:
         return json.loads(self.state)
