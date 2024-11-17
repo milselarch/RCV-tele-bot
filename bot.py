@@ -321,7 +321,6 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = vote_result.unwrap()
         await TelegramHelpers.send_post_vote_reply(
             message=message, poll_id=poll_id
         )
