@@ -379,18 +379,19 @@ class BaseAPI(object):
     def verify_voter(
         cls, poll_id: int, user_id: UserID, username: Optional[str] = None,
         chat_id: Optional[int] = None
-    ) -> Result[int, UserRegistrationStatus]:
+    ) -> Result[tuple[PollVoters, bool], UserRegistrationStatus]:
         """
         Checks if the user is a member of the poll
         Attempts to auto enroll user if their username is whitelisted
         and the username whitelist entry is empty
-        Returns PollVoters entry id of user for the specified poll
+        Returns PollVoters entry id of user for the specified poll,
+        and whether user was newly whitelisted from chat whitelist
         """
         
         poll_voter_res = cls.get_poll_voter(poll_id, user_id)
         if poll_voter_res.is_ok():
             poll_voter = poll_voter_res.unwrap()
-            return Ok(poll_voter.id)
+            return Ok((poll_voter, False))
         else:
             poll_voter_err = poll_voter_res.unwrap_err()
             if poll_voter_err is None:
@@ -409,8 +410,7 @@ class BaseAPI(object):
             ignore_voter_limit=False, chat_id=chat_id
         )
         if chat_register_result.is_ok():
-            poll_voter: PollVoters = chat_register_result.unwrap()
-            return Ok(poll_voter.id)
+            return chat_register_result
 
         whitelist_user_result = cls.get_whitelist_entry(
             username=username_str, poll_id=poll_id,
@@ -431,7 +431,7 @@ class BaseAPI(object):
         )
         if register_result.is_ok():
             poll_voter: PollVoters = register_result.unwrap()
-            return Ok(poll_voter.id)
+            return Ok((poll_voter, False))
 
         return register_result
 
@@ -439,7 +439,11 @@ class BaseAPI(object):
     def _register_voter_from_chat_whitelist(
         cls, poll_id: int, user_id: UserID, ignore_voter_limit: bool = False,
         chat_id: int | None = None
-    ) -> Result[PollVoters, UserRegistrationStatus]:
+    ) -> Result[[PollVoters, bool], UserRegistrationStatus]:
+        """
+        return Ok value is poll_voter, and whether registration
+        was newly made
+        """
         if chat_id is None:
             return Err(UserRegistrationStatus.NOT_WHITELISTED)
 
@@ -460,8 +464,7 @@ class BaseAPI(object):
                 transaction.rollback()
                 return register_result
 
-            poll_voter_row, _ = register_result.unwrap()
-            return Ok(poll_voter_row)
+            return register_result
 
     @classmethod
     def register_from_username_whitelist(
@@ -1133,7 +1136,7 @@ class BaseAPI(object):
     def register_vote(
         cls, poll_id: int, rankings: List[int], user_tele_id: int,
         username: Optional[str], chat_id: Optional[int]
-    ) -> Result[bool, MessageBuilder]:
+    ) -> Result[tuple[bool, bool], MessageBuilder]:
         """
         registers a vote for the poll
         checks that:
@@ -1149,7 +1152,7 @@ class BaseAPI(object):
         :param user_tele_id: voter's telegram user tele id
         :param username: voter's telegram username
         :param chat_id: telegram chat id that message originated from
-        :return poll_id:
+        :return is_first_vote, newly_registered:
         """
         error_message = MessageBuilder()
         if len(rankings) == 0:
@@ -1187,10 +1190,10 @@ class BaseAPI(object):
             error_message.add(f"You're not a voter of poll {poll_id}")
             return Err(error_message)
 
-        poll_voter_id: int = verify_result.unwrap()
-        # print('POLL_VOTER_ID', poll_voter_id)
+        poll_voter, newly_registered_voter = verify_result.unwrap()
+        print('verify_result', verify_result, poll_voter)
         vote_register_result = cls.__unsafe_register_vote(
-            poll_id=poll_id, poll_voter_id=poll_voter_id,
+            poll_id=poll_id, poll_voter_id=int(poll_voter.id),
             rankings=rankings
         )
 
@@ -1199,7 +1202,7 @@ class BaseAPI(object):
             return vote_register_result
 
         is_first_vote = vote_register_result.unwrap()
-        return Ok(is_first_vote)
+        return Ok((is_first_vote, newly_registered_voter))
 
     @classmethod
     def __unsafe_register_vote(
