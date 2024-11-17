@@ -46,7 +46,6 @@ async def register_for_poll(
         poll_id=poll_id, user_id=user.get_user_id(),
         username=tele_user.username
     )
-
     reply_text = BaseAPI.reg_status_to_msg(registration_status, poll_id)
     if registration_status != base_api.UserRegistrationStatus.REGISTERED:
         await query.answer(reply_text)

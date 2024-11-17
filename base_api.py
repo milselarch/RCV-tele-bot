@@ -1133,7 +1133,7 @@ class BaseAPI(object):
     def register_vote(
         cls, poll_id: int, rankings: List[int], user_tele_id: int,
         username: Optional[str], chat_id: Optional[int]
-    ) -> Result[int, MessageBuilder]:
+    ) -> Result[bool, MessageBuilder]:
         """
         registers a vote for the poll
         checks that:
@@ -1149,7 +1149,7 @@ class BaseAPI(object):
         :param user_tele_id: voter's telegram user tele id
         :param username: voter's telegram username
         :param chat_id: telegram chat id that message originated from
-        :return:
+        :return poll_id:
         """
         error_message = MessageBuilder()
         if len(rankings) == 0:
@@ -1179,6 +1179,7 @@ class BaseAPI(object):
         user_id = user.get_user_id()
         # verify that the user can vote for the poll
         # print('PRE_VERIFY', poll_id, user_id, username)
+        # TODO: include whether registration was from chat whitelist in return
         verify_result = cls.verify_voter(
             poll_id, user_id, username=username, chat_id=chat_id
         )
@@ -1197,13 +1198,8 @@ class BaseAPI(object):
             assert isinstance(vote_register_result, Err)
             return vote_register_result
 
-        vote_registered = vote_register_result.unwrap()
-
-        if vote_registered:
-            return Ok(poll_id)
-        else:
-            error_message.add('Vote registration failed')
-            return Err(error_message)
+        is_first_vote = vote_register_result.unwrap()
+        return Ok(is_first_vote)
 
     @classmethod
     def __unsafe_register_vote(
@@ -1213,11 +1209,15 @@ class BaseAPI(object):
         registers a vote for the poll
         checks that poll option numbers are valid for the current poll
         does not check if poll_voter_id is valid for poll {poll_id}
-        does not check if poll has already been closed
+        does not check if poll has already been closed.
+
+        Return Ok result is a bool indicating if the new vote is
+        the first one to be registered, or if it replaces an existing vote
 
         :param poll_id:
         :param poll_voter_id:
         :param rankings:
+        :return Result[bool, MessageBuilder]:
         """
         error_message = MessageBuilder()
         poll_option_rows = PollOptions.select().where(
@@ -1290,7 +1290,7 @@ class BaseAPI(object):
                     Polls.id == poll_id
                 ).execute()
 
-        return Ok(True)
+        return Ok(is_first_vote)
 
     @classmethod
     def generate_vote_markup(

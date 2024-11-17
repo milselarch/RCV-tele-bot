@@ -58,7 +58,7 @@ class TelegramHelpers(object):
     def _vote_for_poll(
         cls, raw_text: str, user_tele_id: int, username: Optional[str],
         chat_id: Optional[int]
-    ) -> Result[int, MessageBuilder]:
+    ) -> Result[tuple[bool, int], MessageBuilder]:
         """
         telegram command format
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n}
@@ -66,6 +66,7 @@ class TelegramHelpers(object):
         example:
         /vote 3: 1 > 2 > 3
         /vote 3 1 > 2 > 3
+        :return is_newly_registered, poll_id:
         """
         error_message = MessageBuilder()
         # print('RAW_VOTE_TEXT', [raw_text, user_id])
@@ -84,11 +85,16 @@ class TelegramHelpers(object):
         rankings: List[int] = unpacked_result[1]
 
         # print('PRE_REGISTER')
-        return BaseAPI.register_vote(
+        register_result = BaseAPI.register_vote(
             poll_id=poll_id, rankings=rankings,
             user_tele_id=user_tele_id, username=username,
             chat_id=chat_id
         )
+        if register_result.is_err():
+            return register_result
+
+        is_newly_registered = register_result.unwrap()
+        return Ok((is_newly_registered, poll_id))
 
     @classmethod
     async def vote_and_report(
@@ -106,7 +112,7 @@ class TelegramHelpers(object):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = vote_result.unwrap()
+        _, poll_id = vote_result.unwrap()
         await cls.send_post_vote_reply(message=message, poll_id=poll_id)
         return True
 
