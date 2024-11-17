@@ -280,8 +280,11 @@ class AddVoteMessageHandler(BaseMessageHandler):
         extracted_message_context_res = extract_message_context(update)
         poll_id = int(callback_data['poll_id'])
         ranked_option = int(callback_data['option'])
+        poll_closed_res = Polls.get_is_closed(poll_id)
 
-        if Polls.get_is_closed(poll_id):
+        if poll_closed_res.is_err():
+            return await query.answer('FAILED TO CHECK IF POLL CLOSED')
+        elif poll_closed_res.unwrap():
             return await query.answer(generate_poll_closed_message(poll_id))
 
         if extracted_message_context_res.is_err():
@@ -340,7 +343,11 @@ class UndoVoteRankingMessageHandler(BaseMessageHandler):
         assert num_vote_rankings >= 0
 
         poll_id = vote_context.poll_id
-        if Polls.get_is_closed(poll_id):
+        poll_closed_res = Polls.get_is_closed(poll_id)
+
+        if poll_closed_res.is_err():
+            return await query.answer('FAILED TO CHECK IF POLL CLOSED')
+        elif poll_closed_res.unwrap():
             return await query.answer(generate_poll_closed_message(poll_id))
 
         if num_vote_rankings == 0:
@@ -369,8 +376,11 @@ class ResetVoteMessageHandler(BaseMessageHandler):
         )
         vote_context = vote_context_res.unwrap()
         poll_id = vote_context.poll_id
+        poll_closed_res = Polls.get_is_closed(poll_id)
 
-        if Polls.get_is_closed(poll_id):
+        if poll_closed_res.is_err():
+            return await query.answer('FAILED TO CHECK IF POLL CLOSED')
+        elif poll_closed_res.unwrap():
             return await query.answer(generate_poll_closed_message(poll_id))
         else:
             extracted_message_context.message_context.delete_instance()
@@ -401,9 +411,13 @@ class ViewVoteMessageHandler(BaseMessageHandler):
         )
         vote_context = vote_context_res.unwrap()
         poll_id = vote_context.poll_id
+        poll_closed_res = Polls.get_is_closed(poll_id)
 
-        if Polls.get_is_closed(poll_id):
+        if poll_closed_res.is_err():
+            return await query.answer('FAILED TO CHECK IF POLL CLOSED')
+        elif poll_closed_res.unwrap():
             return await query.answer(generate_poll_closed_message(poll_id))
+
         if vote_context_res.is_err():
             return await query.answer("Failed to load context")
 
@@ -424,7 +438,11 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
 
         extracted_message_context_res = extract_message_context(update)
         poll_id = int(callback_data['poll_id'])
-        if Polls.get_is_closed(poll_id):
+        poll_closed_res = Polls.get_is_closed(poll_id)
+
+        if poll_closed_res.is_err():
+            return await query.answer('FAILED TO CHECK IF POLL CLOSED')
+        elif poll_closed_res.unwrap():
             return await query.answer(generate_poll_closed_message(poll_id))
 
         if extracted_message_context_res.is_err():
