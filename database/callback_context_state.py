@@ -23,7 +23,7 @@ P = TypeVar('P', bound=pydantic.BaseModel)
 
 class ChatContextStateTypes(StrEnum):
     POLL_CREATION = "POLL_CREATION"
-    CAST_VOTE = "CAST_VOTE"
+    VOTE = "VOTE"
 
 
 class CallbackContextState(BaseModel):

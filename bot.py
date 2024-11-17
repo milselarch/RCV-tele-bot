@@ -38,7 +38,7 @@ from typing import (
 from helpers.strings import (
     POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED
 )
-from contexts import (
+from helpers.chat_contexts import (
     PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
     VoteChatContext
 )
@@ -223,9 +223,7 @@ class RankedChoiceBot(BaseAPI):
         message = update.message
         chat_type = update.message.chat.type
         args = context.args
-        print('CONTEXT_ARGS', args)
-        # TODO: add support for startgroup command
-        # https://stackoverflow.com/questions/59066968/
+        # print('CONTEXT_ARGS', args)
 
         if len(args) == 0:
             await update.message.reply_text('Bot started')

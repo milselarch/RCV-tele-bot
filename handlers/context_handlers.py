@@ -5,7 +5,7 @@ from telegram import Message, User as TeleUser
 from telegram.ext import ContextTypes
 from base_api import BaseAPI
 from bot_middleware import track_errors
-from contexts import PollCreationChatContext, VoteChatContext
+from helpers.chat_contexts import PollCreationChatContext, VoteChatContext
 from helpers import strings
 from helpers.commands import Command
 from helpers.strings import READ_SUBSCRIPTION_TIER_FAILED
@@ -253,7 +253,7 @@ class ContextHandlers(object):
     def __init__(self):
         self.context_handlers: dict[ChatContextStateTypes, BaseContextHandler] = {
             ChatContextStateTypes.POLL_CREATION: PollCreationContextHandler(),
-            ChatContextStateTypes.CAST_VOTE: VoteContextHandler()
+            ChatContextStateTypes.VOTE: VoteContextHandler()
         }
 
     @track_errors
