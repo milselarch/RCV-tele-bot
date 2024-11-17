@@ -3,7 +3,7 @@ import textwrap
 
 from helpers.commands import Command
 
-__VERSION__ = '1.2.0'
+__VERSION__ = '1.2.1'
 
 POLL_ID_GET_PARAM = 'poll_id'
 WHITELIST_POLL_ID_GET_PARAM = 'whitelist_poll'

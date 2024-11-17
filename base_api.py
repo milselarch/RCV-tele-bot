@@ -76,15 +76,20 @@ class UserRegistrationStatus(StrEnum):
     FAILED = 'FAILED'
 
 
+@dataclasses.dataclass
 class PollInfo(object):
+    metadata: PollMetadata
+    # description of each option within the poll
+    poll_options: List[str]
+    # numerical ranking of each option within the poll
+    option_numbers: List[int]
+
     def __init__(
         self, metadata: PollMetadata,
         poll_options: List[str], option_numbers: List[int]
     ):
         assert len(poll_options) == len(option_numbers)
-        # description of each option within the poll
         self.poll_options: List[str] = poll_options
-        # numerical ranking of each option within the poll
         self.option_numbers: List[int] = option_numbers
         self.metadata: PollMetadata = metadata
 
