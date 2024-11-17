@@ -4,7 +4,7 @@ import uvicorn
 import dataclasses
 
 from load_config import *
-from base_api import BaseAPI
+from base_api import BaseAPI, PollInfo
 from database.database import Users
 
 from fastapi import FastAPI, APIRouter
