@@ -11,7 +11,7 @@ from helpers.commands import Command
 from helpers.strings import READ_SUBSCRIPTION_TIER_FAILED
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers, ExtractedContext
 
-from database import Users, CallbackContextState, ContextStates
+from database import Users, CallbackContextState, ChatContextStateTypes
 
 
 class BaseContextHandler(object, metaclass=ABCMeta):
@@ -234,8 +234,8 @@ class VoteContextHandler(BaseContextHandler):
         poll_id = vote_creation_context.poll_id
         register_vote_result = BaseAPI.register_vote(
             chat_id=message.chat_id, rankings=vote_creation_context.rankings,
-            poll_id=vote_creation_context.poll_id, username=tele_user.username,
-            user_tele_id=tele_user.id
+            poll_id=vote_creation_context.poll_id,
+            username=tele_user.username, user_tele_id=tele_user.id
         )
 
         if register_vote_result.is_err():
@@ -251,9 +251,9 @@ class VoteContextHandler(BaseContextHandler):
 
 class ContextHandlers(object):
     def __init__(self):
-        self.context_handlers: dict[ContextStates, BaseContextHandler] = {
-            ContextStates.POLL_CREATION: PollCreationContextHandler(),
-            ContextStates.CAST_VOTE: VoteContextHandler()
+        self.context_handlers: dict[ChatContextStateTypes, BaseContextHandler] = {
+            ChatContextStateTypes.POLL_CREATION: PollCreationContextHandler(),
+            ChatContextStateTypes.CAST_VOTE: VoteContextHandler()
         }
 
     @track_errors

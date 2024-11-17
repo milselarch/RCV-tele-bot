@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import multiprocessing
 import time
 import textwrap
 import asyncio
@@ -33,18 +32,20 @@ from telegram.ext import (
     ContextTypes, filters, CallbackContext, Application
 )
 from typing import (
-    List, Dict, Optional, Sequence, Iterable, Callable
+    List, Dict, Optional, Sequence, Iterable
 )
 
 from helpers.strings import (
     POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED
 )
 from contexts import (
-    PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS, VoteChatContext
+    PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
+    VoteChatContext
 )
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
-    PollOptions, VoteRankings, db, ChatWhitelist, PollWinners
+    PollOptions, VoteRankings, db, ChatWhitelist, PollWinners,
+    MessageContextState
 )
 from base_api import (
     BaseAPI, UserRegistrationStatus,
@@ -72,29 +73,27 @@ class RankedChoiceBot(BaseAPI):
         self.app = None
 
     @classmethod
-    def run_polling_tasks(cls):
-        asyncio.run(cls._run_polling_tasks_routine())
-
-    @classmethod
-    async def _run_polling_tasks_routine(cls):
+    async def _call_polling_tasks_routine(cls):
         # TODO: write tests for this
         while True:
-            Users.prune_deleted_users()
-            CallbackContextState.prune_expired_contexts()
+            await cls._call_polling_tasks_once()
             await asyncio.sleep(constants.POLLING_TASKS_INTERVAL)
 
-    def schedule_tasks(self, tasks: List[Callable[[], None]]):
-        assert len(self.scheduled_processes) == 0
-
-        for task in tasks:
-            process = multiprocessing.Process(target=task)
-            self.scheduled_processes.append(process)
-            process.start()
+    @classmethod
+    async def _call_polling_tasks_once(cls):
+        print(f'CALLING_CLEANUP @ {datetime.now()}')
+        Users.prune_deleted_users()
+        CallbackContextState.prune_expired_contexts()
+        MessageContextState.prune_expired_contexts()
 
     def start_bot(self):
         assert self.bot is None
         self.bot = self.create_tele_bot()
-        self.schedule_tasks([self.run_polling_tasks])
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        # ensure scheduled tasks don't crash before running them in background
+        loop.run_until_complete(self._call_polling_tasks_once())
+        loop.create_task(self._call_polling_tasks_routine())
 
         builder = self.create_application_builder()
         builder.concurrent_updates(constants.MAX_CONCURRENT_UPDATES)
@@ -160,9 +159,6 @@ class RankedChoiceBot(BaseAPI):
         # self.app.add_error_handler(self.error_handler)
         self.app.run_polling(allowed_updates=BaseTeleUpdate.ALL_TYPES)
         print('<<< BOT POLLING LOOP ENDED >>>')
-        for process in self.scheduled_processes:
-            process.terminate()
-            process.join()
 
     @staticmethod
     async def post_init(application: Application):

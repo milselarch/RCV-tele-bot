@@ -17,7 +17,7 @@ from database.subscription_tiers import SubscriptionTiers
 from database.db_helpers import BoundRowFields, UserID
 from database import db
 from database import (
-    ContextStates, SerializableChatContext, Users, Polls,
+    ChatContextStateTypes, SerializableChatContext, Users, Polls,
     ChatWhitelist, UsernameWhitelist, PollOptions, PollVoters
 )
 
@@ -166,8 +166,8 @@ class PollCreationChatContext(SerializableChatContext):
         # TODO: type hint the input params somehow?
         super().__init__(**kwargs)
 
-    def get_context_type(self) -> ContextStates:
-        return ContextStates.POLL_CREATION
+    def get_context_type(self) -> ChatContextStateTypes:
+        return ChatContextStateTypes.POLL_CREATION
 
     def get_user_id(self) -> UserID:
         return UserID(self.user_id)
@@ -241,10 +241,12 @@ class VoteChatContext(SerializableChatContext):
     def get_chat_id(self) -> int:
         return self.chat_id
 
-    def get_context_type(self) -> ContextStates:
-        return ContextStates.CAST_VOTE
+    def get_context_type(self) -> ChatContextStateTypes:
+        return ChatContextStateTypes.CAST_VOTE
 
-    def set_poll_id_from_str(self, raw_poll_id: str) -> Result[bool, ValueError]:
+    def set_poll_id_from_str(
+        self, raw_poll_id: str
+    ) -> Result[bool, ValueError]:
         try:
             poll_id = int(raw_poll_id)
         except ValueError:

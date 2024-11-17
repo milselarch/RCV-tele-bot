@@ -24,7 +24,7 @@ from telegram import (
     Update as BaseTeleUpdate, User as TeleUser
 )
 
-from database import Users, Polls, ChatWhitelist, ContextStates
+from database import Users, Polls, ChatWhitelist, ChatContextStateTypes
 from database.database import (
     UserID, CallbackContextState
 )
@@ -42,7 +42,7 @@ class ExtractedContext(object):
     user: Users
     message_text: str
     chat_context: CallbackContextState
-    context_type: ContextStates
+    context_type: ChatContextStateTypes
 
 
 class ModifiedTeleUpdate(object):

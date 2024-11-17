@@ -1,54 +1,57 @@
 from __future__ import annotations
 
-import json
 import datetime
-import pydantic
+from typing import Self, Type, TypeVar
 
-from database.users import Users
-from database.db_helpers import UserID, EmptyField, Empty, BoundRowFields
-from database.setup import database_proxy, BaseModel
+import pydantic
+import json
 
 from enum import StrEnum
-from typing import TypeVar, Type, Self
 from abc import ABCMeta, abstractmethod
 from result import Result, Ok, Err
-from helpers import constants
+
+from database.db_helpers import UserID, BoundRowFields, EmptyField, Empty
+from database.users import Users
+from database.setup import BaseModel, database_proxy
 from peewee import (
-    BigAutoField, ForeignKeyField, BigIntegerField, CharField,
+    ForeignKeyField, BigAutoField, BigIntegerField, CharField,
     TextField, DateTimeField
 )
+
+from helpers import constants
 
 P = TypeVar('P', bound=pydantic.BaseModel)
 
 
-class ChatContextStateTypes(StrEnum):
-    POLL_CREATION = "POLL_CREATION"
-    CAST_VOTE = "CAST_VOTE"
+class MessageContextStateTypes(StrEnum):
+    VOTE = 'VOTE'
 
 
-class CallbackContextState(BaseModel):
+class MessageContextState(BaseModel):
     id = BigAutoField(primary_key=True)
     user = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
-    chat_id = BigIntegerField(null=False)  # telegram chat ID
+    message_id = BigIntegerField(null=False)
     context_type = CharField(max_length=255, null=False)
     state = TextField(null=False)
     last_updated_at = DateTimeField(default=datetime.datetime.now, null=False)
 
     indexes = (
-        # Unique multi-column index for user-chat_id pairs
-        (('user', 'chat_id'), True),
+        # Unique multi-column index for user-message_id pairs
+        (('user', 'message_id'), True),
     )
 
-    def update_state(self, new_state: SerializableChatContext):
+    def update_state(self, new_state: SerializableMessageContext):
         self.state = new_state.dump_to_json_str()
         self.last_updated_at = datetime.datetime.now()
         self.save()
 
-    def get_context_type(self) -> Result[ChatContextStateTypes, ValueError]:
+    def get_context_type(self) -> Result[
+        MessageContextStateTypes, ValueError
+    ]:
         try:
-            return Ok(ChatContextStateTypes(self.context_type))
+            return Result.Ok(MessageContextStateTypes(self.context_type))
         except ValueError as e:
-            return Err(e)
+            return Result.Err(e)
 
     def deserialize_state(self) -> dict[str, any]:
         return json.loads(self.state)
@@ -66,9 +69,9 @@ class CallbackContextState(BaseModel):
     @classmethod
     def build_from_fields(
         cls, user_id: UserID | EmptyField = Empty,
-        chat_id: int | EmptyField = Empty,
-        context_type: ChatContextStateTypes | EmptyField = Empty,
-        state: SerializableChatContext | EmptyField = Empty
+        message_id: int | EmptyField = Empty,
+        context_type: MessageContextStateTypes | EmptyField = Empty,
+        state: SerializableMessageContext | EmptyField = Empty
     ) -> BoundRowFields[Self]:
         raw_context_type: str | EmptyField = Empty
         if context_type is not Empty:
@@ -79,13 +82,13 @@ class CallbackContextState(BaseModel):
             serialized_state = state.dump_to_json_str()
 
         return BoundRowFields(cls, {
-            cls.user: user_id, cls.chat_id: chat_id,
+            cls.user: user_id, cls.message_id: message_id,
             cls.context_type: raw_context_type,
             cls.state: serialized_state
         })
 
 
-class SerializableChatContext(pydantic.BaseModel, metaclass=ABCMeta):
+class SerializableMessageContext(pydantic.BaseModel, metaclass=ABCMeta):
     def dump_to_json_str(self) -> str:
         return json.dumps(self.model_dump(mode='json'))
 
@@ -94,20 +97,20 @@ class SerializableChatContext(pydantic.BaseModel, metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def get_chat_id(self) -> int:
+    def get_message_id(self) -> int:
         raise NotImplementedError
 
     @abstractmethod
-    def get_context_type(self) -> ChatContextStateTypes:
+    def get_context_type(self) -> MessageContextStateTypes:
         raise NotImplementedError
 
-    def save_state(self) -> CallbackContextState:
+    def save_state(self) -> MessageContextState:
         user_id = self.get_user_id()
-        chat_id = self.get_chat_id()
+        message_id = self.get_message_id()
 
         with database_proxy.atomic():
-            context_state, _ = CallbackContextState.build_from_fields(
-                user_id=user_id, chat_id=chat_id,
+            context_state, _ = MessageContextState.build_from_fields(
+                user_id=user_id, message_id=message_id,
                 context_type=self.get_context_type()
             ).get_or_create()
 
@@ -115,11 +118,11 @@ class SerializableChatContext(pydantic.BaseModel, metaclass=ABCMeta):
             return context_state
 
     def delete_context(
-        self, user_id: UserID, chat_id: int
+        self, user_id: UserID, message_id: int
     ) -> bool:
         with database_proxy.atomic():
-            context_state_res = CallbackContextState.build_from_fields(
-                user_id=user_id, chat_id=chat_id,
+            context_state_res = MessageContextState.build_from_fields(
+                user_id=user_id, message_id=message_id,
                 context_type=self.get_context_type()
             ).safe_get()
 
@@ -132,7 +135,7 @@ class SerializableChatContext(pydantic.BaseModel, metaclass=ABCMeta):
 
     @classmethod
     def load(
-        cls: Type[P], context: CallbackContextState
+        cls: Type[P], context: MessageContextState
     ) -> Result[P, ValueError]:
         try:
             model: P = cls.model_validate_json(context.state)
