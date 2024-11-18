@@ -62,6 +62,7 @@ class PollMetadata(object):
     _num_voters: int
     num_deleted: int
     num_votes: int
+    max_voters: int
 
     open_registration: bool
     closed: bool
@@ -125,7 +126,8 @@ class Polls(BaseModel):
             id=poll.id, question=poll.desc,
             _num_voters=poll.num_voters, num_votes=poll.num_votes,
             open_registration=poll.open_registration,
-            closed=poll.closed, num_deleted=poll.deleted_voters
+            closed=poll.closed, num_deleted=poll.deleted_voters,
+            max_voters=poll.max_voters
         )
 
     @classmethod

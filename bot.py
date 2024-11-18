@@ -9,6 +9,7 @@ import re
 
 from peewee import JOIN
 from result import Ok, Result
+from sqlalchemy.util import await_only
 
 from handlers.inline_keyboard_handlers import InlineKeyboardHandlers
 from helpers.commands import Command
@@ -36,7 +37,7 @@ from typing import (
 )
 
 from helpers.strings import (
-    POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED
+    POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED, INCREASE_MAX_VOTERS_TEXT
 )
 from helpers.chat_contexts import (
     PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
@@ -105,7 +106,7 @@ class RankedChoiceBot(BaseAPI):
             Command.START: self.start_handler,
             Command.USER_DETAILS: self.user_details_handler,
             Command.CHAT_DETAILS: self.chat_details_handler,
-            Command.CREATE_POLL: self.create_poll,
+            Command.CREATE_PRIVATE_POLL: self.create_poll,
             Command.CREATE_GROUP_POLL: self.create_group_poll,
             Command.REGISTER_USER_ID: self.register_user_by_tele_id,
             Command.WHITELIST_CHAT_REGISTRATION:
@@ -130,7 +131,8 @@ class RankedChoiceBot(BaseAPI):
             Command.UNCLOSE_POLL_ADMIN: self.unclose_poll_admin,
             Command.LOOKUP_FROM_USERNAME_ADMIN:
                 self.lookup_from_username_admin,
-            Command.INSERT_USER_ADMIN: self.insert_user_admin
+            Command.INSERT_USER_ADMIN: self.insert_user_admin,
+            Command.SET_MAX_VOTERS: self.set_max_voters
         }
 
         # on different commands - answer in Telegram
@@ -171,10 +173,10 @@ class RankedChoiceBot(BaseAPI):
         ), (
             Command.CHAT_DETAILS,  'shows chat id'
         ), (
-            Command.CREATE_POLL, 'creates a new poll'
+            Command.CREATE_GROUP_POLL, 'create a new poll'
         ), (
-            Command.CREATE_GROUP_POLL,
-            'creates a new poll that users can self register for'
+            Command.CREATE_PRIVATE_POLL,
+            'create a new poll that users cannot self register for'
         ), (
             Command.REGISTER_USER_ID,
             'registers a user by user_id for a poll'
@@ -363,18 +365,11 @@ class RankedChoiceBot(BaseAPI):
         /has_voted {poll_id}
         """
         message = update.message
-        tele_user: TeleUser | None = update.message.from_user
-        user_tele_id = tele_user.id
+        user = update.user
 
         extract_poll_id_result = TelegramHelpers.extract_poll_id(update)
         if extract_poll_id_result.is_err():
             await message.reply_text('Poll ID not specified')
-            return False
-
-        try:
-            user = Users.build_from_fields(tele_id=user_tele_id).get()
-        except Users.DoesNotExist:
-            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
             return False
 
         user_id = user.get_user_id()
@@ -466,7 +461,7 @@ class RankedChoiceBot(BaseAPI):
             PollCreationChatContext(
                 user_id=user_entry.get_user_id(), chat_id=message.chat.id,
                 max_options=POLL_MAX_OPTIONS, poll_options=[],
-                open_registration=True
+                open_registration=open_registration
             ).save_state()
 
             await message.reply_text(
@@ -576,12 +571,15 @@ class RankedChoiceBot(BaseAPI):
             await error_message.call(message.reply_text)
             return False
 
-        new_poll_id = create_poll_res.unwrap()
+        new_poll: Polls = create_poll_res.unwrap()
+        new_poll_id = int(new_poll.id)
         bot_username = context.bot.username
+
         poll_message = self.generate_poll_info(
             new_poll_id, poll_question, poll_options,
             bot_username=bot_username, closed=False,
-            num_voters=poll_creator.initial_num_voters
+            num_voters=poll_creator.initial_num_voters,
+            max_voters=new_poll.max_voters
         )
 
         chat_type = update.message.chat.type
@@ -603,6 +601,7 @@ class RankedChoiceBot(BaseAPI):
         await message.reply_text(
             poll_message, reply_markup=reply_markup
         )
+        await message.reply_text(INCREASE_MAX_VOTERS_TEXT)
 
     @classmethod
     async def whitelist_chat_registration(
@@ -1127,7 +1126,7 @@ class RankedChoiceBot(BaseAPI):
         creator_id: UserID = poll.get_creator().get_user_id()
         if creator_id != user_id:
             await message.reply_text(
-                'only poll creator is allowed to close poll'
+                "Only the creator of this poll is allowed to close it"
             )
             return False
 
@@ -1640,6 +1639,43 @@ class RankedChoiceBot(BaseAPI):
             return await message.reply_text(f'Poll winner is: {option_name}')
         else:
             return await message.reply_text('Poll has no winner')
+
+    async def set_max_voters(
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+    ):
+        message = update.message
+        raw_args = TelegramHelpers.read_raw_command_args(update)
+        user = update.user
+
+        if raw_args == '':
+            raise NotImplementedError
+        elif constants.ID_PATTERN.match(raw_args) is not None:
+            raise NotImplementedError
+
+        # matches two numbers seperated by a space
+        pattern = re.compile(r'^([1-9]\d*)\s+([1-9]\d*)$')
+        match_result = pattern.match(raw_args)
+        if match_result is None:
+            return await message.reply_text("")
+
+        poll_id = int(match_result[1])
+        new_max_voters = int(match_result[2])
+        poll_res = Polls.build_from_fields(
+            poll_id=poll_id, creator_id=user.get_user_id()
+        ).safe_get()
+
+        if poll_res.is_err():
+            return await message.reply_text(
+                "Only the poll's creator is allowed to change "
+                "the max number of voters"
+            )
+
+        poll = poll_res.unwrap()
+        if poll.max_voters <= new_max_voters:
+            return await message.reply_text(
+                "New poll max voter limit must be greater "
+                "than the existing limit"
+            )
 
 
 if __name__ == '__main__':

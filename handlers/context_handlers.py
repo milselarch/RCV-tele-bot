@@ -9,14 +9,14 @@ from base_api import BaseAPI
 from bot_middleware import track_errors
 from helpers import strings
 from helpers.commands import Command
-from helpers.strings import READ_SUBSCRIPTION_TIER_FAILED
+from helpers.strings import READ_SUBSCRIPTION_TIER_FAILED, INCREASE_MAX_VOTERS_TEXT
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from helpers.chat_contexts import (
     PollCreationChatContext, VoteChatContext, ExtractedChatContext,
     extract_chat_context
 )
 
-from database import Users, CallbackContextState, ChatContextStateTypes
+from database import Users, CallbackContextState, ChatContextStateTypes, Polls
 
 
 class BaseContextHandler(object, metaclass=ABCMeta):
@@ -110,7 +110,8 @@ class PollCreationContextHandler(BaseContextHandler):
             error_message = create_poll_res.err()
             return await error_message.call(message.reply_text)
 
-        poll_id = create_poll_res.unwrap()
+        new_poll: Polls = create_poll_res.unwrap()
+        poll_id = int(new_poll.id)
         # self-destruct context once processed
         chat_context.delete_instance()
 
@@ -142,15 +143,24 @@ class PollCreationContextHandler(BaseContextHandler):
         escaped_deep_link_url = strings.escape_markdown(deep_link_url)
 
         await reply_text(poll_message.text, reply_markup=reply_markup)
+        group_chat_text = (
+            "in the group chat of your choice to allow chat members "
+            "to register and vote for the poll"
+        )
+        share_link_text = (
+            "Alternatively, click the following link to share the "
+            "poll to the group chat of your choice:"
+        )
+
         # https://stackoverflow.com/questions/76538913/
         return await message.reply_markdown_v2(textwrap.dedent(f"""
-            Poll created successfully\\. Run the following command:  
-            `/{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}`
-            in the group chat of your choice to allow chat members
-            to register and vote for the poll\\.  
+            {strings.escape_markdown(INCREASE_MAX_VOTERS_TEXT)}
             
-            Alternatively, click the following link to share the 
-            poll to the group chat of your choice:  
+            Run the following command:  
+            `/{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}` 
+            {group_chat_text}\\.  
+            
+            {share_link_text}  
             [{escaped_deep_link_url}]({escaped_deep_link_url})
         """))
 
