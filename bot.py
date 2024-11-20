@@ -9,11 +9,13 @@ import re
 
 from peewee import JOIN
 from result import Ok, Result
-from sqlalchemy.util import await_only
 
 from handlers.inline_keyboard_handlers import InlineKeyboardHandlers
+from handlers.payment_handlers import PaymentHandlers
+from handlers.start_handlers import start_handlers
 from helpers.commands import Command
 from helpers.message_buillder import MessageBuilder
+from logging import handlers as log_handlers
 from datetime import datetime
 
 from helpers import strings
@@ -37,7 +39,8 @@ from typing import (
 )
 
 from helpers.strings import (
-    POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED, INCREASE_MAX_VOTERS_TEXT
+    POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED,
+    INCREASE_MAX_VOTERS_TEXT
 )
 from helpers.chat_contexts import (
     PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
@@ -55,13 +58,22 @@ from base_api import (
 
 from tele_helpers import TelegramHelpers
 
+# https://stackoverflow.com/questions/15892946/
+# We should empty root.handlers before calling basicConfig() method.
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
 
+file_log_handler = log_handlers.TimedRotatingFileHandler(
+    'logs/log_events.txt', when='W6'
+)
+file_log_handler.setLevel(logging.WARNING)
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    handlers=[logging.StreamHandler(), file_log_handler]
 )
-
 logger = logging.getLogger(__name__)
+logger.warning("<<< INITIALIZING >>>")
 
 
 class RankedChoiceBot(BaseAPI):
@@ -83,7 +95,7 @@ class RankedChoiceBot(BaseAPI):
     @classmethod
     async def _call_polling_tasks_once(cls):
         print(f'CALLING_CLEANUP @ {datetime.now()}')
-        Users.prune_deleted_users()
+        Users.prune_deleted_users(logger)
         CallbackContextState.prune_expired_contexts()
         MessageContextState.prune_expired_contexts()
 
@@ -100,10 +112,12 @@ class RankedChoiceBot(BaseAPI):
         builder = self.create_application_builder()
         builder.concurrent_updates(constants.MAX_CONCURRENT_UPDATES)
         builder.post_init(self.post_init)
+
         self.app = builder.build()
+        payment_handlers = PaymentHandlers(logger)
 
         commands_mapping = {
-            Command.START: self.start_handler,
+            Command.START: start_handlers.start_handler,
             Command.USER_DETAILS: self.user_details_handler,
             Command.CHAT_DETAILS: self.chat_details_handler,
             Command.CREATE_PRIVATE_POLL: self.create_poll,
@@ -132,7 +146,7 @@ class RankedChoiceBot(BaseAPI):
             Command.LOOKUP_FROM_USERNAME_ADMIN:
                 self.lookup_from_username_admin,
             Command.INSERT_USER_ADMIN: self.insert_user_admin,
-            Command.SET_MAX_VOTERS: self.set_max_voters
+            Command.SET_MAX_VOTERS: payment_handlers.set_max_voters
         }
 
         # on different commands - answer in Telegram
@@ -154,7 +168,7 @@ class RankedChoiceBot(BaseAPI):
             self.app, filters.Regex(r'.*') & filters.TEXT,
             context_handlers.handle_other_messages
         )
-        inline_keyboard_handlers = InlineKeyboardHandlers()
+        inline_keyboard_handlers = InlineKeyboardHandlers(logger)
         TelegramHelpers.register_callback_handler(
             self.app, inline_keyboard_handlers.route
         )
@@ -218,75 +232,6 @@ class RankedChoiceBot(BaseAPI):
         ), (
             Command.DONE, 'finish creating a poll or ranked vote'
         )])
-
-    async def start_handler(
-        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
-    ):
-        # Send a message when the command /start is issued.
-        message = update.message
-        chat_type = update.message.chat.type
-        args = context.args
-        # print('CONTEXT_ARGS', args)
-
-        if len(args) == 0:
-            await update.message.reply_text('Bot started')
-            return True
-
-        command_params: str = args[0]
-        assert isinstance(command_params, str)
-        invalid_param_msg = f'Invalid params: {args}'
-        if command_params.count('=') != 1:
-            return await update.message.reply_text(invalid_param_msg)
-
-        param_name, param_value = command_params.split('=')
-
-        match param_name:
-            case strings.POLL_ID_GET_PARAM:
-                if chat_type != 'private':
-                    return await update.message.reply_text(
-                        'Can only vote with /start in DM'
-                    )
-                try:
-                    poll_id = int(param_value)
-                except ValueError:
-                    return await update.message.reply_text(invalid_param_msg)
-
-                tele_user: TeleUser = message.from_user
-                assert tele_user is not None
-                user: Users = update.user
-
-                user_id = user.get_user_id()
-                view_poll_result = self.get_poll_message(
-                    poll_id=poll_id, user_id=user_id,
-                    bot_username=context.bot.username,
-                    username=tele_user.username
-                )
-
-                if view_poll_result.is_err():
-                    error_message = view_poll_result.err()
-                    await error_message.call(message.reply_text)
-                    return False
-
-                poll_message = view_poll_result.unwrap()
-                reply_markup = ReplyKeyboardMarkup(
-                    self.build_private_vote_markup(
-                        poll_id=poll_id, tele_user=tele_user
-                    )
-                )
-                return await message.reply_text(
-                    poll_message.text, reply_markup=reply_markup
-                )
-            case strings.WHITELIST_POLL_ID_GET_PARAM:
-                try:
-                    poll_id = int(param_value)
-                except ValueError:
-                    return await update.message.reply_text(invalid_param_msg)
-
-                return await TelegramHelpers.set_chat_registration_status(
-                    update, context, whitelist=True, poll_id=poll_id
-                )
-            case _:
-                return await update.message.reply_text(invalid_param_msg)
 
     @track_errors
     async def web_app_handler(self, update: ModifiedTeleUpdate, _):
@@ -1244,7 +1189,7 @@ class RankedChoiceBot(BaseAPI):
                 return False
 
             user_tele_id = int(raw_tele_id)
-            
+
             try:
                 user = Users.build_from_fields(tele_id=user_tele_id).get()
             except Users.DoesNotExist:
@@ -1334,13 +1279,7 @@ class RankedChoiceBot(BaseAPI):
         message: Message = update.message
         tele_user = message.from_user
         user_tele_id = tele_user.id
-
-        try:
-            user = Users.build_from_fields(tele_id=user_tele_id).get()
-            user_id = user.get_user_id()
-        except Users.DoesNotExist:
-            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
-            return False
+        user_id = update.user.get_user_id()
 
         if user_tele_id is None:
             await message.reply_text("user not found")
@@ -1378,12 +1317,15 @@ class RankedChoiceBot(BaseAPI):
 
         poll_query = (Polls.id == poll_id) & (Polls.creator == user_id)
         poll = Polls.get_or_none(poll_query)
+        delete_comment = f"Poll #{poll_id} user#{user_id} tele#{user_tele_id}"
 
         if poll is None:
             await message.reply_text(f'poll #{poll_id} not found')
             return False
         elif force_delete:
+            logger.warning(f"Deleting {delete_comment}")
             Polls.delete().where(poll_query).execute()
+            logger.warning(f"Deleted {delete_comment}")
             await message.reply_text(f'Poll #{poll_id} ({poll.desc}) deleted')
             return True
         elif not poll.closed:
@@ -1407,6 +1349,8 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def delete_account(self, update: ModifiedTeleUpdate, *_, **__):
+        tele_user_id = update.message.from_user.id
+        assert isinstance(tele_user_id, int)
         deletion_token = TelegramHelpers.read_raw_command_args(update)
         # print('DEL_TOKEN', [deletion_token])
 
@@ -1423,6 +1367,7 @@ class RankedChoiceBot(BaseAPI):
 
         user: Users = update.user
         user_id = user.get_user_id()
+        assert isinstance(user_id, int)
         hex_stamp, short_hash = deletion_token.split(':')
         deletion_stamp = int(hex_stamp, 16)
         validation_result = self.validate_delete_token(
@@ -1432,35 +1377,22 @@ class RankedChoiceBot(BaseAPI):
             err_message = validation_result.err()
             return await update.message.reply_text(err_message)
 
+        logger.warning(
+            f"Scheduling deleting user#{user_id} tele#{tele_user_id}"
+        )
         try:
             with db.atomic():
-                # delete all polls created by the user
-                Polls.delete().where(Polls.creator == user_id).execute()
                 user.deleted_at = datetime.now()  # mark as deleted
                 user.save()
-
-                poll_registrations: Iterable[PollVoters] = (
-                    PollVoters.select().where(PollVoters.user == user_id)
-                )
-                for poll_registration in poll_registrations:
-                    poll: Polls = poll_registration.poll
-
-                    if poll.closed:
-                        # decouple poll voter from user
-                        poll_registration.user = None
-                        poll_registration.save()
-                    else:
-                        # delete poll voter and increment deleted voters count
-                        poll.deleted_voters += 1
-                        poll_registration.delete_instance()
-                        poll.save()
-
         except Exception as e:
             await update.message.reply_text(
                 'Unexpected error occurred during account deletion'
             )
             raise e
 
+        logger.warning(
+            f"Scheduled deleting user#{user_id} tele#{tele_user_id}"
+        )
         return await update.message.reply_text(
             'Account deleted successfully'
         )
@@ -1639,43 +1571,6 @@ class RankedChoiceBot(BaseAPI):
             return await message.reply_text(f'Poll winner is: {option_name}')
         else:
             return await message.reply_text('Poll has no winner')
-
-    async def set_max_voters(
-        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
-    ):
-        message = update.message
-        raw_args = TelegramHelpers.read_raw_command_args(update)
-        user = update.user
-
-        if raw_args == '':
-            raise NotImplementedError
-        elif constants.ID_PATTERN.match(raw_args) is not None:
-            raise NotImplementedError
-
-        # matches two numbers seperated by a space
-        pattern = re.compile(r'^([1-9]\d*)\s+([1-9]\d*)$')
-        match_result = pattern.match(raw_args)
-        if match_result is None:
-            return await message.reply_text("")
-
-        poll_id = int(match_result[1])
-        new_max_voters = int(match_result[2])
-        poll_res = Polls.build_from_fields(
-            poll_id=poll_id, creator_id=user.get_user_id()
-        ).safe_get()
-
-        if poll_res.is_err():
-            return await message.reply_text(
-                "Only the poll's creator is allowed to change "
-                "the max number of voters"
-            )
-
-        poll = poll_res.unwrap()
-        if poll.max_voters <= new_max_voters:
-            return await message.reply_text(
-                "New poll max voter limit must be greater "
-                "than the existing limit"
-            )
 
 
 if __name__ == '__main__':

@@ -19,7 +19,8 @@ from typing_extensions import Any
 from strenum import StrEnum
 from requests import PreparedRequest
 
-from helpers import strings, constants
+from handlers.start_get_params import StartGetParams
+from helpers import constants
 from helpers.strings import generate_poll_closed_message
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
@@ -699,7 +700,7 @@ class BaseAPI(object):
         poll_url = cls.generate_poll_url(
             poll_id=poll_id, tele_user=tele_user
         )
-        logger.info(f'POLL_URL = {poll_url}')
+        logger.warning(f'POLL_URL = {poll_url}')
         # create vote button for reply message
         markup_layout = [[KeyboardButton(
             text=f'Vote for Poll #{poll_id}', web_app=WebAppInfo(url=poll_url)
@@ -919,7 +920,7 @@ class BaseAPI(object):
             in enumerate(poll_options)
         ]
 
-        args = f'{strings.POLL_ID_GET_PARAM}={poll_id}'
+        args = f'{StartGetParams.POLL_ID}={poll_id}'
         stamp = int(time.time())
         deep_link_url = (
             f'https://t.me/{bot_username}?start={args}&stamp={stamp}'

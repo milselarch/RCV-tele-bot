@@ -7,15 +7,17 @@ from telegram import Message, User as TeleUser
 from telegram.ext import ContextTypes
 from base_api import BaseAPI
 from bot_middleware import track_errors
+from handlers.start_handlers import StartGetParams
 from helpers import strings
 from helpers.commands import Command
-from helpers.strings import READ_SUBSCRIPTION_TIER_FAILED, INCREASE_MAX_VOTERS_TEXT
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from helpers.chat_contexts import (
     PollCreationChatContext, VoteChatContext, ExtractedChatContext,
     extract_chat_context
 )
-
+from helpers.strings import (
+    READ_SUBSCRIPTION_TIER_FAILED, INCREASE_MAX_VOTERS_TEXT
+)
 from database import Users, CallbackContextState, ChatContextStateTypes, Polls
 
 
@@ -138,7 +140,7 @@ class PollCreationContextHandler(BaseContextHandler):
         bot_username = context.bot.username
         deep_link_url = (
             f'https://t.me/{bot_username}?startgroup='
-            f'{strings.WHITELIST_POLL_ID_GET_PARAM}={poll_id}'
+            f'{StartGetParams.WHITELIST_POLL_ID}={poll_id}'
         )
         escaped_deep_link_url = strings.escape_markdown(deep_link_url)
 

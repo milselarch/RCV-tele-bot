@@ -5,8 +5,6 @@ from helpers.commands import Command
 
 __VERSION__ = '1.3.0'
 
-POLL_ID_GET_PARAM = 'poll_id'
-WHITELIST_POLL_ID_GET_PARAM = 'whitelist_poll'
 READ_SUBSCRIPTION_TIER_FAILED = "Unexpected error reading subscription tier"
 POLL_OPTIONS_LIMIT_REACHED_TEXT = textwrap.dedent(f"""
     Poll creation limit reached
@@ -102,18 +100,19 @@ HELP_TEXT = textwrap.dedent(f"""
 
 def generate_delete_text(deletion_token: str) -> str:
     return textwrap.dedent(f"""
-        Deleting your account will accomplish the following:
+        Note that the following will happen immediately:
+        - your user account will be marked as deleted and you
+          will not be able to create new polls or vote using
+          your account moving forward
+        
+        Note that the following will happen 28 days after:
         - all polls you've created will be deleted
         - all votes you've cast for any ongoing polls
           will be deleted, and you will be deregistered
           from these ongoing polls
         - all votes you've cast for any closed polls will
           be decoupled from your user account
-        - your user account will be marked as deleted and you
-          will not be able to create new polls or vote using
-          your account moving forward
         - your user account will be removed from the database
-          28 days after being marked for deletion 
         
         Confirm account deletion by running the delete command 
         with the provided deletion token:

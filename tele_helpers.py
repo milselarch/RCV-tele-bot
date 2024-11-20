@@ -52,6 +52,10 @@ class ModifiedTeleUpdate(object):
     def effective_message(self):
         return self.update.effective_message
 
+    @property
+    def pre_checkout_query(self):
+        return self.update.pre_checkout_query
+
 
 class TelegramHelpers(object):
     @classmethod
@@ -165,7 +169,7 @@ class TelegramHelpers(object):
             user, _ = Users.build_from_fields(tele_id=tele_id).get_or_create()
             # don't allow deleted users to interact with the bot
             if user.deleted_at is not None:
-                await tele_user.send_message("User has been deleted")
+                await tele_user.send_message("Account has been deleted")
                 return False
 
             # update user tele id to username mapping

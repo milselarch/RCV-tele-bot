@@ -141,4 +141,4 @@ class SerializableMessageContext(pydantic.BaseModel, metaclass=ABCMeta):
             model: P = cls.model_validate_json(context.state)
             return Ok(model)
         except ValueError as e:
-            Err(e)
+            return Err(e)

@@ -1,1 +1,5 @@
 from handlers import context_handlers
+from handlers import payment_handlers
+from handlers import inline_keyboard_handlers
+from handlers import start_handlers
+from handlers import start_get_params

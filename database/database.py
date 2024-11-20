@@ -147,13 +147,15 @@ class Polls(BaseModel):
         })
 
     @classmethod
-    def get_as_creator(cls, poll_id: int, user_id: UserID) -> Polls:
+    def get_as_creator(
+        cls, poll_id: int, user_id: UserID
+    ) -> Result[Polls, Polls.DoesNotExist]:
         # TODO: wrap this in a Result with an enum error type
         #   (not found, unauthorized, etc) and use this in
         #   register_user_by_tele_id
         return cls.build_from_fields(
             poll_id=poll_id, creator_id=user_id
-        ).get()
+        ).safe_get()
 
     @classmethod
     def count_polls_created(cls, user_id: UserID) -> int:
