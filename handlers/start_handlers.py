@@ -120,7 +120,7 @@ class StartHandlers(object):
             return await message.reply_text(invalid_param_msg)
 
         if start_param_enum not in self.handlers_mapping:
-            return await message.reply_text(f'{param_value} not supported')
+            return await message.reply_text(f'{param_name} not supported')
 
         context_handler_cls = self.handlers_mapping[start_param_enum]
         context_handler = context_handler_cls()

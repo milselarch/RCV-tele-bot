@@ -11,6 +11,8 @@
     "database.PollOptions",
     "database.VoteRankings",
     "database.PollWinners",
-    "database.CallbackContextState"
+    "database.CallbackContextState",
+    "database.MessageContextState",
+    "database.Payments"
   ]
 }

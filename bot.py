@@ -153,6 +153,9 @@ class RankedChoiceBot(BaseAPI):
         TelegramHelpers.register_commands(
             self.app, commands_mapping=commands_mapping
         )
+        TelegramHelpers.register_pre_checkout_handler(
+            self.app, payment_handlers.pre_checkout_callback
+        )
         # catch-all to handle responses to unknown commands
         TelegramHelpers.register_message_handler(
             self.app, filters.Regex(r'^/') & filters.COMMAND,
@@ -162,6 +165,11 @@ class RankedChoiceBot(BaseAPI):
         TelegramHelpers.register_message_handler(
             self.app, filters.StatusUpdate.WEB_APP_DATA,
             self.web_app_handler
+        )
+        # handle payment-related messages
+        TelegramHelpers.register_message_handler(
+            self.app, filters.SUCCESSFUL_PAYMENT,
+            payment_handlers.successful_payment_callback
         )
         # catch-all to handle all other messages
         TelegramHelpers.register_message_handler(

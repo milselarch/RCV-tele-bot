@@ -13,7 +13,7 @@ from helpers.message_buillder import MessageBuilder
 from telegram import Message
 from telegram.ext import (
     Application, MessageHandler, CallbackContext, CallbackQueryHandler,
-    CommandHandler, ContextTypes
+    CommandHandler, ContextTypes, PreCheckoutQueryHandler
 )
 # noinspection PyProtectedMember
 from telegram.ext._utils.types import CCT, RT
@@ -149,6 +149,9 @@ class TelegramHelpers(object):
             elif is_tele_update and update.callback_query is not None:
                 query = update.callback_query
                 tele_user = query.from_user
+            elif update.pre_checkout_query is not None:
+                query = update.pre_checkout_query
+                tele_user = query.from_user
             else:
                 tele_user = None
 
@@ -206,6 +209,15 @@ class TelegramHelpers(object):
         callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
     ):
         dispatcher.add_handler(CallbackQueryHandler(
+            cls.users_middleware(callback, include_self=False)
+        ))
+
+    @classmethod
+    def register_pre_checkout_handler(
+        cls, dispatcher: Application,
+        callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
+    ):
+        dispatcher.add_handler(PreCheckoutQueryHandler(
             cls.users_middleware(callback, include_self=False)
         ))
 

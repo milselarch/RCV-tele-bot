@@ -11,6 +11,7 @@ from result import Result, Ok, Err
 
 from database.setup import DB, BaseModel, database_proxy
 from database.users import Users
+from database.payments import Payments
 from database.callback_context_state import CallbackContextState
 from database.message_context_state import MessageContextState
 
@@ -30,10 +31,11 @@ initialised_db: DB | None = None
 
 
 def get_tables() -> list[Type[BaseModel]]:
+    print('GETTING')
     return [
         Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
         PollOptions, VoteRankings, PollWinners, CallbackContextState,
-        MessageContextState
+        MessageContextState, Payments
     ]
 
 
