@@ -12,7 +12,7 @@ from telegram import LabeledPrice
 from abc import ABCMeta, abstractmethod
 
 from database.db_helpers import UserID
-from handlers.start_get_params import StartGetParams
+from helpers.start_get_params import StartGetParams
 # from handlers.start_get_params import StartGetParams
 from helpers import constants, strings
 from helpers.commands import Command

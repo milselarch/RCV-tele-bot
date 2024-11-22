@@ -8,7 +8,7 @@ from helpers import strings
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from telegram import User as TeleUser, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
-from handlers.start_get_params import StartGetParams
+from helpers.start_get_params import StartGetParams
 
 
 class BaseMessageHandler(object, metaclass=ABCMeta):

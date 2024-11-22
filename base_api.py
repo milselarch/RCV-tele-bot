@@ -19,7 +19,7 @@ from typing_extensions import Any
 from strenum import StrEnum
 from requests import PreparedRequest
 
-from handlers.start_get_params import StartGetParams
+from helpers.start_get_params import StartGetParams
 from helpers import constants
 from helpers.strings import generate_poll_closed_message
 from load_config import TELEGRAM_BOT_TOKEN
