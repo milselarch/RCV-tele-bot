@@ -1,0 +1,1100 @@
+2024-11-20 16:44:53,153 - __main__ - INFO - <<< INITIALIZING >>>
+2024-11-20 16:45:31,583 - __main__ - INFO - Deleting Poll #61 user#107 tele#300546099
+2024-11-20 16:45:31,587 - __main__ - INFO - Deleted Poll #61 user#107 tele#300546099
+2024-11-20 16:50:21,315 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-20 16:50:22,765 - __main__ - INFO - <<< INITIALIZING >>>
+2024-11-20 16:50:29,512 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:96> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-20 16:56:10,219 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-20 20:38:18,701 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-20 20:40:04,083 - base_api - WARNING - POLL_URL = https://rcvdev.milselarch.com/?poll_id=62&auth_date=1732106404&query_id=%5C%28kzw_._p%5D%7C%3D%3C7pb~%5E%27twqijpG1%5B30fd&user=%7B%22id%22%3A+300546099%2C+%22username%22%3A+%22milselarch%22%7D&hash=191fb6681c88d89f710a5e21c7b6a084bc7d2ab944ac9e23879adf593cceac8a
+2024-11-20 20:44:54,203 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 09:41:03,057 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 09:41:13,098 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 11:04:55,020 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 11:05:04,267 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3251, in execute_sql
+    cursor.execute(sql, params or ())
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 153, in execute
+    result = self._query(query)
+             ^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 322, in _query
+    conn.query(q)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 563, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 825, in _read_query_result
+    result.read()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 1199, in read
+    first_packet = self.connection._read_packet()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 775, in _read_packet
+    packet.raise_for_error()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/protocol.py", line 219, in raise_for_error
+    err.raise_mysql_exception(self._data)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/err.py", line 150, in raise_mysql_exception
+    raise errorclass(errno, errval)
+pymysql.err.OperationalError: (1054, "Unknown column 'created_at' in 'field list'")
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 187, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 175, in set_max_voters
+    ).create()
+      ^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/database/db_helpers.py", line 88, in create
+    return self.__base_model.create(**self._fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 6596, in create
+    inst.save(force_insert=True)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 6806, in save
+    pk = self.insert(**field_dict).execute()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 1971, in inner
+    return method(self, database, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 2042, in execute
+    return self._execute(database)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 2847, in _execute
+    return super(Insert, self)._execute(database)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 2560, in _execute
+    cursor = database.execute(self)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3259, in execute
+    return self.execute_sql(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/playhouse/shortcuts.py", line 272, in execute_sql
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/playhouse/shortcuts.py", line 256, in execute_sql
+    return super(ReconnectMixin, self).execute_sql(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3249, in execute_sql
+    with __exception_wrapper__:
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3019, in __exit__
+    reraise(new_type, new_type(exc_value, *exc_args), traceback)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 192, in reraise
+    raise value.with_traceback(tb)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3251, in execute_sql
+    cursor.execute(sql, params or ())
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 153, in execute
+    result = self._query(query)
+             ^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 322, in _query
+    conn.query(q)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 563, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 825, in _read_query_result
+    result.read()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 1199, in read
+    first_packet = self.connection._read_packet()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 775, in _read_packet
+    packet.raise_for_error()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/protocol.py", line 219, in raise_for_error
+    err.raise_mysql_exception(self._data)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/err.py", line 150, in raise_mysql_exception
+    raise errorclass(errno, errval)
+peewee.OperationalError: (1054, "Unknown column 'created_at' in 'field list'")
+2024-11-21 11:05:12,305 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 11:05:12,338 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Application:6208726897:update_fetcher' coro=<Application._update_fetcher() running at /home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py:1110> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 11:05:35,391 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 11:05:41,901 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3251, in execute_sql
+    cursor.execute(sql, params or ())
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 153, in execute
+    result = self._query(query)
+             ^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 322, in _query
+    conn.query(q)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 563, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 825, in _read_query_result
+    result.read()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 1199, in read
+    first_packet = self.connection._read_packet()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 775, in _read_packet
+    packet.raise_for_error()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/protocol.py", line 219, in raise_for_error
+    err.raise_mysql_exception(self._data)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/err.py", line 150, in raise_mysql_exception
+    raise errorclass(errno, errval)
+pymysql.err.OperationalError: (1054, "Unknown column 'created_at' in 'field list'")
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 187, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 175, in set_max_voters
+    ).create()
+      ^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/database/db_helpers.py", line 88, in create
+    return self.__base_model.create(**self._fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 6596, in create
+    inst.save(force_insert=True)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 6806, in save
+    pk = self.insert(**field_dict).execute()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 1971, in inner
+    return method(self, database, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 2042, in execute
+    return self._execute(database)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 2847, in _execute
+    return super(Insert, self)._execute(database)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 2560, in _execute
+    cursor = database.execute(self)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3259, in execute
+    return self.execute_sql(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/playhouse/shortcuts.py", line 272, in execute_sql
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/playhouse/shortcuts.py", line 256, in execute_sql
+    return super(ReconnectMixin, self).execute_sql(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3249, in execute_sql
+    with __exception_wrapper__:
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3019, in __exit__
+    reraise(new_type, new_type(exc_value, *exc_args), traceback)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 192, in reraise
+    raise value.with_traceback(tb)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3251, in execute_sql
+    cursor.execute(sql, params or ())
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 153, in execute
+    result = self._query(query)
+             ^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 322, in _query
+    conn.query(q)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 563, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 825, in _read_query_result
+    result.read()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 1199, in read
+    first_packet = self.connection._read_packet()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 775, in _read_packet
+    packet.raise_for_error()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/protocol.py", line 219, in raise_for_error
+    err.raise_mysql_exception(self._data)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/err.py", line 150, in raise_mysql_exception
+    raise errorclass(errno, errval)
+peewee.OperationalError: (1054, "Unknown column 'created_at' in 'field list'")
+2024-11-21 11:08:19,852 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 11:08:20,946 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 11:08:38,329 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 187, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 201, in set_max_voters
+    telegram_payment_charge_id = payment_info.telegram_payment_charge_id
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'telegram_payment_charge_id'
+2024-11-21 11:21:57,799 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 11:30:25,956 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 11:30:38,160 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 11:33:00,565 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 11:33:04,881 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:05:49,345 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:18:07,671 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:18:08,678 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:18:16,797 - tele_helpers - ERROR - NO USER FOUND FOR ENDPOINT <bound method PaymentHandlers.pre_checkout_callback of <handlers.payment_handlers.PaymentHandlers object at 0x7f7f4161eae0>>
+2024-11-21 16:26:19,339 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:26:20,379 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:26:26,696 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 246, in pre_checkout_callback
+    return await handler.pre_checkout_callback(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 96, in pre_checkout_callback
+    invoice_res = IncreaseVoterLimitParams.safe_load_from_json(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 66, in safe_load_from_json
+    model: P = cls.model_validate_json(json_str)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pydantic/main.py", line 532, in model_validate_json
+    return cls.__pydantic_validator__.validate_json(json_data, strict=strict, context=context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: IncreaseVoterLimitParams.__init__() got an unexpected keyword argument 'invoice_type'
+2024-11-21 16:27:39,082 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:27:40,193 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:27:48,119 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 246, in pre_checkout_callback
+    return await handler.pre_checkout_callback(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 96, in pre_checkout_callback
+    invoice_res = IncreaseVoterLimitParams.safe_load_from_json(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 66, in safe_load_from_json
+    model: P = cls.model_validate_json(json_str)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pydantic/main.py", line 532, in model_validate_json
+    return cls.__pydantic_validator__.validate_json(json_data, strict=strict, context=context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: IncreaseVoterLimitParams.__init__() got an unexpected keyword argument 'invoice_type'
+2024-11-21 16:29:12,806 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:29:50,691 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:30:30,302 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 290, in set_max_voters
+    invoice = IncreaseVoterLimitParams(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 56, in __init__
+    super().__init__(
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pydantic/main.py", line 164, in __init__
+    __pydantic_self__.__pydantic_validator__.validate_python(data, self_instance=__pydantic_self__)
+pydantic_core._pydantic_core.ValidationError: 1 validation error for IncreaseVoterLimitParams
+invoice_type
+  Field required [type=missing, input_value={'poll_id': 62, 'voters_increase': 1}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.5/v/missing
+2024-11-21 16:31:42,783 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:31:43,940 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:31:52,218 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 246, in pre_checkout_callback
+    return await handler.pre_checkout_callback(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 96, in pre_checkout_callback
+    invoice_res = IncreaseVoterLimitParams.safe_load_from_json(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 66, in safe_load_from_json
+    model: P = cls.model_validate_json(json_str)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pydantic/main.py", line 532, in model_validate_json
+    return cls.__pydantic_validator__.validate_json(json_data, strict=strict, context=context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: IncreaseVoterLimitParams.__init__() got an unexpected keyword argument 'invoice_type'
+2024-11-21 16:32:04,234 - telegram.ext.Updater - ERROR - Error while getting Updates: httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+2024-11-21 16:32:04,234 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 66, in map_httpcore_exceptions
+    yield
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 366, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 216, in handle_async_request
+    raise exc from None
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 196, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 99, in handle_async_request
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 76, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 122, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_backends/auto.py", line 30, in connect_tcp
+    return await self._backend.connect_tcp(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_backends/anyio.py", line 114, in connect_tcp
+    with map_exceptions(exc_map):
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_httpxrequest.py", line 219, in do_request
+    res = await self._client.request(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1530, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1617, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1645, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1682, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1719, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 365, in handle_async_request
+    with map_httpcore_exceptions():
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 83, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 640, in _network_loop_retry
+    if not await action_cb():
+           ^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 345, in polling_action_cb
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 334, in polling_action_cb
+    updates = await self.bot.get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 565, in get_updates
+    updates = await super().get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 519, in decorator
+    result = await func(self, *args, **kwargs)  # skipcq: PYL-E1102
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 3562, in get_updates
+    await self._post(
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 607, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 347, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 635, in _do_post
+    return await request.post(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 168, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 288, in _request_wrapper
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 278, in _request_wrapper
+    code, payload = await self.do_request(
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_httpxrequest.py", line 243, in do_request
+    raise NetworkError(f"httpx.{err.__class__.__name__}: {err}") from err
+telegram.error.NetworkError: httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+2024-11-21 16:32:05,238 - telegram.ext.Updater - ERROR - Error while getting Updates: httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+2024-11-21 16:32:05,238 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 66, in map_httpcore_exceptions
+    yield
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 366, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 216, in handle_async_request
+    raise exc from None
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 196, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 99, in handle_async_request
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 76, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 122, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_backends/auto.py", line 30, in connect_tcp
+    return await self._backend.connect_tcp(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_backends/anyio.py", line 114, in connect_tcp
+    with map_exceptions(exc_map):
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_httpxrequest.py", line 219, in do_request
+    res = await self._client.request(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1530, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1617, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1645, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1682, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1719, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 365, in handle_async_request
+    with map_httpcore_exceptions():
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 83, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 640, in _network_loop_retry
+    if not await action_cb():
+           ^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 345, in polling_action_cb
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 334, in polling_action_cb
+    updates = await self.bot.get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 565, in get_updates
+    updates = await super().get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 519, in decorator
+    result = await func(self, *args, **kwargs)  # skipcq: PYL-E1102
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 3562, in get_updates
+    await self._post(
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 607, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 347, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 635, in _do_post
+    return await request.post(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 168, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 288, in _request_wrapper
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 278, in _request_wrapper
+    code, payload = await self.do_request(
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_httpxrequest.py", line 243, in do_request
+    raise NetworkError(f"httpx.{err.__class__.__name__}: {err}") from err
+telegram.error.NetworkError: httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+2024-11-21 16:32:40,521 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:33:34,832 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:33:49,124 - __main__ - WARNING - 
+Payment processed successfully:
+user_id=107 user_tele_id=300546099
+payment_charge_id='stxHJrsoYb8AjH2VoajwS5qXzhAOVyQYPhBbQo7XIlHS5P0QDIB052d5NyN9O1CcWul2XUvTkddod3eVK01B4avkh6p3ut5m37XhlfG8vVnp18'
+invoice_payload='{"invoice_type": "INCREASE_VOTER_LIMIT", "payment_id": 4, "poll_id": 62, "voters_increase": 1}'
+
+2024-11-21 16:33:49,607 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 219, in successful_payment_callback
+    return await handler.successful_payment_callback(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 131, in successful_payment_callback
+    receipt_res = Payments.build_from_fields(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/database/payments.py", line 31, in build_from_fields
+    cls.user_id: int(user_id),
+                 ^^^^^^^^^^^^
+TypeError: int() argument must be a string, a bytes-like object or a real number, not 'type'
+2024-11-21 16:37:08,385 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:37:08,426 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Application:6208726897:update_fetcher' coro=<Application._update_fetcher() running at /home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py:1110> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:38:39,753 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:38:52,925 - __main__ - WARNING - 
+Payment processed successfully:
+user_id=107 user_tele_id=300546099
+payment_charge_id='stx-7LnPLCAf3lZB8nsUUgzXeFFNcpmm3UiiphKi1Q63D44-YV67jwN3PjrzfieDjGmgJH60x5ow48Mwv9YbU2-PKG9tep0bAOe0zfpE5r9bhY'
+invoice_payload='{"invoice_type": "INCREASE_VOTER_LIMIT", "payment_id": 5, "poll_id": 62, "voters_increase": 1}'
+
+2024-11-21 16:38:53,391 - __main__ - WARNING - Maximum number of voters for Poll #62 has been raised from 20 to 21
+2024-11-21 16:39:34,810 - base_api - WARNING - POLL_URL = https://rcvdev.milselarch.com/?poll_id=62&auth_date=1732178374&query_id=qn8%7B%3B%5EyC%23c50%5D%28~ssu~yE%25%3CmLJK%3DQomv&user=%7B%22id%22%3A+300546099%2C+%22username%22%3A+%22milselarch%22%7D&hash=a34bcd68d6ee2e5a8b0d9366af2039218c5e63f75bd838454425ead053c0040f
+2024-11-21 16:40:40,509 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:41:51,178 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:42:20,067 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:42:21,200 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:42:46,585 - __main__ - WARNING - 
+Payment processed successfully:
+user_id=107 user_tele_id=300546099
+payment_charge_id='stxuRk7SoGTfmdZcCJNGena4edrgoZCGQaHuhm8v5aNTPtLI6VggQc5ivsDlDQZ2VEjLTOk6OQEhsyK1Th76R63tdHt1WXY6npltS9DfwUG1qU'
+invoice_payload='{"invoice_type": "INCREASE_VOTER_LIMIT", "payment_id": 6, "poll_id": 62, "voters_increase": 1}'
+
+2024-11-21 16:42:47,092 - __main__ - WARNING - Maximum number of voters for Poll #62 has been raised from 21 to 22
+2024-11-21 16:42:59,776 - base_api - WARNING - POLL_URL = https://rcvdev.milselarch.com/?poll_id=62&auth_date=1732178579&query_id=V%23%2A1M%24g%2FCe6CWFN~%40R%23a%21B%27%29%24l_%2Fg3%3Fh&user=%7B%22id%22%3A+300546099%2C+%22username%22%3A+%22milselarch%22%7D&hash=5b5927781d487f902c00c62712ab995a7abfad9ae7912d590799f94ff3d3b0d1
+2024-11-21 16:44:05,953 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:44:10,585 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:44:19,753 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 268, in set_max_voters
+    return await message.reply_text("")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_message.py", line 1095, in reply_text
+    return await self.get_bot().send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 2631, in send_message
+    return await super().send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 519, in decorator
+    result = await func(self, *args, **kwargs)  # skipcq: PYL-E1102
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 840, in send_message
+    return await self._send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 529, in _send_message
+    result = await super()._send_message(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 697, in _send_message
+    result = await self._post(
+             ^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 607, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 347, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 635, in _do_post
+    return await request.post(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 168, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 325, in _request_wrapper
+    raise BadRequest(message)
+telegram.error.BadRequest: Message text is empty
+2024-11-21 16:47:03,618 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:47:04,639 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:53:08,601 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:53:09,624 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 16:53:49,064 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 16:53:50,030 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 17:03:57,774 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-21 17:03:58,821 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-21 18:40:13,652 - telegram.ext.Updater - ERROR - Error while getting Updates: httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+2024-11-21 18:40:13,653 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 66, in map_httpcore_exceptions
+    yield
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 366, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 216, in handle_async_request
+    raise exc from None
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection_pool.py", line 196, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 99, in handle_async_request
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 76, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_async/connection.py", line 122, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_backends/auto.py", line 30, in connect_tcp
+    return await self._backend.connect_tcp(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_backends/anyio.py", line 114, in connect_tcp
+    with map_exceptions(exc_map):
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_httpxrequest.py", line 219, in do_request
+    res = await self._client.request(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1530, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1617, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1645, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1682, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_client.py", line 1719, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 365, in handle_async_request
+    with map_httpcore_exceptions():
+  File "/usr/lib/python3.12/contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/httpx/_transports/default.py", line 83, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 640, in _network_loop_retry
+    if not await action_cb():
+           ^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 345, in polling_action_cb
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_updater.py", line 334, in polling_action_cb
+    updates = await self.bot.get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 565, in get_updates
+    updates = await super().get_updates(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 519, in decorator
+    result = await func(self, *args, **kwargs)  # skipcq: PYL-E1102
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 3562, in get_updates
+    await self._post(
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 607, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 347, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 635, in _do_post
+    return await request.post(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 168, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 288, in _request_wrapper
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 278, in _request_wrapper
+    code, payload = await self.do_request(
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_httpxrequest.py", line 243, in do_request
+    raise NetworkError(f"httpx.{err.__class__.__name__}: {err}") from err
+telegram.error.NetworkError: httpx.ConnectError: [Errno -3] Temporary failure in name resolution
+2024-11-22 11:54:13,879 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 11:55:08,188 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 11:55:09,120 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 11:55:33,671 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 11:55:34,522 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 11:55:45,995 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 11:55:47,159 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 11:58:18,236 - base_api - WARNING - POLL_URL = https://rcvdev.milselarch.com/?poll_id=62&auth_date=1732247898&query_id=%7BRnmub%29%22HhC%2CxYGJ%7BjLw_y0Wjvr%23-o1H&user=%7B%22id%22%3A+300546099%2C+%22username%22%3A+%22milselarch%22%7D&hash=900ad0d23372b60b1a9341a14ba9547d88cf0852a6bf1701ac20686eda3456d2
+2024-11-22 12:15:49,582 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:15:50,799 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:19:26,295 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:19:27,814 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:46:19,002 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:46:20,044 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:47:04,425 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 274, in pre_checkout_callback
+    invoice_type = base_invoice_params.unwrap()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pydantic/main.py", line 761, in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+AttributeError: 'BasePaymentParams' object has no attribute 'unwrap'
+2024-11-22 12:47:42,515 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:47:43,414 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:47:57,869 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:47:58,839 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:48:02,289 - __main__ - ERROR - RECEIPT GET ERR: ID#13
+2024-11-22 12:48:02,569 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/payment_handlers.py", line 289, in pre_checkout_callback
+    return await query.answer("Error loading receipt")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_payment/precheckoutquery.py", line 142, in answer
+    return await self.get_bot().answer_pre_checkout_query(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 845, in answer_pre_checkout_query
+    return await super().answer_pre_checkout_query(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 519, in decorator
+    result = await func(self, *args, **kwargs)  # skipcq: PYL-E1102
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 4445, in answer_pre_checkout_query
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 607, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 347, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 635, in _do_post
+    return await request.post(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 168, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 325, in _request_wrapper
+    raise BadRequest(message)
+telegram.error.BadRequest: Parameter "error_message" is required
+2024-11-22 12:48:10,345 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:50:10,419 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:50:41,168 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:50:42,267 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:50:59,995 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:51:01,052 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:51:05,499 - __main__ - ERROR - RECEIPT GET ERR: ID#13
+2024-11-22 12:51:48,044 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:51:49,231 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:52:05,162 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:52:06,252 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:52:11,084 - __main__ - ERROR - RECEIPT GET ERR: ID#13
+2024-11-22 12:52:32,376 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 12:52:33,767 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 12:53:51,016 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 16:32:07,852 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 16:37:54,406 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 16:37:55,381 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 16:38:44,920 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 16:38:46,030 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 16:40:51,846 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 16:40:52,865 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 16:41:19,814 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 16:41:22,507 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 16:41:50,941 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 16:41:51,997 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 17:32:24,808 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 17:32:25,800 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 17:33:44,375 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 17:33:45,418 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 17:33:59,240 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 17:34:00,126 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 17:34:34,945 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: object NoneType can't be used in 'await' expression
+2024-11-22 17:34:53,526 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 17:34:54,557 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 17:34:58,851 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/bot.py", line 1596, in payment_support_handler
+    return await context.bot.send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 2631, in send_message
+    return await super().send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 519, in decorator
+    result = await func(self, *args, **kwargs)  # skipcq: PYL-E1102
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 840, in send_message
+    return await self._send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 529, in _send_message
+    result = await super()._send_message(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 697, in _send_message
+    result = await self._post(
+             ^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 607, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_extbot.py", line 347, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/_bot.py", line 635, in _do_post
+    return await request.post(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 168, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/request/_baserequest.py", line 325, in _request_wrapper
+    raise BadRequest(message)
+telegram.error.BadRequest: Message text is empty
+2024-11-22 17:39:50,062 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 17:39:51,066 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 19:51:32,009 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 19:54:13,349 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:01:56,710 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:02:10,893 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:03:18,505 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:03:37,624 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:03:41,379 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:03:50,435 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3251, in execute_sql
+    cursor.execute(sql, params or ())
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 153, in execute
+    result = self._query(query)
+             ^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 322, in _query
+    conn.query(q)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 563, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 825, in _read_query_result
+    result.read()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 1199, in read
+    first_packet = self.connection._read_packet()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 775, in _read_packet
+    packet.raise_for_error()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/protocol.py", line 219, in raise_for_error
+    err.raise_mysql_exception(self._data)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/err.py", line 150, in raise_mysql_exception
+    raise errorclass(errno, errval)
+pymysql.err.OperationalError: (1054, "Unknown column 'is_payment_support' in 'field list'")
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_application.py", line 1195, in process_update
+    await coroutine
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/telegram/ext/_basehandler.py", line 153, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/tele_helpers.py", line 190, in caller
+    return await func(modified_tele_update, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/chat_context_handlers.py", line 438, in handle_other_messages
+    return await context_handler.handle_messages(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/handlers/chat_context_handlers.py", line 382, in handle_messages
+    ).create()
+      ^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/database/db_helpers.py", line 88, in create
+    return self.__base_model.create(**self._fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 6596, in create
+    inst.save(force_insert=True)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 6806, in save
+    pk = self.insert(**field_dict).execute()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 1971, in inner
+    return method(self, database, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 2042, in execute
+    return self._execute(database)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 2847, in _execute
+    return super(Insert, self)._execute(database)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 2560, in _execute
+    cursor = database.execute(self)
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3259, in execute
+    return self.execute_sql(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/playhouse/shortcuts.py", line 272, in execute_sql
+    raise exc
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/playhouse/shortcuts.py", line 256, in execute_sql
+    return super(ReconnectMixin, self).execute_sql(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3249, in execute_sql
+    with __exception_wrapper__:
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3019, in __exit__
+    reraise(new_type, new_type(exc_value, *exc_args), traceback)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 192, in reraise
+    raise value.with_traceback(tb)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/peewee.py", line 3251, in execute_sql
+    cursor.execute(sql, params or ())
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 153, in execute
+    result = self._query(query)
+             ^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/cursors.py", line 322, in _query
+    conn.query(q)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 563, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 825, in _read_query_result
+    result.read()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 1199, in read
+    first_packet = self.connection._read_packet()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/connections.py", line 775, in _read_packet
+    packet.raise_for_error()
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/protocol.py", line 219, in raise_for_error
+    err.raise_mysql_exception(self._data)
+  File "/home/milselarch/projects/SUTD/voting-bot/venv/lib/python3.12/site-packages/pymysql/err.py", line 150, in raise_mysql_exception
+    raise errorclass(errno, errval)
+peewee.OperationalError: (1054, "Unknown column 'is_payment_support' in 'field list'")
+2024-11-22 20:04:08,293 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:06:47,536 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:24:19,255 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:94> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:46:17,972 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:47:36,773 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:47:38,151 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:49:09,201 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:49:10,837 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:54:37,092 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:54:38,672 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:55:15,478 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:55:16,898 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:55:45,035 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:55:46,165 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:55:56,585 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:55:57,672 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 20:56:31,317 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 20:56:32,719 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 21:00:23,439 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 21:00:24,545 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 21:03:16,126 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 21:03:17,304 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 21:47:51,978 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 21:47:53,120 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 21:48:09,672 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
+2024-11-22 21:53:01,334 - __main__ - WARNING - <<< INITIALIZING >>>
+2024-11-22 21:53:04,671 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-2' coro=<RankedChoiceBot._call_polling_tasks_routine() running at /home/milselarch/projects/SUTD/voting-bot/bot.py:93> wait_for=<Future pending cb=[Task.task_wakeup()]>>
