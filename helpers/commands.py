@@ -35,3 +35,5 @@ class Command(StrEnum):
     LOOKUP_FROM_USERNAME_ADMIN = "lookup_from_username_admin"
     INSERT_USER_ADMIN = "insert_user_admin"
     REFUND_ADMIN = "refund_admin"
+    ENTER_MAINTENANCE_ADMIN = "enter_maintenance_admin"
+    EXIT_MAINTENANCE_ADMIN = "exit_maintenance_admin"

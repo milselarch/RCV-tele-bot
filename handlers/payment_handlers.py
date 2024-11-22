@@ -204,9 +204,16 @@ class IncreaseVoteLimitHandler(BasePaymentHandler):
 class PaymentHandlers(object):
     def __init__(self, logger: logging.Logger):
         self.logger = logger
+        self.maintenance = False
         self.handlers: dict[InvoiceTypes, Type[BasePaymentHandler]] = {
             InvoiceTypes.INCREASE_VOTER_LIMIT: IncreaseVoteLimitHandler
         }
+
+    def enter_maintenance_mode(self):
+        self.maintenance = True
+
+    def exit_maintenance_mode(self):
+        self.maintenance = False
 
     async def successful_payment_callback(
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
@@ -257,15 +264,17 @@ class PaymentHandlers(object):
     async def pre_checkout_callback(
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
-        # TODO: validate receipt has not expired
         query = update.pre_checkout_query
+        async def fail(err_message: str):
+            return await query.answer(ok=False, error_message=err_message)
+
+        if self.maintenance:
+            return await fail("Bot is in maintenance mode")
+
         invoice_payload = query.invoice_payload
         base_invoice_params_res = BasePaymentParams.safe_load_from_json(
             invoice_payload
         )
-
-        async def fail(err_message: str):
-            return await query.answer(ok=False, error_message=err_message)
 
         if base_invoice_params_res.is_err():
             self.logger.error(f"LOAD INVOICE FAILED: {invoice_payload}")

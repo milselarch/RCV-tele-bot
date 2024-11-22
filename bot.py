@@ -84,6 +84,8 @@ class RankedChoiceBot(BaseAPI):
         super().__init__()
         self.config_path = config_path
         self.scheduled_processes = []
+        self.payment_handlers = None
+
         self.webhook_url = None
         self.bot = None
         self.app = None
@@ -122,7 +124,7 @@ class RankedChoiceBot(BaseAPI):
         builder.post_init(self.post_init)
 
         self.app = builder.build()
-        payment_handlers = PaymentHandlers(logger)
+        self.payment_handlers = PaymentHandlers(logger)
 
         commands_mapping = {
             Command.START: start_handlers.start_handler,
@@ -154,9 +156,11 @@ class RankedChoiceBot(BaseAPI):
             Command.LOOKUP_FROM_USERNAME_ADMIN:
                 self.lookup_from_username_admin,
             Command.INSERT_USER_ADMIN: self.insert_user_admin,
-            Command.SET_MAX_VOTERS: payment_handlers.set_max_voters,
+            Command.SET_MAX_VOTERS: self.payment_handlers.set_max_voters,
             Command.PAY_SUPPORT: self.payment_support_handler,
-            Command.REFUND_ADMIN: self.refund_payment_support_handler
+            Command.REFUND_ADMIN: self.refund_payment_support_handler,
+            Command.ENTER_MAINTENANCE_ADMIN: self.enter_maintenance_admin,
+            Command.EXIT_MAINTENANCE_ADMIN: self.exit_maintenance_admin
         }
 
         # on different commands - answer in Telegram
@@ -164,7 +168,7 @@ class RankedChoiceBot(BaseAPI):
             self.app, commands_mapping=commands_mapping
         )
         TelegramHelpers.register_pre_checkout_handler(
-            self.app, payment_handlers.pre_checkout_callback
+            self.app, self.payment_handlers.pre_checkout_callback
         )
         # catch-all to handle responses to unknown commands
         TelegramHelpers.register_message_handler(
@@ -179,7 +183,7 @@ class RankedChoiceBot(BaseAPI):
         # handle payment-related messages
         TelegramHelpers.register_message_handler(
             self.app, filters.SUCCESSFUL_PAYMENT,
-            payment_handlers.successful_payment_callback
+            self.payment_handlers.successful_payment_callback
         )
         # catch-all to handle all other messages
         TelegramHelpers.register_message_handler(
@@ -1669,6 +1673,22 @@ class RankedChoiceBot(BaseAPI):
             payment = payment_res.unwrap()
             payment.refunded_at = datetime.now()
             payment.save()
+
+    @admin_only
+    def enter_maintenance_admin(
+        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+    ):
+        message = update.message
+        self.payment_handlers.enter_maintenance_mode()
+        return message.reply_text('Maintenance mode entered')
+
+    @admin_only
+    def exit_maintenance_admin(
+        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+    ):
+        message = update.message
+        self.payment_handlers.exit_maintenance_mode()
+        return message.reply_text('Maintenance mode exited')
 
 
 if __name__ == '__main__':
