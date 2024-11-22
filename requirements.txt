@@ -1,4 +1,4 @@
-python_telegram_bot==20.6
+python_telegram_bot==21.6
 SQLAlchemy==2.0.20
 peewee==3.16.3
 peewee-migrations==0.3.32

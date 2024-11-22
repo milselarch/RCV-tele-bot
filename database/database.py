@@ -23,7 +23,7 @@ from database.db_helpers import (
 from peewee import (
     BigIntegerField, CharField,
     IntegerField, AutoField, TextField, DateTimeField,
-    BooleanField, ForeignKeyField, SQL, Database,
+    BooleanField, ForeignKeyField, SQL, Database, BigAutoField,
 )
 
 initialised_db: DB | None = None
@@ -31,11 +31,10 @@ initialised_db: DB | None = None
 
 
 def get_tables() -> list[Type[BaseModel]]:
-    print('GETTING')
     return [
         Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
         PollOptions, VoteRankings, PollWinners, CallbackContextState,
-        MessageContextState, Payments
+        MessageContextState, Payments, SupportTickets
     ]
 
 
@@ -333,6 +332,26 @@ class PollWinners(BaseModel):
 
         winning_option_id = int(winning_option.id)
         return Ok(winning_option_id)
+
+
+class SupportTickets(BaseModel):
+    id = BigAutoField(primary_key=True)
+    info = TextField(null=False)
+    is_payment_support = BooleanField(default=False)
+    resolved = BooleanField(default=False)
+
+    @classmethod
+    def build_from_fields(
+        cls, ticket_id: int | EmptyField = Empty,
+        info: str | EmptyField = Empty,
+        is_payment_support: bool | EmptyField = Empty,
+        resolved: bool | EmptyField = Empty
+    ) -> BoundRowFields[Self]:
+        return BoundRowFields(cls, {
+            cls.id: ticket_id, cls.info: info,
+            cls.is_payment_support: is_payment_support,
+            cls.resolved: resolved
+        })
 
 
 # database should be connected if called from pem db migrations

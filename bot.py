@@ -24,12 +24,12 @@ from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from database.database import UserID, CallbackContextState
 from database.db_helpers import EmptyField, Empty
-from handlers.context_handlers import context_handlers
+from handlers.chat_context_handlers import context_handlers
 from helpers import constants
 
 from telegram import (
     Message, ReplyKeyboardMarkup, InlineKeyboardMarkup,
-    User as TeleUser, Update as BaseTeleUpdate
+    User as TeleUser, Update as BaseTeleUpdate, Bot
 )
 from telegram.ext import (
     ContextTypes, filters, CallbackContext, Application
@@ -44,12 +44,12 @@ from helpers.strings import (
 )
 from helpers.chat_contexts import (
     PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
-    VoteChatContext
+    VoteChatContext, PaySupportChatContext
 )
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
     PollOptions, VoteRankings, db, ChatWhitelist, PollWinners,
-    MessageContextState
+    MessageContextState, Payments
 )
 from base_api import (
     BaseAPI, UserRegistrationStatus,
@@ -92,12 +92,17 @@ class RankedChoiceBot(BaseAPI):
             await cls._call_polling_tasks_once()
             await asyncio.sleep(constants.POLLING_TASKS_INTERVAL)
 
+    def get_bot(self) -> Bot:
+        assert self.bot is not None
+        return self.bot
+
     @classmethod
     async def _call_polling_tasks_once(cls):
         print(f'CALLING_CLEANUP @ {datetime.now()}')
         Users.prune_deleted_users(logger)
         CallbackContextState.prune_expired_contexts()
         MessageContextState.prune_expired_contexts()
+        Payments.prune_expired()
 
     def start_bot(self):
         assert self.bot is None
@@ -146,7 +151,9 @@ class RankedChoiceBot(BaseAPI):
             Command.LOOKUP_FROM_USERNAME_ADMIN:
                 self.lookup_from_username_admin,
             Command.INSERT_USER_ADMIN: self.insert_user_admin,
-            Command.SET_MAX_VOTERS: payment_handlers.set_max_voters
+            Command.SET_MAX_VOTERS: payment_handlers.set_max_voters,
+            Command.PAY_SUPPORT: self.payment_support_handler,
+            Command.REFUND_ADMIN: self.refund_payment_support_handler
         }
 
         # on different commands - answer in Telegram
@@ -199,6 +206,11 @@ class RankedChoiceBot(BaseAPI):
         ), (
             Command.CREATE_PRIVATE_POLL,
             'create a new poll that users cannot self register for'
+        ), (
+            Command.SET_MAX_VOTERS,
+            'set the maximum number of voters who can vote for a poll'
+        ), (
+            Command.PAY_SUPPORT, 'payment support'
         ), (
             Command.REGISTER_USER_ID,
             'registers a user by user_id for a poll'
@@ -596,6 +608,13 @@ class RankedChoiceBot(BaseAPI):
         message: Message = update.message
         tele_user = message.from_user
         raw_text = message.text.strip()
+        r"""
+        ^\S+ - command name
+        \s+ - whitespace
+        ([1-9]\d*) - poll_id
+        s+ - whitespace
+        ([1-9]\d*) - user_tele_id
+        """
         pattern = re.compile(r'^\S+\s+([1-9]\d*)\s+([1-9]\d*)$')
         matches = pattern.match(raw_text)
 
@@ -1579,6 +1598,74 @@ class RankedChoiceBot(BaseAPI):
             return await message.reply_text(f'Poll winner is: {option_name}')
         else:
             return await message.reply_text('Poll has no winner')
+
+    @classmethod
+    async def payment_support_handler(
+        cls, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+    ):
+        user = update.user
+        message = update.message
+        PaySupportChatContext(
+            user_id=user.get_user_id(), chat_id=message.chat.id
+        ).save_state()
+
+        return await message.reply_text(textwrap.dedent("""
+            Please enter the following details:
+            - payment reference ID
+            - reason for creating the payment support ticket
+        """))
+
+    @admin_only
+    async def refund_payment_support_handler(
+        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+    ):
+        """
+        /refund_admin {tele_user_id}| {payment_ref_id}
+        """
+        message = update.message
+        r"""
+        ^\S+ - command name
+        \s+ - whitespace
+        ([1-9]\d*) - target user ID
+        \s+ - whitespace
+        (\S+) - payment reference ID 
+        """
+        pattern = re.compile(r'^\S+\s+([1-9]\d*)\s+(\S+)$')
+        matches = pattern.match(message.text)
+
+        if matches is None:
+            await message.reply_text(f'Format invalid (1)')
+            return False
+
+        capture_groups = matches.groups()
+        if len(capture_groups) != 2:
+            await message.reply_text(f'Format invalid (2)')
+            return False
+
+        target_tele_user_id = int(capture_groups[0])
+        payment_ref_id = capture_groups[1]
+        bot = self.get_bot()
+        payment_res = Payments.build_from_fields(
+            telegram_payment_charge_id=payment_ref_id
+        ).safe_get()
+
+        if payment_res.is_err():
+            await message.reply_text(f'Payment db entry not found')
+        else:
+            payment = payment_res.unwrap()
+            if payment.refunded_at is not None:
+                await message.reply_text(f'Payment has already been refunded')
+                return False
+
+        await bot.refund_star_payment(
+            user_id=target_tele_user_id,
+            telegram_payment_charge_id=payment_ref_id
+        )
+        await message.reply_text(f'Payment refunded successfully')
+        if payment_res.is_ok():
+            payment = payment_res.unwrap()
+            payment.refunded_at = datetime.now()
+            payment.save()
 
 
 if __name__ == '__main__':

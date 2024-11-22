@@ -2,7 +2,9 @@ from abc import ABCMeta, abstractmethod
 from typing import Type
 
 from base_api import BaseAPI
-from database import Users
+from database import Users, Payments, Polls
+from handlers.payment_handlers import BasePaymentParams, InvoiceTypes, IncreaseVoterLimitParams, PaymentHandlers
+from helpers import strings
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from telegram import User as TeleUser, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -10,19 +12,17 @@ from handlers.start_get_params import StartGetParams
 
 
 class BaseMessageHandler(object, metaclass=ABCMeta):
-    @classmethod
     @abstractmethod
     async def handle_messages(
-        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
         raw_payload: str
     ):
         ...
 
 
 class StartVoteHandler(BaseMessageHandler):
-    @classmethod
     async def handle_messages(
-        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
         raw_payload: str
     ):
         message = update.message
@@ -67,9 +67,8 @@ class StartVoteHandler(BaseMessageHandler):
 
 
 class WhitelistPollHandler(BaseMessageHandler):
-    @classmethod
     async def handle_messages(
-        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
         raw_payload: str
     ):
         try:
@@ -84,13 +83,71 @@ class WhitelistPollHandler(BaseMessageHandler):
         )
 
 
+class StartPaymentsHandler(BaseMessageHandler):
+    async def handle_messages(
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        raw_payload: str
+    ):
+        message = update.message
+        user = update.user
+
+        try:
+            payment_id = int(raw_payload)
+        except ValueError:
+            return await message.reply_text(
+                f"Invalid payment id: {raw_payload}"
+            )
+
+        ref_payment_res = Payments.build_from_fields(
+            payment_id=payment_id
+        ).safe_get()
+
+        if ref_payment_res.is_err():
+            return await message.reply_text("Payment form has expired (3)")
+
+        ref_payment: Payments = ref_payment_res.unwrap()
+        invoice_type_res = BasePaymentParams.load_invoice_type(
+            ref_payment.invoice_payload
+        )
+        if invoice_type_res.is_err():
+            return await message.reply_text("Failed to load invoice (1)")
+
+        invoice_type = invoice_type_res.unwrap()
+        if invoice_type == InvoiceTypes.INCREASE_VOTER_LIMIT:
+            safe_load_from_json = IncreaseVoterLimitParams.safe_load_from_json
+            load_invoice_res = safe_load_from_json(ref_payment.invoice_payload)
+            if load_invoice_res.is_err():
+                return await message.reply_text("Failed to load invoice (2)")
+
+            invoice: IncreaseVoterLimitParams = load_invoice_res.unwrap()
+            poll_id = invoice.poll_id
+            poll_res = Polls.build_from_fields(
+                poll_id=poll_id, creator_id=user.get_user_id()
+            ).safe_get()
+
+            if poll_res.is_err():
+                await message.reply_text(strings.MAX_VOTERS_NOT_EDITABLE)
+                return False
+
+            poll = poll_res.unwrap()
+            return await PaymentHandlers.set_max_voters_with_params(
+                update=update, context=context, poll_id=invoice.poll_id,
+                new_max_voters=invoice.voters_increase+poll.max_voters
+            )
+        else:
+            return await message.reply_text(
+                f"Invoice type [{invoice_type}] not supported"
+            )
+
+
 class StartHandlers(object):
     def __init__(self):
         self.handlers_mapping: dict[
             StartGetParams, Type[BaseMessageHandler]
         ] = {
             StartGetParams.POLL_ID: StartVoteHandler,
-            StartGetParams.WHITELIST_POLL_ID: WhitelistPollHandler
+            StartGetParams.WHITELIST_POLL_ID: WhitelistPollHandler,
+            StartGetParams.RECEIPT: StartPaymentsHandler
         }
 
     async def start_handler(
@@ -120,7 +177,9 @@ class StartHandlers(object):
             return await message.reply_text(invalid_param_msg)
 
         if start_param_enum not in self.handlers_mapping:
-            return await message.reply_text(f'{param_name} not supported')
+            return await message.reply_text(
+                f'Command [{param_name}] not supported'
+            )
 
         context_handler_cls = self.handlers_mapping[start_param_enum]
         context_handler = context_handler_cls()

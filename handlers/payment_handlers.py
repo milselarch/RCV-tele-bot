@@ -1,23 +1,27 @@
+import datetime
 import json
 import logging
 import re
 import textwrap
-from abc import ABCMeta, abstractmethod
-
 import pydantic
 
 from enum import StrEnum
 from result import Result, Ok, Err
 from typing import TypeVar, Type
-from database import Polls, Payments, db
 from telegram import LabeledPrice
+from abc import ABCMeta, abstractmethod
 
+from database.db_helpers import UserID
 from handlers.start_get_params import StartGetParams
 # from handlers.start_get_params import StartGetParams
-from helpers import constants
+from helpers import constants, strings
 from helpers.commands import Command
+from helpers.constants import BLANK_POLL_ID
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from telegram.ext import ContextTypes
+from database import (
+    Polls, Payments, db, SerializableChatContext, ChatContextStateTypes
+)
 
 
 class InvoiceTypes(StrEnum):
@@ -82,6 +86,24 @@ class IncreaseVoterLimitParams(BasePaymentParams):
             return Err(e)
 
 
+class IncMaxVotersChatContext(SerializableChatContext):
+    user_id: int
+    chat_id: int
+    poll_id: int = BLANK_POLL_ID
+
+    def get_user_id(self) -> UserID:
+        return UserID(self.user_id)
+
+    def get_poll_id(self) -> int:
+        return self.poll_id
+
+    def get_chat_id(self) -> int:
+        return self.chat_id
+
+    def get_context_type(self) -> ChatContextStateTypes:
+        return ChatContextStateTypes.INCREASE_MAX_VOTERS
+
+
 class BasePaymentHandler(object, metaclass=ABCMeta):
     def __init__(self, logger: logging.Logger):
         self.logger = logger
@@ -144,7 +166,7 @@ class IncreaseVoteLimitHandler(BasePaymentHandler):
         ).safe_get()
 
         if receipt_res.is_err():
-            self.logger.error(f"RECEIPT GET ERR: {payment_charge_id}")
+            self.logger.error(f"RECEIPT GET ERR: CHR#{payment_charge_id}")
             return await update.message.reply_text("Error loading receipt")
 
         invoice = load_invoice_result.unwrap()
@@ -177,6 +199,7 @@ class IncreaseVoteLimitHandler(BasePaymentHandler):
         )
         self.logger.warning(reply_message)
         return await message.reply_text(reply_message)
+
 
 class PaymentHandlers(object):
     def __init__(self, logger: logging.Logger):
@@ -237,22 +260,39 @@ class PaymentHandlers(object):
         # TODO: validate receipt has not expired
         query = update.pre_checkout_query
         invoice_payload = query.invoice_payload
-        invoice_type_res = BasePaymentParams.load_invoice_type(
+        base_invoice_params_res = BasePaymentParams.safe_load_from_json(
             invoice_payload
         )
 
-        if invoice_type_res.is_err():
-            self.logger.error(f"LOAD INVOICE FAILED: {invoice_payload}")
-            return await query.answer(
-                ok=False, error_message="Error loading invoice info"
-            )
+        async def fail(err_message: str):
+            return await query.answer(ok=False, error_message=err_message)
 
-        invoice_type = invoice_type_res.unwrap()
+        if base_invoice_params_res.is_err():
+            self.logger.error(f"LOAD INVOICE FAILED: {invoice_payload}")
+            return await fail("Error loading invoice info")
+
+        base_invoice_params = base_invoice_params_res.unwrap()
+        invoice_type: InvoiceTypes = base_invoice_params.invoice_type
 
         if invoice_type not in self.handlers:
             error_message = f"Invoice type {invoice_type} unsupported"
             self.logger.error(error_message)
-            return await query.answer(ok=False, error_message=error_message)
+            return await fail(error_message)
+
+        payment_id = base_invoice_params.payment_id
+        receipt_res = Payments.build_from_fields(
+            payment_id=payment_id
+        ).safe_get()
+
+        if receipt_res.is_err():
+            # checks if payment has corresponding receipt
+            return await fail("Payment form has expired (1)")
+
+        # checks if receipt has expired first
+        receipt: Payments = receipt_res.unwrap()
+        receipt_age = datetime.datetime.now() - receipt.created_at
+        if receipt_age > constants.RECEIPT_VALIDITY_BACKLOG:
+            return await fail("Payment form has expired (2)")
 
         handler_cls = self.handlers[invoice_type]
         handler = handler_cls(self.logger)
@@ -260,17 +300,37 @@ class PaymentHandlers(object):
             update=update, context=context
         )
 
+    @classmethod
     async def set_max_voters(
-        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         message = update.message
         raw_args = TelegramHelpers.read_raw_command_args(update)
         user = update.user
 
         if raw_args == '':
-            raise NotImplementedError
+            # TODO: implement callback context behavior
+            IncMaxVotersChatContext(
+                user_id=user.get_user_id(), chat_id=message.chat_id
+            ).save_state()
+            return await message.reply_text(
+                strings.ENTER_POLL_ID_PROMPT
+            )
         elif constants.ID_PATTERN.match(raw_args) is not None:
-            raise NotImplementedError
+            poll_id = int(raw_args)
+            poll_res = Polls.get_as_creator(poll_id, user.get_user_id())
+            if poll_res.is_err():
+                return await message.reply_text(
+                    strings.MAX_VOTERS_NOT_EDITABLE
+                )
+
+            IncMaxVotersChatContext(
+                user_id=user.get_user_id(), chat_id=message.chat_id,
+                poll_id=poll_id
+            ).save_state()
+            return await message.reply_text(
+                strings.generate_max_voters_prompt(poll_id)
+            )
 
         # matches two numbers seperated by a space
         pattern = re.compile(r'^([1-9]\d*)\s+([1-9]\d*)$')
@@ -284,41 +344,54 @@ class PaymentHandlers(object):
 
         poll_id = int(match_result[1])
         new_max_voters = int(match_result[2])
+        return await cls.set_max_voters_with_params(
+            update=update, context=context, poll_id=poll_id,
+            new_max_voters=new_max_voters
+        )
+
+    @classmethod
+    async def set_max_voters_with_params(
+        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        poll_id: int, new_max_voters: int
+    ) -> bool:
+        """
+        :return: whether invoice was sent
+        """
+        message = update.message
+        user = update.user
+
         # print(f'{poll_id=}, {new_max_voters=}')
         poll_res = Polls.build_from_fields(
             poll_id=poll_id, creator_id=user.get_user_id()
         ).safe_get()
 
         if poll_res.is_err():
-            return await message.reply_text(
-                "Only the poll's creator is allowed to change "
-                "the max number of voters"
-            )
+            await message.reply_text(strings.MAX_VOTERS_NOT_EDITABLE)
+            return False
+
         poll = poll_res.unwrap()
         if poll.max_voters >= new_max_voters:
-            return await message.reply_text(
-                "New poll max voter limit must be greater "
-                "than the existing limit"
-            )
+            await message.reply_text(strings.INVALID_MAX_VOTERS)
+            return False
 
         voters_increase = new_max_voters - poll.max_voters
         assert voters_increase > 0
         payment_amount = voters_increase
-
         invoice = IncreaseVoterLimitParams(
             poll_id=poll_id, voters_increase=voters_increase
         )
-        receipt: Payments = Payments.build_from_fields(
-            user_id=user.get_user_id(), amount=payment_amount
-        ).create()
 
-        receipt_id = receipt.id
-        invoice.payment_id = receipt_id
-        invoice_payload = invoice.dump_to_json_str()
-        receipt.invoice_payload = invoice_payload
-        receipt.save()
+        with db.atomic():
+            receipt: Payments = Payments.build_from_fields(
+                user_id=user.get_user_id(), amount=payment_amount
+            ).create()
 
-        # TODO: generate and save receipt ID
+            receipt_id = receipt.id
+            invoice.payment_id = receipt_id
+            invoice_payload = invoice.dump_to_json_str()
+            receipt.invoice_payload = invoice_payload
+            receipt.save()
+
         # INC_MAX_VOTERS_INVOICE = str(StartGetParams.INC_MAX_VOTERS_INVOICE)
         await context.bot.send_invoice(
             chat_id=message.chat_id,
@@ -335,3 +408,4 @@ class PaymentHandlers(object):
                 f"Increase to {new_max_voters}", payment_amount
             )],
         )
+        return True

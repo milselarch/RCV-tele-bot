@@ -27,9 +27,11 @@ class Command(StrEnum):
     DONE = "done"
 
     SET_MAX_VOTERS = "set_max_voters"
+    PAY_SUPPORT = "paysupport"
 
     VOTE_ADMIN = "vote_admin"
     CLOSE_POLL_ADMIN = "close_poll_admin"
     UNCLOSE_POLL_ADMIN = "unclose_poll_admin"
     LOOKUP_FROM_USERNAME_ADMIN = "lookup_from_username_admin"
     INSERT_USER_ADMIN = "insert_user_admin"
+    REFUND_ADMIN = "refund_admin"

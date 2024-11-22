@@ -37,6 +37,10 @@ HELP_TEXT = textwrap.dedent(f"""
     
     Creates a new poll that chat members cannot self-register for   
     ——————————————————
+    /{Command.SET_MAX_VOTERS}
+    /{Command.SET_MAX_VOTERS} {{poll_id}} {{new_voter_limit}}
+    Sets the maximum number of voters who can vote for a poll
+    ——————————————————
     /{Command.REGISTER_USER_ID} {{poll_id}} {{user_id}}
     Registers a user by user_id for a poll
     ——————————————————
@@ -125,6 +129,18 @@ INCREASE_MAX_VOTERS_TEXT = (
     f"Poll created. Use /{Command.SET_MAX_VOTERS} to change "
     f"the maximum number of voters who can vote for the poll. "
 )
+MAX_VOTERS_NOT_EDITABLE = (
+    "Invalid poll ID - note that only the poll's creator is allowed to "
+    "change the max number of voters"
+)
+ENTER_POLL_ID_PROMPT = (
+    "Enter the poll ID of the poll you want to "
+    "increase the maximum number of voters for:"
+)
+INVALID_MAX_VOTERS = (
+    "New poll max voter limit must be greater "
+    "than the existing limit"
+)
 
 
 def escape_markdown(string: str) -> str:
@@ -143,6 +159,13 @@ def generate_vote_option_prompt(rank: int) -> str:
             f"Enter the poll option you want to rank #{rank}, "
             f"or use /done if you're done:"
         )
+
+
+def generate_max_voters_prompt(poll_id: int):
+    return (
+        "Enter the new maximum number of voters "
+        f"that can vote for poll #{poll_id}:"
+    )
 
 
 def generate_poll_closed_message(poll_id: int):

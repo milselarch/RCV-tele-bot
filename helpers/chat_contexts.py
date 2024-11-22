@@ -1,7 +1,7 @@
 import dataclasses
 import textwrap
-from enum import StrEnum
 
+from enum import StrEnum
 from typing import Sequence
 from result import Result, Ok, Err
 from telegram import Message
@@ -295,3 +295,17 @@ class VoteChatContext(SerializableChatContext, BaseVoteContext):
 
     def get_context_type(self) -> ChatContextStateTypes:
         return ChatContextStateTypes.VOTE
+
+
+class PaySupportChatContext(SerializableChatContext):
+    user_id: int
+    chat_id: int
+
+    def get_user_id(self) -> UserID:
+        return UserID(self.user_id)
+
+    def get_chat_id(self) -> int:
+        return self.chat_id
+
+    def get_context_type(self) -> ChatContextStateTypes:
+        return ChatContextStateTypes.PAY_SUPPORT
