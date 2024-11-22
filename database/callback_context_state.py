@@ -106,11 +106,19 @@ class SerializableChatContext(pydantic.BaseModel, metaclass=ABCMeta):
     def save_state(self) -> CallbackContextState:
         user_id = self.get_user_id()
         chat_id = self.get_chat_id()
+        context_type = self.get_context_type()
 
         with database_proxy.atomic():
+            # delete other chat contexts in the same chat
+            CallbackContextState.delete().where(
+                (CallbackContextState.user == user_id) &
+                (CallbackContextState.chat_id == chat_id) &
+                (CallbackContextState.context_type != context_type)
+            ).execute()
+            # get existing chat context and update it
             context_state, _ = CallbackContextState.build_from_fields(
                 user_id=user_id, chat_id=chat_id,
-                context_type=self.get_context_type()
+                context_type=context_type
             ).get_or_create()
 
             context_state.update_state(self)
