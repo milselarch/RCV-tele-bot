@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import time
 import base_api
 
@@ -46,7 +47,6 @@ async def register_for_poll(
         poll_id=poll_id, user_id=user.get_user_id(),
         username=tele_user.username
     )
-
     reply_text = BaseAPI.reg_status_to_msg(registration_status, poll_id)
     if registration_status != base_api.UserRegistrationStatus.REGISTERED:
         await query.answer(reply_text)
@@ -180,6 +180,9 @@ def _register_voter(
 
 
 class BaseMessageHandler(object, metaclass=ABCMeta):
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
     @abstractmethod
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
@@ -236,6 +239,7 @@ class DeletePollMessageHandler(BaseMessageHandler):
         user_entry: Users = update.user
         user_id = user_entry.get_user_id()
         message_id = query.message.message_id
+        user_tele_id = query.message.from_user.id
         chat_id = query.message.chat_id
 
         if time.time() - init_stamp > constants.DELETE_POLL_BUTTON_EXPIRY:
@@ -258,7 +262,10 @@ class DeletePollMessageHandler(BaseMessageHandler):
         elif not poll.closed:
             return await query.answer(f"Poll #{poll_id} must be closed first")
 
+        delete_comment = f"Poll #{poll_id} user#{user_id} tele#{user_tele_id}"
+        self.logger.warning(f"Deleting {delete_comment}")
         Polls.delete().where(poll_query).execute()
+        self.logger.warning(f"Deleted {delete_comment}")
         await query.answer(f"Poll #{poll_id} deleted")
         # remove delete button after deletion is complete
         return await context.bot.edit_message_text(
@@ -435,6 +442,8 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
         query = update.callback_query
         message: Message = query.message
         tele_user: TeleUser = query.from_user
+        chat_id = message.chat_id
+        message_id = query.message.message_id
 
         extracted_message_context_res = extract_message_context(update)
         poll_id = int(callback_data['poll_id'])
@@ -464,7 +473,7 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
         vote_context = vote_context_res.unwrap()
         # print('TELE_USER_ID:', tele_user.id)
         register_vote_result = BaseAPI.register_vote(
-            chat_id=message.chat_id, rankings=vote_context.rankings,
+            chat_id=chat_id, rankings=vote_context.rankings,
             poll_id=vote_context.poll_id,
             username=tele_user.username, user_tele_id=tele_user.id
         )
@@ -473,12 +482,23 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
             error_message = register_vote_result.unwrap_err()
             return await error_message.call(query.answer)
 
+        # whether the voter was registered for the poll during the vote itself
+        _, newly_registered = register_vote_result.unwrap()
         extracted_message_context.message_context.delete_instance()
-        return await query.answer("Vote Submitted")
+        await query.answer("Vote Submitted")
+
+        if newly_registered:
+            poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+            await TelegramHelpers.update_poll_message(
+                poll_info=poll_info, chat_id=chat_id,
+                message_id=message_id, context=context,
+                poll_locks_manager=_poll_locks_manager
+            )
 
 
 class InlineKeyboardHandlers(object):
-    def __init__(self):
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
         self.poll_locks_manager = PollsLockManager()
 
         self.handlers: dict[CallbackCommands, Type[BaseMessageHandler]] = {
@@ -527,7 +547,7 @@ class InlineKeyboardHandlers(object):
             return await query.answer(f"Command {command} not supported")
 
         message_handler_cls = self.handlers[command]
-        message_handler = message_handler_cls()
+        message_handler = message_handler_cls(logger=self.logger)
         return await message_handler.handle_queries(
             update=update, context=context, callback_data=callback_data
         )

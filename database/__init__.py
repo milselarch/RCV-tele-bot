@@ -3,7 +3,7 @@ from .database import database_proxy as db, initialize_db
 from .database import (
     Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
     PollOptions, VoteRankings, PollWinners, CallbackContextState,
-    MessageContextState
+    MessageContextState, Payments, SupportTickets
 )
 
 from .callback_context_state import SerializableChatContext, ChatContextStateTypes

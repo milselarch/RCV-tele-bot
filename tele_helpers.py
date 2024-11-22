@@ -13,7 +13,7 @@ from helpers.message_buillder import MessageBuilder
 from telegram import Message
 from telegram.ext import (
     Application, MessageHandler, CallbackContext, CallbackQueryHandler,
-    CommandHandler, ContextTypes
+    CommandHandler, ContextTypes, PreCheckoutQueryHandler
 )
 # noinspection PyProtectedMember
 from telegram.ext._utils.types import CCT, RT
@@ -52,13 +52,17 @@ class ModifiedTeleUpdate(object):
     def effective_message(self):
         return self.update.effective_message
 
+    @property
+    def pre_checkout_query(self):
+        return self.update.pre_checkout_query
+
 
 class TelegramHelpers(object):
     @classmethod
     def _vote_for_poll(
         cls, raw_text: str, user_tele_id: int, username: Optional[str],
         chat_id: Optional[int]
-    ) -> Result[int, MessageBuilder]:
+    ) -> Result[tuple[bool, int], MessageBuilder]:
         """
         telegram command format
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n}
@@ -66,6 +70,7 @@ class TelegramHelpers(object):
         example:
         /vote 3: 1 > 2 > 3
         /vote 3 1 > 2 > 3
+        :return is_newly_registered, poll_id:
         """
         error_message = MessageBuilder()
         # print('RAW_VOTE_TEXT', [raw_text, user_id])
@@ -84,11 +89,16 @@ class TelegramHelpers(object):
         rankings: List[int] = unpacked_result[1]
 
         # print('PRE_REGISTER')
-        return BaseAPI.register_vote(
+        register_result = BaseAPI.register_vote(
             poll_id=poll_id, rankings=rankings,
             user_tele_id=user_tele_id, username=username,
             chat_id=chat_id
         )
+        if register_result.is_err():
+            return register_result
+
+        is_newly_registered = register_result.unwrap()
+        return Ok((is_newly_registered, poll_id))
 
     @classmethod
     async def vote_and_report(
@@ -106,7 +116,7 @@ class TelegramHelpers(object):
             await error_message.call(message.reply_text)
             return False
 
-        poll_id = vote_result.unwrap()
+        _, poll_id = vote_result.unwrap()
         await cls.send_post_vote_reply(message=message, poll_id=poll_id)
         return True
 
@@ -139,6 +149,9 @@ class TelegramHelpers(object):
             elif is_tele_update and update.callback_query is not None:
                 query = update.callback_query
                 tele_user = query.from_user
+            elif update.pre_checkout_query is not None:
+                query = update.pre_checkout_query
+                tele_user = query.from_user
             else:
                 tele_user = None
 
@@ -159,7 +172,7 @@ class TelegramHelpers(object):
             user, _ = Users.build_from_fields(tele_id=tele_id).get_or_create()
             # don't allow deleted users to interact with the bot
             if user.deleted_at is not None:
-                await tele_user.send_message("User has been deleted")
+                await tele_user.send_message("Account has been deleted")
                 return False
 
             # update user tele id to username mapping
@@ -196,6 +209,15 @@ class TelegramHelpers(object):
         callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
     ):
         dispatcher.add_handler(CallbackQueryHandler(
+            cls.users_middleware(callback, include_self=False)
+        ))
+
+    @classmethod
+    def register_pre_checkout_handler(
+        cls, dispatcher: Application,
+        callback: Callable[[ModifiedTeleUpdate, CCT], Coroutine[Any, Any, RT]]
+    ):
+        dispatcher.add_handler(PreCheckoutQueryHandler(
             cls.users_middleware(callback, include_self=False)
         ))
 

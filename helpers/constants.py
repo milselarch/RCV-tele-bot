@@ -9,6 +9,7 @@ POLL_OPTION_MAX_LENGTH: int = 100
 DELETE_POLL_BUTTON_EXPIRY = 60
 DELETE_USERS_BACKLOG = datetime.timedelta(days=28)
 DELETE_CONTEXTS_BACKLOG = datetime.timedelta(hours=2)
+RECEIPT_VALIDITY_BACKLOG = datetime.timedelta(hours=24)
 POLLING_TASKS_INTERVAL = 600
 
 ID_PATTERN = re.compile(r"^[1-9]\d*$")

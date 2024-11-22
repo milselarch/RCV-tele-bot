@@ -19,7 +19,8 @@ from typing_extensions import Any
 from strenum import StrEnum
 from requests import PreparedRequest
 
-from helpers import strings, constants
+from helpers.start_get_params import StartGetParams
+from helpers import constants
 from helpers.strings import generate_poll_closed_message
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
@@ -379,18 +380,19 @@ class BaseAPI(object):
     def verify_voter(
         cls, poll_id: int, user_id: UserID, username: Optional[str] = None,
         chat_id: Optional[int] = None
-    ) -> Result[int, UserRegistrationStatus]:
+    ) -> Result[tuple[PollVoters, bool], UserRegistrationStatus]:
         """
         Checks if the user is a member of the poll
         Attempts to auto enroll user if their username is whitelisted
         and the username whitelist entry is empty
-        Returns PollVoters entry id of user for the specified poll
+        Returns PollVoters entry id of user for the specified poll,
+        and whether user was newly whitelisted from chat whitelist
         """
         
         poll_voter_res = cls.get_poll_voter(poll_id, user_id)
         if poll_voter_res.is_ok():
             poll_voter = poll_voter_res.unwrap()
-            return Ok(poll_voter.id)
+            return Ok((poll_voter, False))
         else:
             poll_voter_err = poll_voter_res.unwrap_err()
             if poll_voter_err is None:
@@ -409,8 +411,7 @@ class BaseAPI(object):
             ignore_voter_limit=False, chat_id=chat_id
         )
         if chat_register_result.is_ok():
-            poll_voter: PollVoters = chat_register_result.unwrap()
-            return Ok(poll_voter.id)
+            return chat_register_result
 
         whitelist_user_result = cls.get_whitelist_entry(
             username=username_str, poll_id=poll_id,
@@ -431,7 +432,7 @@ class BaseAPI(object):
         )
         if register_result.is_ok():
             poll_voter: PollVoters = register_result.unwrap()
-            return Ok(poll_voter.id)
+            return Ok((poll_voter, False))
 
         return register_result
 
@@ -439,7 +440,11 @@ class BaseAPI(object):
     def _register_voter_from_chat_whitelist(
         cls, poll_id: int, user_id: UserID, ignore_voter_limit: bool = False,
         chat_id: int | None = None
-    ) -> Result[PollVoters, UserRegistrationStatus]:
+    ) -> Result[tuple[PollVoters, bool], UserRegistrationStatus]:
+        """
+        return Ok value is poll_voter, and whether registration
+        was newly made
+        """
         if chat_id is None:
             return Err(UserRegistrationStatus.NOT_WHITELISTED)
 
@@ -460,8 +465,7 @@ class BaseAPI(object):
                 transaction.rollback()
                 return register_result
 
-            poll_voter_row, _ = register_result.unwrap()
-            return Ok(poll_voter_row)
+            return register_result
 
     @classmethod
     def register_from_username_whitelist(
@@ -643,7 +647,7 @@ class BaseAPI(object):
         poll_message = cls.generate_poll_info(
             poll_metadata.id, poll_metadata.question,
             poll_info.poll_options, closed=poll_metadata.closed,
-            bot_username=bot_username,
+            bot_username=bot_username, max_voters=poll_metadata.max_voters,
             num_voters=poll_metadata.num_active_voters,
             num_votes=poll_metadata.num_votes,
             add_webapp_link=add_webapp_link
@@ -696,7 +700,7 @@ class BaseAPI(object):
         poll_url = cls.generate_poll_url(
             poll_id=poll_id, tele_user=tele_user
         )
-        logger.info(f'POLL_URL = {poll_url}')
+        logger.warning(f'POLL_URL = {poll_url}')
         # create vote button for reply message
         markup_layout = [[KeyboardButton(
             text=f'Vote for Poll #{poll_id}', web_app=WebAppInfo(url=poll_url)
@@ -906,8 +910,9 @@ class BaseAPI(object):
     @staticmethod
     def generate_poll_info(
         poll_id, poll_question, poll_options: list[str],
-        bot_username: str, num_votes: int = 0, num_voters: int = 0,
-        closed: bool = False, add_webapp_link: bool = True
+        bot_username: str, max_voters: int, num_votes: int = 0,
+        num_voters: int = 0, closed: bool = False,
+        add_webapp_link: bool = True
     ):
         close_tag = '(closed)' if closed else ''
         numbered_poll_options = [
@@ -915,7 +920,7 @@ class BaseAPI(object):
             in enumerate(poll_options)
         ]
 
-        args = f'{strings.POLL_ID_GET_PARAM}={poll_id}'
+        args = f'{StartGetParams.POLL_ID}={poll_id}'
         stamp = int(time.time())
         deep_link_url = (
             f'https://t.me/{bot_username}?start={args}&stamp={stamp}'
@@ -933,7 +938,7 @@ class BaseAPI(object):
             Poll #{poll_id} {close_tag}
             {poll_question}
             ——————————————————
-            {num_votes} / {num_voters} voted
+            {num_votes} / {num_voters} voted (max {max_voters})
             ——————————————————
         """) +
             f'\n'.join(numbered_poll_options) +
@@ -1133,7 +1138,7 @@ class BaseAPI(object):
     def register_vote(
         cls, poll_id: int, rankings: List[int], user_tele_id: int,
         username: Optional[str], chat_id: Optional[int]
-    ) -> Result[int, MessageBuilder]:
+    ) -> Result[tuple[bool, bool], MessageBuilder]:
         """
         registers a vote for the poll
         checks that:
@@ -1149,7 +1154,7 @@ class BaseAPI(object):
         :param user_tele_id: voter's telegram user tele id
         :param username: voter's telegram username
         :param chat_id: telegram chat id that message originated from
-        :return:
+        :return is_first_vote, newly_registered:
         """
         error_message = MessageBuilder()
         if len(rankings) == 0:
@@ -1179,6 +1184,7 @@ class BaseAPI(object):
         user_id = user.get_user_id()
         # verify that the user can vote for the poll
         # print('PRE_VERIFY', poll_id, user_id, username)
+        # TODO: include whether registration was from chat whitelist in return
         verify_result = cls.verify_voter(
             poll_id, user_id, username=username, chat_id=chat_id
         )
@@ -1186,10 +1192,10 @@ class BaseAPI(object):
             error_message.add(f"You're not a voter of poll {poll_id}")
             return Err(error_message)
 
-        poll_voter_id: int = verify_result.unwrap()
-        # print('POLL_VOTER_ID', poll_voter_id)
+        poll_voter, newly_registered_voter = verify_result.unwrap()
+        print('verify_result', verify_result, poll_voter)
         vote_register_result = cls.__unsafe_register_vote(
-            poll_id=poll_id, poll_voter_id=poll_voter_id,
+            poll_id=poll_id, poll_voter_id=int(poll_voter.id),
             rankings=rankings
         )
 
@@ -1197,13 +1203,8 @@ class BaseAPI(object):
             assert isinstance(vote_register_result, Err)
             return vote_register_result
 
-        vote_registered = vote_register_result.unwrap()
-
-        if vote_registered:
-            return Ok(poll_id)
-        else:
-            error_message.add('Vote registration failed')
-            return Err(error_message)
+        is_first_vote = vote_register_result.unwrap()
+        return Ok((is_first_vote, newly_registered_voter))
 
     @classmethod
     def __unsafe_register_vote(
@@ -1213,11 +1214,15 @@ class BaseAPI(object):
         registers a vote for the poll
         checks that poll option numbers are valid for the current poll
         does not check if poll_voter_id is valid for poll {poll_id}
-        does not check if poll has already been closed
+        does not check if poll has already been closed.
+
+        Return Ok result is a bool indicating if the new vote is
+        the first one to be registered, or if it replaces an existing vote
 
         :param poll_id:
         :param poll_voter_id:
         :param rankings:
+        :return Result[bool, MessageBuilder]:
         """
         error_message = MessageBuilder()
         poll_option_rows = PollOptions.select().where(
@@ -1290,7 +1295,7 @@ class BaseAPI(object):
                     Polls.id == poll_id
                 ).execute()
 
-        return Ok(True)
+        return Ok(is_first_vote)
 
     @classmethod
     def generate_vote_markup(

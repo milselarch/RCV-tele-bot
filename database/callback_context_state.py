@@ -23,6 +23,8 @@ P = TypeVar('P', bound=pydantic.BaseModel)
 
 class ChatContextStateTypes(StrEnum):
     POLL_CREATION = "POLL_CREATION"
+    INCREASE_MAX_VOTERS = "INCREASE_MAX_VOTERS"
+    PAY_SUPPORT = "PAY_SUPPORT"
     VOTE = "VOTE"
 
 
