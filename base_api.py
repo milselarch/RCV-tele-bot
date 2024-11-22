@@ -19,7 +19,8 @@ from typing_extensions import Any
 from strenum import StrEnum
 from requests import PreparedRequest
 
-from helpers import strings, constants
+from handlers.start_get_params import StartGetParams
+from helpers import constants
 from helpers.strings import generate_poll_closed_message
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
@@ -439,7 +440,7 @@ class BaseAPI(object):
     def _register_voter_from_chat_whitelist(
         cls, poll_id: int, user_id: UserID, ignore_voter_limit: bool = False,
         chat_id: int | None = None
-    ) -> Result[[PollVoters, bool], UserRegistrationStatus]:
+    ) -> Result[tuple[PollVoters, bool], UserRegistrationStatus]:
         """
         return Ok value is poll_voter, and whether registration
         was newly made
@@ -646,7 +647,7 @@ class BaseAPI(object):
         poll_message = cls.generate_poll_info(
             poll_metadata.id, poll_metadata.question,
             poll_info.poll_options, closed=poll_metadata.closed,
-            bot_username=bot_username,
+            bot_username=bot_username, max_voters=poll_metadata.max_voters,
             num_voters=poll_metadata.num_active_voters,
             num_votes=poll_metadata.num_votes,
             add_webapp_link=add_webapp_link
@@ -699,7 +700,7 @@ class BaseAPI(object):
         poll_url = cls.generate_poll_url(
             poll_id=poll_id, tele_user=tele_user
         )
-        logger.info(f'POLL_URL = {poll_url}')
+        logger.warning(f'POLL_URL = {poll_url}')
         # create vote button for reply message
         markup_layout = [[KeyboardButton(
             text=f'Vote for Poll #{poll_id}', web_app=WebAppInfo(url=poll_url)
@@ -909,8 +910,9 @@ class BaseAPI(object):
     @staticmethod
     def generate_poll_info(
         poll_id, poll_question, poll_options: list[str],
-        bot_username: str, num_votes: int = 0, num_voters: int = 0,
-        closed: bool = False, add_webapp_link: bool = True
+        bot_username: str, max_voters: int, num_votes: int = 0,
+        num_voters: int = 0, closed: bool = False,
+        add_webapp_link: bool = True
     ):
         close_tag = '(closed)' if closed else ''
         numbered_poll_options = [
@@ -918,7 +920,7 @@ class BaseAPI(object):
             in enumerate(poll_options)
         ]
 
-        args = f'{strings.POLL_ID_GET_PARAM}={poll_id}'
+        args = f'{StartGetParams.POLL_ID}={poll_id}'
         stamp = int(time.time())
         deep_link_url = (
             f'https://t.me/{bot_username}?start={args}&stamp={stamp}'
@@ -936,7 +938,7 @@ class BaseAPI(object):
             Poll #{poll_id} {close_tag}
             {poll_question}
             ——————————————————
-            {num_votes} / {num_voters} voted
+            {num_votes} / {num_voters} voted (max {max_voters})
             ——————————————————
         """) +
             f'\n'.join(numbered_poll_options) +

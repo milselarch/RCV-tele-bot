@@ -11,6 +11,7 @@ from result import Result, Ok, Err
 
 from database.setup import DB, BaseModel, database_proxy
 from database.users import Users
+from database.payments import Payments
 from database.callback_context_state import CallbackContextState
 from database.message_context_state import MessageContextState
 
@@ -22,7 +23,7 @@ from database.db_helpers import (
 from peewee import (
     BigIntegerField, CharField,
     IntegerField, AutoField, TextField, DateTimeField,
-    BooleanField, ForeignKeyField, SQL, Database,
+    BooleanField, ForeignKeyField, SQL, Database, BigAutoField,
 )
 
 initialised_db: DB | None = None
@@ -33,7 +34,7 @@ def get_tables() -> list[Type[BaseModel]]:
     return [
         Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
         PollOptions, VoteRankings, PollWinners, CallbackContextState,
-        MessageContextState
+        MessageContextState, Payments, SupportTickets
     ]
 
 
@@ -62,6 +63,7 @@ class PollMetadata(object):
     _num_voters: int
     num_deleted: int
     num_votes: int
+    max_voters: int
 
     open_registration: bool
     closed: bool
@@ -125,7 +127,8 @@ class Polls(BaseModel):
             id=poll.id, question=poll.desc,
             _num_voters=poll.num_voters, num_votes=poll.num_votes,
             open_registration=poll.open_registration,
-            closed=poll.closed, num_deleted=poll.deleted_voters
+            closed=poll.closed, num_deleted=poll.deleted_voters,
+            max_voters=poll.max_voters
         )
 
     @classmethod
@@ -145,13 +148,15 @@ class Polls(BaseModel):
         })
 
     @classmethod
-    def get_as_creator(cls, poll_id: int, user_id: UserID) -> Polls:
+    def get_as_creator(
+        cls, poll_id: int, user_id: UserID
+    ) -> Result[Polls, Polls.DoesNotExist]:
         # TODO: wrap this in a Result with an enum error type
         #   (not found, unauthorized, etc) and use this in
         #   register_user_by_tele_id
         return cls.build_from_fields(
             poll_id=poll_id, creator_id=user_id
-        ).get()
+        ).safe_get()
 
     @classmethod
     def count_polls_created(cls, user_id: UserID) -> int:
@@ -327,6 +332,26 @@ class PollWinners(BaseModel):
 
         winning_option_id = int(winning_option.id)
         return Ok(winning_option_id)
+
+
+class SupportTickets(BaseModel):
+    id = BigAutoField(primary_key=True)
+    info = TextField(null=False)
+    is_payment_support = BooleanField(default=False)
+    resolved = BooleanField(default=False)
+
+    @classmethod
+    def build_from_fields(
+        cls, ticket_id: int | EmptyField = Empty,
+        info: str | EmptyField = Empty,
+        is_payment_support: bool | EmptyField = Empty,
+        resolved: bool | EmptyField = Empty
+    ) -> BoundRowFields[Self]:
+        return BoundRowFields(cls, {
+            cls.id: ticket_id, cls.info: info,
+            cls.is_payment_support: is_payment_support,
+            cls.resolved: resolved
+        })
 
 
 # database should be connected if called from pem db migrations

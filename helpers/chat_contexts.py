@@ -1,7 +1,7 @@
 import dataclasses
 import textwrap
-from enum import StrEnum
 
+from enum import StrEnum
 from typing import Sequence
 from result import Result, Ok, Err
 from telegram import Message
@@ -41,7 +41,7 @@ class ExtractChatContextErrors(StrEnum):
         if self == ExtractChatContextErrors.NO_CHAT_CONTEXT:
             return (
                 f"Use /{Command.HELP} to view all available commands, "
-                f"/{Command.CREATE_POLL} to create a new poll, "
+                f"/{Command.CREATE_GROUP_POLL} to create a new poll, "
                 f"or /{Command.VOTE} to vote for an existing poll "
             )
         elif self == ExtractChatContextErrors.LOAD_FAILED:
@@ -141,7 +141,7 @@ class PollCreatorTemplate(object):
         assert self.initial_num_voters <= max_voters
         return Ok(None)
 
-    def save_poll_to_db(self) -> Result[int, MessageBuilder]:
+    def save_poll_to_db(self) -> Result[Polls, MessageBuilder]:
         validate_res = self.validate_params()
         if validate_res.is_err():
             return validate_res
@@ -207,7 +207,7 @@ class PollCreatorTemplate(object):
             PollOptions.batch_insert(poll_option_rows).execute()
             ChatWhitelist.batch_insert(chat_whitelist_rows).execute()
 
-        return Ok(new_poll_id)
+        return Ok(new_poll)
 
 
 class PollCreationChatContext(SerializableChatContext):
@@ -295,3 +295,17 @@ class VoteChatContext(SerializableChatContext, BaseVoteContext):
 
     def get_context_type(self) -> ChatContextStateTypes:
         return ChatContextStateTypes.VOTE
+
+
+class PaySupportChatContext(SerializableChatContext):
+    user_id: int
+    chat_id: int
+
+    def get_user_id(self) -> UserID:
+        return UserID(self.user_id)
+
+    def get_chat_id(self) -> int:
+        return self.chat_id
+
+    def get_context_type(self) -> ChatContextStateTypes:
+        return ChatContextStateTypes.PAY_SUPPORT

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import datetime
-from typing import Self, Type, TypeVar
-
 import pydantic
 import json
 
 from enum import StrEnum
 from abc import ABCMeta, abstractmethod
 from result import Result, Ok, Err
+from typing import Self, Type, TypeVar
 
 from database.db_helpers import UserID, BoundRowFields, EmptyField, Empty
 from database.users import Users
@@ -141,4 +140,4 @@ class SerializableMessageContext(pydantic.BaseModel, metaclass=ABCMeta):
             model: P = cls.model_validate_json(context.state)
             return Ok(model)
         except ValueError as e:
-            Err(e)
+            return Err(e)

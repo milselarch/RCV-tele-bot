@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import time
 import base_api
 
@@ -179,6 +180,9 @@ def _register_voter(
 
 
 class BaseMessageHandler(object, metaclass=ABCMeta):
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
     @abstractmethod
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
@@ -235,6 +239,7 @@ class DeletePollMessageHandler(BaseMessageHandler):
         user_entry: Users = update.user
         user_id = user_entry.get_user_id()
         message_id = query.message.message_id
+        user_tele_id = query.message.from_user.id
         chat_id = query.message.chat_id
 
         if time.time() - init_stamp > constants.DELETE_POLL_BUTTON_EXPIRY:
@@ -257,7 +262,10 @@ class DeletePollMessageHandler(BaseMessageHandler):
         elif not poll.closed:
             return await query.answer(f"Poll #{poll_id} must be closed first")
 
+        delete_comment = f"Poll #{poll_id} user#{user_id} tele#{user_tele_id}"
+        self.logger.warning(f"Deleting {delete_comment}")
         Polls.delete().where(poll_query).execute()
+        self.logger.warning(f"Deleted {delete_comment}")
         await query.answer(f"Poll #{poll_id} deleted")
         # remove delete button after deletion is complete
         return await context.bot.edit_message_text(
@@ -489,7 +497,8 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
 
 
 class InlineKeyboardHandlers(object):
-    def __init__(self):
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
         self.poll_locks_manager = PollsLockManager()
 
         self.handlers: dict[CallbackCommands, Type[BaseMessageHandler]] = {
@@ -538,7 +547,7 @@ class InlineKeyboardHandlers(object):
             return await query.answer(f"Command {command} not supported")
 
         message_handler_cls = self.handlers[command]
-        message_handler = message_handler_cls()
+        message_handler = message_handler_cls(logger=self.logger)
         return await message_handler.handle_queries(
             update=update, context=context, callback_data=callback_data
         )
