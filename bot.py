@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import textwrap
 import asyncio
@@ -63,8 +64,10 @@ from tele_helpers import TelegramHelpers
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 
+LOG_PATH = 'logs/log_events.txt'
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 file_log_handler = log_handlers.TimedRotatingFileHandler(
-    'logs/log_events.txt', when='W6'
+    LOG_PATH, when='W6'
 )
 file_log_handler.setLevel(logging.WARNING)
 logging.basicConfig(
