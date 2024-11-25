@@ -273,19 +273,19 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
         self, chat_context: CallbackContextState,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
-        message: Message = update.message
+        msg: Message = update.message
         extract_context_res = extract_chat_context(update)
 
         if extract_context_res.is_err():
             error = extract_context_res.unwrap_err()
-            return await message.reply_text(error.to_message())
+            return await msg.reply_text(error.to_message())
 
         extracted_context: ExtractedChatContext = extract_context_res.unwrap()
         chat_context = extracted_context.chat_context
         inc_voters_context_res = IncMaxVotersChatContext.load(chat_context)
         if inc_voters_context_res.is_err():
             chat_context.delete()
-            return await message.reply_text(
+            return await msg.reply_text(
                 "Unexpected error loading increase max voter context"
             )
 
@@ -293,18 +293,26 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
         poll_id = inc_voters_context.get_poll_id()
 
         if poll_id == BLANK_POLL_ID:
-            return await message.reply_text(strings.ENTER_POLL_ID_PROMPT)
+            return await msg.reply_text(strings.ENTER_POLL_ID_PROMPT)
         else:
-            return await message.reply_text(
-                strings.generate_max_voters_prompt(poll_id)
-            )
+            user_id = update.user.get_user_id()
+            poll_res = Polls.get_as_creator(poll_id, user_id)
+            if poll_res.is_err():
+                return await msg.reply_text(
+                    strings.MAX_VOTERS_NOT_EDITABLE
+                )
+
+            poll = poll_res.unwrap()
+            return await msg.reply_text(strings.generate_max_voters_prompt(
+                poll_id, current_max=poll.max_voters
+            ))
 
 
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
-        message: Message = update.message
+        msg: Message = update.message
         chat_context = extracted_context.chat_context
         message_text = extracted_context.message_text
         user = update.user
@@ -312,7 +320,7 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
         inc_voters_context_res = IncMaxVotersChatContext.load(chat_context)
         if inc_voters_context_res.is_err():
             chat_context.delete()
-            return await message.reply_text(
+            return await msg.reply_text(
                 "Unexpected error loading increase max voter context"
             )
 
@@ -321,25 +329,26 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
             try:
                 poll_id = int(message_text)
             except ValueError:
-                return await message.reply_text("Invalid poll ID")
+                return await msg.reply_text("Invalid poll ID")
 
             poll_res = Polls.get_as_creator(poll_id, user.get_user_id())
             if poll_res.is_err():
-                return await message.reply_text(
+                return await msg.reply_text(
                     strings.MAX_VOTERS_NOT_EDITABLE
                 )
 
+            poll = poll_res.unwrap()
             inc_voters_context.poll_id = poll_id
             inc_voters_context.save_state()
-            return await message.reply_text(
-                strings.generate_max_voters_prompt(poll_id)
-            )
+            return await msg.reply_text(strings.generate_max_voters_prompt(
+                poll_id, current_max=poll.max_voters
+            ))
         else:
             poll_id = inc_voters_context.poll_id
             try:
                 new_max_voters = int(message_text)
             except ValueError:
-                return await message.reply_text(
+                return await msg.reply_text(
                     "New maximum number of voters must be an integer"
                 )
 

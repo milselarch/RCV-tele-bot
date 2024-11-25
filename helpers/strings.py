@@ -161,10 +161,10 @@ def generate_vote_option_prompt(rank: int) -> str:
         )
 
 
-def generate_max_voters_prompt(poll_id: int):
+def generate_max_voters_prompt(poll_id: int, current_max: int):
     return (
-        "Enter the new maximum number of voters "
-        f"that can vote for poll #{poll_id}:"
+        f"Enter the new maximum number of voters that can vote for "
+        f"poll #{poll_id} (current limit is {current_max}):"
     )
 
 
