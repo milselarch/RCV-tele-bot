@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import math
 import re
 import textwrap
 import pydantic
@@ -313,39 +314,41 @@ class PaymentHandlers(object):
     async def set_max_voters(
         cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
-        message = update.message
+        msg = update.message
         raw_args = TelegramHelpers.read_raw_command_args(update)
         user = update.user
 
         if raw_args == '':
             # TODO: implement callback context behavior
             IncMaxVotersChatContext(
-                user_id=user.get_user_id(), chat_id=message.chat_id
+                user_id=user.get_user_id(), chat_id=msg.chat_id
             ).save_state()
-            return await message.reply_text(
+            return await msg.reply_text(
                 strings.ENTER_POLL_ID_PROMPT
             )
         elif constants.ID_PATTERN.match(raw_args) is not None:
             poll_id = int(raw_args)
             poll_res = Polls.get_as_creator(poll_id, user.get_user_id())
             if poll_res.is_err():
-                return await message.reply_text(
+                return await msg.reply_text(
                     strings.MAX_VOTERS_NOT_EDITABLE
                 )
 
             IncMaxVotersChatContext(
-                user_id=user.get_user_id(), chat_id=message.chat_id,
+                user_id=user.get_user_id(), chat_id=msg.chat_id,
                 poll_id=poll_id
             ).save_state()
-            return await message.reply_text(
-                strings.generate_max_voters_prompt(poll_id)
-            )
+
+            poll = poll_res.unwrap()
+            return await msg.reply_text(strings.generate_max_voters_prompt(
+                poll_id, current_max=poll.max_voters
+            ))
 
         # matches two numbers seperated by a space
         pattern = re.compile(r'^([1-9]\d*)\s+([1-9]\d*)$')
         match_result = pattern.match(raw_args)
         if match_result is None:
-            return await message.reply_text(textwrap.dedent(f"""
+            return await msg.reply_text(textwrap.dedent(f"""
                 Invalid arguments
                 Command format is:
                 /{Command.SET_MAX_VOTERS} {{poll_id}} {{new_voter_limit}}
@@ -385,7 +388,8 @@ class PaymentHandlers(object):
 
         voters_increase = new_max_voters - poll.max_voters
         assert voters_increase > 0
-        payment_amount = voters_increase
+        payment_amount = math.ceil(voters_increase / 2)
+        assert isinstance(payment_amount, int)
         invoice = IncreaseVoterLimitParams(
             poll_id=poll_id, voters_increase=voters_increase
         )
