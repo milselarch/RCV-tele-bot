@@ -199,10 +199,9 @@ class RankedChoiceBot(BaseAPI):
         self.app.run_polling(allowed_updates=BaseTeleUpdate.ALL_TYPES)
         print('<<< BOT POLLING LOOP ENDED >>>')
 
-    @staticmethod
-    async def post_init(application: Application):
+    async def post_init(self, _: Application):
         # print('SET COMMANDS')
-        await application.bot.set_my_commands([(
+        await self.get_bot().set_my_commands([(
             Command.START, 'start bot'
         ), (
             Command.USER_DETAILS, 'shows your username and user id'

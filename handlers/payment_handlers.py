@@ -319,7 +319,6 @@ class PaymentHandlers(object):
         user = update.user
 
         if raw_args == '':
-            # TODO: implement callback context behavior
             IncMaxVotersChatContext(
                 user_id=user.get_user_id(), chat_id=msg.chat_id
             ).save_state()
