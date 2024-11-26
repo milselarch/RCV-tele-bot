@@ -3,7 +3,7 @@ import textwrap
 
 from helpers.commands import Command
 
-__VERSION__ = '1.3.0'
+__VERSION__ = '1.3.1'
 
 READ_SUBSCRIPTION_TIER_FAILED = "Unexpected error reading subscription tier"
 POLL_OPTIONS_LIMIT_REACHED_TEXT = textwrap.dedent(f"""
@@ -124,11 +124,6 @@ def generate_delete_text(deletion_token: str) -> str:
         /{Command.DELETE_ACCOUNT} {deletion_token}
     """)
 
-
-INCREASE_MAX_VOTERS_TEXT = (
-    f"Poll created. Use /{Command.SET_MAX_VOTERS} to change "
-    f"the maximum number of voters who can vote for the poll. "
-)
 MAX_VOTERS_NOT_EDITABLE = (
     "Invalid poll ID - note that only the poll's creator is allowed to "
     "change the max number of voters"
@@ -141,6 +136,7 @@ INVALID_MAX_VOTERS = (
     "New poll max voter limit must be greater "
     "than the existing limit"
 )
+BOT_STARTED = 'Bot started'
 
 
 def escape_markdown(string: str) -> str:
@@ -151,12 +147,21 @@ def escape_markdown(string: str) -> str:
     )
 
 
+def generate_poll_created_message(poll_id: int):
+    return (
+        f"Poll #{poll_id} created.\n"
+        f"Run /close_poll to close the poll.\n"
+        f"Use /{Command.SET_MAX_VOTERS} to change "
+        f"the maximum number of voters who can vote for the poll. "
+    )
+
+
 def generate_vote_option_prompt(rank: int) -> str:
     if rank == 1:
-        return f"Enter the poll option you want to rank #{rank}:"
+        return f"Enter the poll option no. you want to rank #{rank}:"
     else:
         return (
-            f"Enter the poll option you want to rank #{rank}, "
+            f"Enter the poll option no. you want to rank #{rank}, "
             f"or use /done if you're done:"
         )
 
@@ -170,3 +175,6 @@ def generate_max_voters_prompt(poll_id: int, current_max: int):
 
 def generate_poll_closed_message(poll_id: int):
     return f"Poll #{poll_id} has been closed already"
+
+def generate_poll_deleted_message(poll_id: int):
+    return f"Poll #{poll_id} has been deleted already"

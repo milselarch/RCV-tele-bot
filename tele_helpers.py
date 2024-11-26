@@ -289,7 +289,7 @@ class TelegramHelpers(object):
     @classmethod
     async def set_chat_registration_status(
         cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        whitelist: bool, poll_id: int, add_webapp_link: bool = True
+        whitelist: bool, poll_id: int, add_webapp_link: bool = False
     ) -> bool:
         message = update.message
         tele_user: TeleUser | None = message.from_user
@@ -352,7 +352,7 @@ class TelegramHelpers(object):
     @classmethod
     async def view_poll_by_id(
         cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        poll_id: int, add_webapp_link: bool = True
+        poll_id: int, add_webapp_link: bool = False
     ) -> bool:
         user = update.user
         message = update.message

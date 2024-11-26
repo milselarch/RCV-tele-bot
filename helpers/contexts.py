@@ -61,7 +61,10 @@ class BaseVoteContext(pydantic.BaseModel, metaclass=ABCMeta):
         return len(self.rankings)
 
     def to_vote_message(self) -> str:
-        return f'{self.poll_id}: ' + self.rankings_to_str()
+        return (
+            f'Current vote for Poll #{self.poll_id}: \n' +
+            self.rankings_to_str()
+        )
 
     def rankings_to_str(self):
         return ' > '.join([

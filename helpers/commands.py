@@ -37,3 +37,4 @@ class Command(StrEnum):
     REFUND_ADMIN = "refund_admin"
     ENTER_MAINTENANCE_ADMIN = "enter_maintenance_admin"
     EXIT_MAINTENANCE_ADMIN = "exit_maintenance_admin"
+    SEND_MSG_ADMIN = "send_msg_admin"

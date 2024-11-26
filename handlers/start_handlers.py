@@ -158,7 +158,8 @@ class StartHandlers(object):
         args = context.args
 
         if len(args) == 0:
-            await update.message.reply_text('Bot started')
+            await update.message.reply_text(strings.BOT_STARTED)
+            # TODO: check for existing chat contexts
             return True
 
         command_params: str = args[0]

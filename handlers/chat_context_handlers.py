@@ -18,7 +18,7 @@ from helpers.chat_contexts import (
     extract_chat_context
 )
 from helpers.strings import (
-    READ_SUBSCRIPTION_TIER_FAILED, INCREASE_MAX_VOTERS_TEXT
+    READ_SUBSCRIPTION_TIER_FAILED, generate_poll_created_message
 )
 from database import (
     Users, CallbackContextState, ChatContextStateTypes, Polls, SupportTickets
@@ -88,6 +88,7 @@ class PollCreationContextHandler(BaseContextHandler):
     ):
         user_entry: Users = update.user
         message: Message = update.message
+        reply_text = message.reply_text
         tele_user: TeleUser | None = message.from_user
         chat_type = message.chat.type
         user_id = user_entry.get_user_id()
@@ -95,14 +96,14 @@ class PollCreationContextHandler(BaseContextHandler):
         poll_creation_context_res = PollCreationChatContext.load(chat_context)
         if poll_creation_context_res.is_err():
             chat_context.delete()
-            return await message.reply_text(
+            return await reply_text(
                 "Unexpected error loading poll creation context"
             )
 
         poll_creation_context = poll_creation_context_res.unwrap()
         subscription_tier_res = user_entry.get_subscription_tier()
         if subscription_tier_res.is_err():
-            return await message.reply_text(READ_SUBSCRIPTION_TIER_FAILED)
+            return await reply_text(READ_SUBSCRIPTION_TIER_FAILED)
 
         subscription_tier = subscription_tier_res.unwrap()
         poll_creator = poll_creation_context.to_template(
@@ -112,7 +113,7 @@ class PollCreationContextHandler(BaseContextHandler):
         create_poll_res = poll_creator.save_poll_to_db()
         if create_poll_res.is_err():
             error_message = create_poll_res.err()
-            return await error_message.call(message.reply_text)
+            return await error_message.call(reply_text)
 
         new_poll: Polls = create_poll_res.unwrap()
         poll_id = int(new_poll.id)
@@ -129,7 +130,7 @@ class PollCreationContextHandler(BaseContextHandler):
         )
         if view_poll_result.is_err():
             error_message = view_poll_result.err()
-            return await error_message.call(message.reply_text)
+            return await error_message.call(reply_text)
 
         poll_message = view_poll_result.unwrap()
         reply_markup = BaseAPI.generate_vote_markup(
@@ -138,7 +139,6 @@ class PollCreationContextHandler(BaseContextHandler):
             num_options=poll_message.poll_info.max_options
         )
 
-        reply_text = message.reply_text
         bot_username = context.bot.username
         deep_link_url = (
             f'https://t.me/{bot_username}?startgroup='
@@ -155,18 +155,17 @@ class PollCreationContextHandler(BaseContextHandler):
             "Alternatively, click the following link to share the "
             "poll to the group chat of your choice:"
         )
-
         # https://stackoverflow.com/questions/76538913/
-        return await message.reply_markdown_v2(textwrap.dedent(f"""
-            {strings.escape_markdown(INCREASE_MAX_VOTERS_TEXT)}
-            
-            Run the following command:  
-            `/{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}` 
-            {group_chat_text}\\.  
-            
-            {share_link_text}  
-            [{escaped_deep_link_url}]({escaped_deep_link_url})
-        """))
+        return await message.reply_markdown_v2(
+            strings.escape_markdown(generate_poll_created_message(poll_id)) +
+            f'\n\n' +
+            f'Run the following command:\n'  
+            f"`/{Command.WHITELIST_CHAT_REGISTRATION} {poll_id}` " 
+            f"{group_chat_text}\\.\n" +
+            f'\n' +
+            share_link_text +
+            f" [{escaped_deep_link_url}]({escaped_deep_link_url})"
+        )
 
 
 class VoteContextHandler(BaseContextHandler):

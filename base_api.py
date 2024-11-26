@@ -43,7 +43,7 @@ from telegram import (
 )
 from aioredlock import Aioredlock, LockError
 from database.database import (
-    PollWinners, BaseModel, UserID, PollMetadata, ChatWhitelist
+    PollWinners, UserID, PollMetadata, ChatWhitelist
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,7 @@ class CallbackCommands(StrEnum):
     UNDO_OPTION = 'UNDO'
     RESET_VOTE = 'RESET'
     SUBMIT_VOTE = 'SUBMIT_VOTE'
+    REGISTER_OR_SUBMIT = 'REGISTER_OR_SUBMIT'
     VIEW_VOTE = 'VIEW_VOTE'
 
 
@@ -366,16 +367,6 @@ class BaseAPI(object):
         winning_option_id = votes_aggregator.determine_winner()
         return winning_option_id
 
-    @staticmethod
-    def get_poll_voter(
-        poll_id: int, user_id: UserID
-    ) -> Result[PollVoters, Optional[BaseModel.DoesNotExist]]:
-        # check if voter is part of the poll
-        return PollVoters.safe_get(
-            (PollVoters.poll == poll_id) &
-            (PollVoters.user == user_id)
-        )
-
     @classmethod
     def verify_voter(
         cls, poll_id: int, user_id: UserID, username: Optional[str] = None,
@@ -389,7 +380,7 @@ class BaseAPI(object):
         and whether user was newly whitelisted from chat whitelist
         """
         
-        poll_voter_res = cls.get_poll_voter(poll_id, user_id)
+        poll_voter_res = PollVoters.get_poll_voter(poll_id, user_id)
         if poll_voter_res.is_ok():
             poll_voter = poll_voter_res.unwrap()
             return Ok((poll_voter, False))
@@ -607,13 +598,9 @@ class BaseAPI(object):
         ).safe_get().is_ok()
 
     @classmethod
-    def is_poll_voter(cls, poll_id: int, user_id: UserID) -> bool:
-        return cls.get_poll_voter(poll_id=poll_id, user_id=user_id).is_ok()
-
-    @classmethod
     def get_poll_message(
         cls, poll_id: int, user_id: UserID, bot_username: str,
-        username: Optional[str], add_webapp_link: bool = True
+        username: Optional[str], add_webapp_link: bool = False
     ) -> Result[PollMessage, MessageBuilder]:
         if not cls.has_access_to_poll_id(
             poll_id=poll_id, user_id=user_id, username=username
@@ -630,7 +617,7 @@ class BaseAPI(object):
     @classmethod
     def _get_poll_message(
         cls, poll_id: int, bot_username: str,
-        add_webapp_link: bool = True
+        add_webapp_link: bool = False
     ) -> PollMessage:
         poll_info = cls.unverified_read_poll_info(poll_id=poll_id)
         return cls.generate_poll_message(
@@ -641,7 +628,7 @@ class BaseAPI(object):
     @classmethod
     def generate_poll_message(
         cls, poll_info: PollInfo, bot_username: str,
-        add_webapp_link: bool = True
+        add_webapp_link: bool = False
     ) -> PollMessage:
         poll_metadata = poll_info.metadata
         poll_message = cls.generate_poll_info(
@@ -703,7 +690,8 @@ class BaseAPI(object):
         logger.warning(f'POLL_URL = {poll_url}')
         # create vote button for reply message
         markup_layout = [[KeyboardButton(
-            text=f'Vote for Poll #{poll_id}', web_app=WebAppInfo(url=poll_url)
+            text=f'Vote for Poll #{poll_id} Online',
+            web_app=WebAppInfo(url=poll_url)
         )]]
 
         return markup_layout
@@ -714,20 +702,11 @@ class BaseAPI(object):
     ) -> List[List[InlineKeyboardButton]]:
         """
         TODO: implement button vote context
-        < poll registration button >
         < vote option rows >
-        < undo, abstain, withhold, reset >
-        < submit / check button >
+        < undo, view, reset >
+        < register / submit button >
         """
         markup_rows, current_row = [], []
-
-        # create first row with just registration button
-        markup_rows.append([cls.spawn_inline_keyboard_button(
-            text='Register for Poll',
-            command=CallbackCommands.REGISTER_FOR_POLL,
-            callback_data=dict(poll_id=poll_id)
-        )])
-
         # fill in rows containing poll option numbers
         for ranking in range(1, num_options+1):
             current_row.append(cls.spawn_inline_keyboard_button(
@@ -745,26 +724,16 @@ class BaseAPI(object):
                 markup_rows.append(current_row)
                 current_row = []
 
-        # add row with undo, abstain, withhold, reset buttons
+        # add row with undo, view, reset buttons
         markup_rows.append([
             cls.spawn_inline_keyboard_button(
                 text='undo',
                 command=CallbackCommands.UNDO_OPTION,
                 callback_data=dict(poll_id=poll_id)
             ), cls.spawn_inline_keyboard_button(
-                text='abstain',
-                command=CallbackCommands.ADD_VOTE_OPTION,
-                callback_data=dict(
-                    poll_id=poll_id,
-                    option=SpecialVotes.ABSTAIN_VOTE.value
-                )
-            ), cls.spawn_inline_keyboard_button(
-                text='withhold',
-                command=CallbackCommands.ADD_VOTE_OPTION,
-                callback_data=dict(
-                    poll_id=poll_id,
-                    option=SpecialVotes.WITHHOLD_VOTE.value
-                )
+                text='view',
+                command=CallbackCommands.VIEW_VOTE,
+                callback_data=dict(poll_id=poll_id)
             ), cls.spawn_inline_keyboard_button(
                 text='reset',
                 command=CallbackCommands.RESET_VOTE,
@@ -775,13 +744,8 @@ class BaseAPI(object):
         # add final row with view vote, submit vote buttons
         markup_rows.append([
             cls.spawn_inline_keyboard_button(
-                text='View Vote',
-                command=CallbackCommands.VIEW_VOTE,
-                callback_data=dict(poll_id=poll_id)
-            ),
-            cls.spawn_inline_keyboard_button(
-                text='Submit Vote',
-                command=CallbackCommands.SUBMIT_VOTE,
+                text='Register / Submit Vote',
+                command=CallbackCommands.REGISTER_OR_SUBMIT,
                 callback_data=dict(poll_id=poll_id)
             )
         ])
@@ -853,7 +817,7 @@ class BaseAPI(object):
 
         if creator_id == user_id:
             return True
-        if cls.is_poll_voter(poll_id, user_id):
+        if PollVoters.is_poll_voter(poll_id, user_id):
             return True
 
         if username is not None:
@@ -912,7 +876,7 @@ class BaseAPI(object):
         poll_id, poll_question, poll_options: list[str],
         bot_username: str, max_voters: int, num_votes: int = 0,
         num_voters: int = 0, closed: bool = False,
-        add_webapp_link: bool = True
+        add_webapp_link: bool = False
     ):
         close_tag = '(closed)' if closed else ''
         numbered_poll_options = [
