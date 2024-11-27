@@ -636,6 +636,9 @@ class BaseAPI(object):
         add_instructions: bool = False
     ) -> PollMessage:
         poll_metadata = poll_info.metadata
+        add_instructions = (
+            add_instructions and poll_metadata.open_registration
+        )
         poll_message = cls.generate_poll_info(
             poll_metadata.id, poll_metadata.question,
             poll_info.poll_options, closed=poll_metadata.closed,
