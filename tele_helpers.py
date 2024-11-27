@@ -332,6 +332,10 @@ class TelegramHelpers(object):
                 )
             else:
                 await message.reply_text('Chat has already been whitelisted')
+                await cls.view_poll_by_id(
+                    update, context, poll_id=poll_id,
+                    add_webapp_link=add_webapp_link
+                )
 
             return True
         else:
