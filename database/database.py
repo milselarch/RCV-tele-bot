@@ -234,6 +234,19 @@ class PollVoters(BaseModel):
         assert isinstance(self.user, Users)
         return self.user
 
+    @classmethod
+    def get_poll_voter(
+        cls, poll_id: int, user_id: UserID
+    ) -> Result[PollVoters, Optional[BaseModel.DoesNotExist]]:
+        # check if voter is part of the poll
+        return cls.safe_get(
+            (cls.poll == poll_id) & (cls.user == user_id)
+        )
+
+    @classmethod
+    def is_poll_voter(cls, poll_id: int, user_id: UserID) -> bool:
+        return cls.get_poll_voter(poll_id=poll_id, user_id=user_id).is_ok()
+
 
 # whitelists voters for a poll by their username
 # assigns their user_id to the corresponding username

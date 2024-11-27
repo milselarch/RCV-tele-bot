@@ -5,6 +5,7 @@ import logging
 import os
 import time
 import textwrap
+import telegram
 import asyncio
 import re
 
@@ -41,7 +42,7 @@ from typing import (
 
 from helpers.strings import (
     POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED,
-    INCREASE_MAX_VOTERS_TEXT
+    generate_poll_created_message
 )
 from helpers.chat_contexts import (
     PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
@@ -150,17 +151,19 @@ class RankedChoiceBot(BaseAPI):
             Command.DELETE_ACCOUNT: self.delete_account,
             Command.HELP: self.show_help,
             Command.DONE: context_handlers.complete_chat_context,
+            Command.SET_MAX_VOTERS: self.payment_handlers.set_max_voters,
+            Command.PAY_SUPPORT: self.payment_support_handler,
+
             Command.VOTE_ADMIN: self.vote_for_poll_admin,
             Command.CLOSE_POLL_ADMIN: self.close_poll_admin,
             Command.UNCLOSE_POLL_ADMIN: self.unclose_poll_admin,
             Command.LOOKUP_FROM_USERNAME_ADMIN:
                 self.lookup_from_username_admin,
             Command.INSERT_USER_ADMIN: self.insert_user_admin,
-            Command.SET_MAX_VOTERS: self.payment_handlers.set_max_voters,
-            Command.PAY_SUPPORT: self.payment_support_handler,
             Command.REFUND_ADMIN: self.refund_payment_support_handler,
             Command.ENTER_MAINTENANCE_ADMIN: self.enter_maintenance_admin,
-            Command.EXIT_MAINTENANCE_ADMIN: self.exit_maintenance_admin
+            Command.EXIT_MAINTENANCE_ADMIN: self.exit_maintenance_admin,
+            Command.SEND_MSG_ADMIN: self.send_msg_admin
         }
 
         # on different commands - answer in Telegram
@@ -199,10 +202,9 @@ class RankedChoiceBot(BaseAPI):
         self.app.run_polling(allowed_updates=BaseTeleUpdate.ALL_TYPES)
         print('<<< BOT POLLING LOOP ENDED >>>')
 
-    @staticmethod
-    async def post_init(application: Application):
+    async def post_init(self, _: Application):
         # print('SET COMMANDS')
-        await application.bot.set_my_commands([(
+        await self.get_bot().set_my_commands([(
             Command.START, 'start bot'
         ), (
             Command.USER_DETAILS, 'shows your username and user id'
@@ -346,7 +348,7 @@ class RankedChoiceBot(BaseAPI):
 
         user_id = user.get_user_id()
         poll_id = extract_poll_id_result.unwrap()
-        is_voter = self.is_poll_voter(
+        is_voter = PollVoters.is_poll_voter(
             poll_id=poll_id, user_id=user_id
         )
 
@@ -551,7 +553,8 @@ class RankedChoiceBot(BaseAPI):
             new_poll_id, poll_question, poll_options,
             bot_username=bot_username, closed=False,
             num_voters=poll_creator.initial_num_voters,
-            max_voters=new_poll.max_voters
+            max_voters=new_poll.max_voters,
+            add_instructions=update.is_group_chat()
         )
 
         chat_type = update.message.chat.type
@@ -570,10 +573,8 @@ class RankedChoiceBot(BaseAPI):
             )
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
-        await message.reply_text(
-            poll_message, reply_markup=reply_markup
-        )
-        await message.reply_text(INCREASE_MAX_VOTERS_TEXT)
+        await message.reply_text(poll_message, reply_markup=reply_markup)
+        await message.reply_text(generate_poll_created_message(new_poll_id))
 
     @classmethod
     async def whitelist_chat_registration(
@@ -1079,6 +1080,14 @@ class RankedChoiceBot(BaseAPI):
 
     async def close_poll(self, update, *_, **__):
         message = update.message
+        message_text = TelegramHelpers.read_raw_command_args(update)
+
+        if constants.ID_PATTERN.match(message_text) is None:
+            return await message.reply_text(textwrap.dedent(f"""
+                Input format is invalid, try:
+                /{Command.CLOSE_POLL} {{poll_id}}
+            """))
+
         extract_result = TelegramHelpers.extract_poll_id(update)
 
         if extract_result.is_err():
@@ -1675,20 +1684,40 @@ class RankedChoiceBot(BaseAPI):
             payment.save()
 
     @admin_only
-    def enter_maintenance_admin(
+    async def enter_maintenance_admin(
         self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
     ):
         message = update.message
         self.payment_handlers.enter_maintenance_mode()
-        return message.reply_text('Maintenance mode entered')
+        return await message.reply_text('Maintenance mode entered')
 
     @admin_only
-    def exit_maintenance_admin(
+    async def exit_maintenance_admin(
         self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
     ):
         message = update.message
         self.payment_handlers.exit_maintenance_mode()
-        return message.reply_text('Maintenance mode exited')
+        return await message.reply_text('Maintenance mode exited')
+
+    @admin_only
+    async def send_msg_admin(
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+    ):
+        raw_args = TelegramHelpers.read_raw_command_args(update)
+        split_index = raw_args.index(' ')
+        chat_id = int(raw_args[:split_index])
+        payload = raw_args[split_index+1:]
+        reply_text = update.message.reply_text
+
+        try:
+            response = await context.bot.send_message(
+                chat_id=chat_id, text=payload
+            )
+        except telegram.error.BadRequest:
+            return await reply_text("Failed to send message")
+
+        logger.info(f"SEND_RESP {response}")
+        return await reply_text("Message sent")
 
 
 if __name__ == '__main__':
