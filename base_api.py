@@ -600,7 +600,8 @@ class BaseAPI(object):
     @classmethod
     def get_poll_message(
         cls, poll_id: int, user_id: UserID, bot_username: str,
-        username: Optional[str], add_webapp_link: bool = False
+        username: Optional[str], add_webapp_link: bool = False,
+        add_instructions: bool = False
     ) -> Result[PollMessage, MessageBuilder]:
         if not cls.has_access_to_poll_id(
             poll_id=poll_id, user_id=user_id, username=username
@@ -611,24 +612,28 @@ class BaseAPI(object):
 
         return Ok(cls._get_poll_message(
             poll_id=poll_id, bot_username=bot_username,
-            add_webapp_link=add_webapp_link
+            add_webapp_link=add_webapp_link,
+            add_instructions=add_instructions
         ))
 
     @classmethod
     def _get_poll_message(
         cls, poll_id: int, bot_username: str,
-        add_webapp_link: bool = False
+        add_webapp_link: bool = False,
+        add_instructions: bool = False
     ) -> PollMessage:
         poll_info = cls.unverified_read_poll_info(poll_id=poll_id)
         return cls.generate_poll_message(
             poll_info=poll_info, bot_username=bot_username,
-            add_webapp_link=add_webapp_link
+            add_webapp_link=add_webapp_link,
+            add_instructions=add_instructions
         )
 
     @classmethod
     def generate_poll_message(
         cls, poll_info: PollInfo, bot_username: str,
-        add_webapp_link: bool = False
+        add_webapp_link: bool = False,
+        add_instructions: bool = False
     ) -> PollMessage:
         poll_metadata = poll_info.metadata
         poll_message = cls.generate_poll_info(
@@ -637,7 +642,8 @@ class BaseAPI(object):
             bot_username=bot_username, max_voters=poll_metadata.max_voters,
             num_voters=poll_metadata.num_active_voters,
             num_votes=poll_metadata.num_votes,
-            add_webapp_link=add_webapp_link
+            add_webapp_link=add_webapp_link,
+            add_instructions=add_instructions
         )
 
         reply_markup = None
@@ -876,7 +882,8 @@ class BaseAPI(object):
         poll_id, poll_question, poll_options: list[str],
         bot_username: str, max_voters: int, num_votes: int = 0,
         num_voters: int = 0, closed: bool = False,
-        add_webapp_link: bool = False
+        add_webapp_link: bool = False,
+        add_instructions: bool = False
     ):
         close_tag = '(closed)' if closed else ''
         numbered_poll_options = [
@@ -891,14 +898,24 @@ class BaseAPI(object):
         )
 
         webapp_link_footer = ''
+        instructions_footer = ''
+
         if add_webapp_link:
             webapp_link_footer = (
                 f'\n——————————————————'
-                f'\nvote on the webapp at {deep_link_url}'
+                f'\nvote on the webapp at {deep_link_url}\n'
+            )
+        if add_instructions:
+            instructions_footer = (
+                '\n——————————————————\n'
+                'How to vote:\n'
+                '- press the register button, then '
+                'start the bot via chat DM\n'
+                '- alternatively, press the number buttons in order of most '
+                'to least favourite option, then press submit'
             )
 
-        return (
-            textwrap.dedent(f"""
+        return (textwrap.dedent(f"""
             Poll #{poll_id} {close_tag}
             {poll_question}
             ——————————————————
@@ -906,8 +923,9 @@ class BaseAPI(object):
             ——————————————————
         """) +
             f'\n'.join(numbered_poll_options) +
-            webapp_link_footer
-        )
+            webapp_link_footer +
+            instructions_footer
+        ).strip()
 
     @staticmethod
     def make_data_check_string(

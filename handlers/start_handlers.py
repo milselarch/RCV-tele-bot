@@ -3,13 +3,17 @@ from typing import Type
 
 from base_api import BaseAPI
 from database import Users, Payments, Polls
-from handlers.payment_handlers import BasePaymentParams, InvoiceTypes, IncreaseVoterLimitParams, PaymentHandlers
 from helpers import strings
+from helpers.chat_contexts import extract_chat_context
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from telegram import User as TeleUser, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from helpers.start_get_params import StartGetParams
-
+from handlers.chat_context_handlers import context_handlers
+from handlers.payment_handlers import (
+    BasePaymentParams, InvoiceTypes, IncreaseVoterLimitParams,
+    PaymentHandlers
+)
 
 class BaseMessageHandler(object, metaclass=ABCMeta):
     @abstractmethod
@@ -47,7 +51,8 @@ class StartVoteHandler(BaseMessageHandler):
         view_poll_result = BaseAPI.get_poll_message(
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
-            username=tele_user.username
+            username=tele_user.username,
+            add_instructions=update.is_group_chat()
         )
 
         if view_poll_result.is_err():
@@ -159,8 +164,26 @@ class StartHandlers(object):
 
         if len(args) == 0:
             await update.message.reply_text(strings.BOT_STARTED)
-            # TODO: check for existing chat contexts
-            return True
+            # check for existing chat context and process it if it exists
+            chat_context_res = extract_chat_context(update)
+            if chat_context_res.is_err():
+                return
+
+            extracted_context = chat_context_res.unwrap()
+            context_type = extracted_context.context_type
+            chat_handlers = context_handlers.context_handlers
+
+            if context_type not in chat_handlers:
+                return await message.reply_text(
+                    f"{context_type} context unsupported"
+                )
+
+            context_handler_cls = chat_handlers[context_type]
+            context_handler = context_handler_cls()
+            return await context_handler.handle_messages(
+                extracted_context, update, context,
+                is_from_start=True
+            )
 
         command_params: str = args[0]
         assert isinstance(command_params, str)

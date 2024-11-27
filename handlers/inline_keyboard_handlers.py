@@ -590,7 +590,6 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
                     poll_locks_manager=_poll_locks_manager
                 ))
             else:
-                # TODO: attempt to start vote context in chat DM
                 return await query.answer(BaseAPI.reg_status_to_msg(
                     register_status, poll_id
                 ))
@@ -611,7 +610,7 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
         )
         vote_context.save_state()
         bot_username = context.bot.username
-        async def send_message(text, markup: Optional[ReplyMarkup] = None):
+        async def send_dm(text, markup: Optional[ReplyMarkup] = None):
             await context.bot.send_message(
                 text=text, chat_id=tele_user.id, reply_markup=markup
             )
@@ -623,7 +622,9 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
 
         try:
             # check that we can send a message to user directly
-            await send_message(strings.BOT_STARTED)
+            # i.e. check that bot DM with user has been opened
+            await send_dm(strings.BOT_STARTED)
+            # raise telegram.error.BadRequest("")
         except telegram.error.BadRequest:
             resp = f"{resp_header} - start the bot to cast your vote"
             return await query.answer(resp)
@@ -631,7 +632,8 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
         coroutine = query.answer(resp_header)
         coroutines.append(coroutine)
         poll_message = BaseAPI.generate_poll_message(
-            poll_info=poll_info, bot_username=bot_username
+            poll_info=poll_info, bot_username=bot_username,
+            add_instructions=False
         )
         poll = poll_message.poll_info.metadata
         reply_markup = BaseAPI.generate_vote_markup(
@@ -641,11 +643,11 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
         )
         # display poll info in chat DMs at the start
         poll_contents = poll_message.text
-        async def send_poll_info():
-            await send_message(poll_contents, markup=reply_markup)
-            await send_message(vote_context.generate_vote_option_prompt())
+        async def dm_poll_info():
+            await send_dm(poll_contents, markup=reply_markup)
+            await send_dm(vote_context.generate_vote_option_prompt())
 
-        coroutines.append(send_poll_info())
+        coroutines.append(dm_poll_info())
         await asyncio.gather(*coroutines)
 
 

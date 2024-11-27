@@ -56,6 +56,9 @@ class ModifiedTeleUpdate(object):
     def pre_checkout_query(self):
         return self.update.pre_checkout_query
 
+    def is_group_chat(self) -> bool:
+        return self.update.message.chat.type != 'private'
+
 
 class TelegramHelpers(object):
     @classmethod
@@ -363,7 +366,8 @@ class TelegramHelpers(object):
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
             username=user.username,
-            add_webapp_link=add_webapp_link
+            add_webapp_link=add_webapp_link,
+            add_instructions=update.is_group_chat()
         )
 
         if view_poll_result.is_err():
@@ -388,7 +392,7 @@ class TelegramHelpers(object):
     async def update_poll_message(
         cls, poll_info: PollInfo, chat_id: int, message_id: int,
         context: CallbackContext, poll_locks_manager: PollsLockManager,
-        verbose: bool = False
+        verbose: bool = False, add_instructions: bool = True
     ):
         """
         attempts to update the poll info message such that in
@@ -411,7 +415,8 @@ class TelegramHelpers(object):
             if await poll_locks.has_correct_voter_count(voter_count):
                 try:
                     poll_display_message = BaseAPI.generate_poll_message(
-                        poll_info=poll_info, bot_username=bot_username
+                        poll_info=poll_info, bot_username=bot_username,
+                        add_instructions=add_instructions
                     )
                     await context.bot.edit_message_text(
                         chat_id=chat_id, message_id=message_id,

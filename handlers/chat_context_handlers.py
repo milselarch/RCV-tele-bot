@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 from base_api import BaseAPI
 from bot_middleware import track_errors
 from handlers.payment_handlers import IncMaxVotersChatContext, PaymentHandlers
-from handlers.start_handlers import StartGetParams
+from helpers.start_get_params import StartGetParams
 from helpers import strings
 from helpers.commands import Command
 from helpers.constants import BLANK_POLL_ID
@@ -36,15 +36,50 @@ class BaseContextHandler(object, metaclass=ABCMeta):
     @abstractmethod
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        is_from_start: bool
     ):
+        """
+        :param extracted_context:
+        :param update:
+        :param context:
+        :param is_from_start:
+        whether the chat just got initiated from the start command
+        """
         ...
 
+
+class ClosePollContextHandler(BaseContextHandler):
+    async def handle_messages(
+        self, extracted_context: ExtractedChatContext,
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        is_from_start: bool
+    ):
+        message = update.message
+        raw_poll_id = message.text
+
+        try:
+            poll_id = int(raw_poll_id)
+        except ValueError:
+            return await message.reply_text(
+                f"Invalid poll id: {raw_poll_id}"
+            )
+
+        # TODO: implement poll closing here
+
+    async def complete_chat_context(
+        self, chat_context: CallbackContextState,
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+    ):
+        return await update.message.reply_text(
+            f"/{Command.DONE} not supported for closing polls"
+        )
 
 class PollCreationContextHandler(BaseContextHandler):
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        is_from_start: bool
     ):
         message: Message = update.message
         chat_context = extracted_context.chat_context
@@ -126,7 +161,8 @@ class PollCreationContextHandler(BaseContextHandler):
             username=user_entry.username,
             # set to false here to discourage sending webapp
             # link before group chat has been whitelisted
-            add_webapp_link=False
+            add_webapp_link=False,
+            add_instructions=update.is_group_chat()
         )
         if view_poll_result.is_err():
             error_message = view_poll_result.err()
@@ -169,10 +205,10 @@ class PollCreationContextHandler(BaseContextHandler):
 
 
 class VoteContextHandler(BaseContextHandler):
-    @track_errors
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        is_from_start: bool
     ):
         message: Message = update.message
         chat_context = extracted_context.chat_context
@@ -185,7 +221,44 @@ class VoteContextHandler(BaseContextHandler):
                 "Unexpected error loading vote context"
             )
 
+        user = update.user
+        tele_user: TeleUser = update.message.from_user
+        bot_username = context.bot.username
         vote_context = vote_context_res.unwrap()
+
+        if is_from_start:
+            """
+            if called from /start command, we send all the information
+            about the poll in the chat context and prompt them
+            to choose poll options interactively
+            """
+            if not vote_context.has_poll_id:
+                return await message.reply_text("Invalid poll ID")
+
+            poll_id = vote_context.poll_id
+            poll_info_res = BaseAPI.read_poll_info(
+                poll_id=poll_id, user_id=user.get_user_id(),
+                username=tele_user.username, chat_id=message.chat_id
+            )
+            if poll_info_res.is_err():
+                error_message = poll_info_res.err()
+                return await error_message.call(message.reply_text)
+
+            poll_info = poll_info_res.unwrap()
+            poll_message = BaseAPI.generate_poll_message(
+                poll_info=poll_info, bot_username=bot_username
+            )
+            poll = poll_message.poll_info.metadata
+            reply_markup = BaseAPI.generate_vote_markup(
+                tele_user=tele_user, poll_id=poll_id, chat_type='private',
+                open_registration=poll.open_registration,
+                num_options=poll_message.poll_info.max_options
+            )
+            poll_contents = poll_message.text
+            await message.reply_text(poll_contents, reply_markup=reply_markup)
+            prompt = vote_context.generate_vote_option_prompt()
+            return await message.reply_text(prompt)
+
         if not vote_context.has_poll_id:
             # accept the current text message as the poll_id and set it
             try:
@@ -193,9 +266,8 @@ class VoteContextHandler(BaseContextHandler):
             except ValueError:
                 return await message.reply_text("Invalid poll ID")
 
-            tele_user: TeleUser = update.message.from_user
             poll_info_res = BaseAPI.read_poll_info(
-                poll_id=poll_id, user_id=update.user.get_user_id(),
+                poll_id=poll_id, user_id=user.get_user_id(),
                 username=tele_user.username, chat_id=message.chat_id
             )
 
@@ -309,7 +381,8 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
 
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        is_from_start: bool
     ):
         msg: Message = update.message
         chat_context = extracted_context.chat_context
@@ -370,7 +443,8 @@ class PaySupportContextHandler(BaseContextHandler):
 
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        is_from_start: bool
     ):
         chat_context = extracted_context.chat_context
         raw_args = TelegramHelpers.read_raw_command_args(update)
@@ -426,7 +500,8 @@ class ContextHandlers(object):
 
     @track_errors
     async def handle_other_messages(
-        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        is_from_start: bool = False
     ):
         message: Message = update.message
         chat_context_res = extract_chat_context(update)
@@ -444,7 +519,8 @@ class ContextHandlers(object):
         context_handler_cls = self.context_handlers[context_type]
         context_handler = context_handler_cls()
         return await context_handler.handle_messages(
-            extracted_context, update, context
+            extracted_context, update, context,
+            is_from_start=is_from_start
         )
 
     @track_errors

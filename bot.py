@@ -41,7 +41,8 @@ from typing import (
 )
 
 from helpers.strings import (
-    POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED, generate_poll_created_message
+    POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED,
+    generate_poll_created_message
 )
 from helpers.chat_contexts import (
     PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
@@ -552,7 +553,8 @@ class RankedChoiceBot(BaseAPI):
             new_poll_id, poll_question, poll_options,
             bot_username=bot_username, closed=False,
             num_voters=poll_creator.initial_num_voters,
-            max_voters=new_poll.max_voters
+            max_voters=new_poll.max_voters,
+            add_instructions=update.is_group_chat()
         )
 
         chat_type = update.message.chat.type
@@ -1078,6 +1080,14 @@ class RankedChoiceBot(BaseAPI):
 
     async def close_poll(self, update, *_, **__):
         message = update.message
+        message_text = TelegramHelpers.read_raw_command_args(update)
+
+        if constants.ID_PATTERN.match(message_text) is None:
+            return await message.reply_text(textwrap.dedent(f"""
+                Input format is invalid, try:
+                /{Command.CLOSE_POLL} {{poll_id}}
+            """))
+
         extract_result = TelegramHelpers.extract_poll_id(update)
 
         if extract_result.is_err():
