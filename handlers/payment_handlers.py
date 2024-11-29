@@ -387,7 +387,7 @@ class PaymentHandlers(object):
 
         voters_increase = new_max_voters - poll.max_voters
         assert voters_increase > 0
-        payment_amount = math.ceil(voters_increase / 2)
+        payment_amount = math.ceil(voters_increase / 4)
         assert isinstance(payment_amount, int)
         invoice = IncreaseVoterLimitParams(
             poll_id=poll_id, voters_increase=voters_increase

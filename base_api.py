@@ -58,6 +58,7 @@ class CallbackCommands(StrEnum):
     RESET_VOTE = 'RESET'
     SUBMIT_VOTE = 'SUBMIT_VOTE'
     REGISTER_OR_SUBMIT = 'REGISTER_OR_SUBMIT'
+    VOTE_VIA_DM = 'VOTE_VIA_DM'
     VIEW_VOTE = 'VIEW_VOTE'
 
 
@@ -636,6 +637,9 @@ class BaseAPI(object):
         add_instructions: bool = False
     ) -> PollMessage:
         poll_metadata = poll_info.metadata
+        add_instructions = (
+            add_instructions and poll_metadata.open_registration
+        )
         poll_message = cls.generate_poll_info(
             poll_metadata.id, poll_metadata.question,
             poll_info.poll_options, closed=poll_metadata.closed,
@@ -744,13 +748,17 @@ class BaseAPI(object):
                 text='reset',
                 command=CallbackCommands.RESET_VOTE,
                 callback_data=dict(poll_id=poll_id)
+            ), cls.spawn_inline_keyboard_button(
+                text='submit',
+                command=CallbackCommands.SUBMIT_VOTE,
+                callback_data=dict(poll_id=poll_id)
             )
         ])
 
         # add final row with view vote, submit vote buttons
         markup_rows.append([
             cls.spawn_inline_keyboard_button(
-                text='Register / Submit Vote',
+                text='Vote via Direct Chat',
                 command=CallbackCommands.REGISTER_OR_SUBMIT,
                 callback_data=dict(poll_id=poll_id)
             )
