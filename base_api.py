@@ -20,7 +20,7 @@ from strenum import StrEnum
 from requests import PreparedRequest
 
 from helpers.start_get_params import StartGetParams
-from helpers import constants
+from helpers import constants, strings
 from helpers.strings import generate_poll_closed_message
 from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
@@ -758,7 +758,7 @@ class BaseAPI(object):
         # add final row with view vote, submit vote buttons
         markup_rows.append([
             cls.spawn_inline_keyboard_button(
-                text='Vote via Direct Chat',
+                text=strings.DIRECT_VOTE_TEXT,
                 command=CallbackCommands.VOTE_VIA_DM,
                 callback_data=dict(poll_id=poll_id)
             )
@@ -917,7 +917,7 @@ class BaseAPI(object):
             instructions_footer = (
                 '\n——————————————————\n'
                 'How to vote:\n'
-                '- press the register button, then '
+                f'- press "{strings.DIRECT_VOTE_TEXT}", then '
                 'start the bot via chat DM\n'
                 '- alternatively, press the number buttons in order of most '
                 'to least favourite option, then press submit'

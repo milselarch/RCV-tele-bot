@@ -137,6 +137,7 @@ INVALID_MAX_VOTERS = (
     "than the existing limit"
 )
 BOT_STARTED = 'Bot started'
+DIRECT_VOTE_TEXT = 'Vote via Direct Chat'
 
 
 def escape_markdown(string: str) -> str:
