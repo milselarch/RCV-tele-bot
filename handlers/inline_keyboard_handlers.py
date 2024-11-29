@@ -4,12 +4,11 @@ import logging
 import time
 
 import telegram
-from telegram._utils.types import ReplyMarkup
-
 import base_api
 
 from abc import ABCMeta, abstractmethod
 from base_api import BaseAPI, UserRegistrationStatus, CallbackCommands
+from telegram._utils.types import ReplyMarkup
 from typing import Optional, Type
 from telegram.ext import CallbackContext
 from bot_middleware import track_errors
@@ -490,11 +489,11 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
             return await error_message.call(query.answer)
 
         # whether the voter was registered for the poll during the vote itself
-        _, newly_registered = register_vote_result.unwrap()
+        is_first_vote, newly_registered = register_vote_result.unwrap()
         extracted_message_context.message_context.delete_instance()
         await query.answer("Vote Submitted")
 
-        if newly_registered:
+        if is_first_vote or newly_registered:
             poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
             await TelegramHelpers.update_poll_message(
                 poll_info=poll_info, chat_id=chat_id,
@@ -629,6 +628,115 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
             resp = f"{resp_header} - start the bot to cast your vote"
             return await query.answer(resp)
 
+        resp = f"{resp_header} - poll info has been sent via DM"
+        coroutine = query.answer(resp)
+        coroutines.append(coroutine)
+
+        poll_message = BaseAPI.generate_poll_message(
+            poll_info=poll_info, bot_username=bot_username,
+            add_instructions=False
+        )
+        poll = poll_message.poll_info.metadata
+        reply_markup = BaseAPI.generate_vote_markup(
+            tele_user=tele_user, poll_id=poll_id, chat_type='private',
+            open_registration=poll.open_registration,
+            num_options=poll_message.poll_info.max_options
+        )
+        # display poll info in chat DMs at the start
+        poll_contents = poll_message.text
+        async def dm_poll_info():
+            await send_dm(poll_contents, markup=reply_markup)
+            await send_dm(vote_context.generate_vote_option_prompt())
+
+        coroutines.append(dm_poll_info())
+        await asyncio.gather(*coroutines)
+
+
+class VoteDirectChatMessageHandler(BaseMessageHandler):
+    async def handle_queries(
+        self, update: ModifiedTeleUpdate, context: CallbackContext,
+        callback_data: dict[str, any]
+    ):
+        user = update.user
+        user_id = user.get_user_id()
+        query = update.callback_query
+        message: Message = query.message
+        tele_user: TeleUser = query.from_user
+        message_id = query.message.message_id
+        poll_id = int(callback_data['poll_id'])
+        poll_closed_res = Polls.get_is_closed(poll_id)
+        chat_id = message.chat_id
+        coroutines = []
+
+        if poll_closed_res.is_err():
+            return await query.answer(generate_poll_deleted_message(poll_id))
+        elif _poll_closed := poll_closed_res.unwrap():
+            return await query.answer(generate_poll_closed_message(poll_id))
+
+        poll_voter_res = PollVoters.get_poll_voter(poll_id, user_id=user_id)
+        registered = poll_voter_res.is_ok()
+        newly_registered = False
+
+        if not registered:
+            # not registered, no message context vote found
+            if not ChatWhitelist.is_whitelisted(poll_id, chat_id):
+                return await query.answer(
+                    "Not allowed to register from this chat"
+                )
+
+            register_status = _register_voter(
+                poll_id=poll_id, user_id=user_id,
+                username=tele_user.username
+            )
+            if register_status == UserRegistrationStatus.REGISTERED:
+                newly_registered = True
+                poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+                coroutines.append(TelegramHelpers.update_poll_message(
+                    poll_info=poll_info, chat_id=chat_id,
+                    message_id=message_id, context=context,
+                    poll_locks_manager=_poll_locks_manager
+                ))
+            else:
+                return await query.answer(BaseAPI.reg_status_to_msg(
+                    register_status, poll_id
+                ))
+
+        # create vote chat DM context and try to send a message to the user
+        poll_info_res = BaseAPI.read_poll_info(
+            poll_id=poll_id, user_id=user_id,
+            username=tele_user.username, chat_id=message.chat_id
+        )
+        if poll_info_res.is_err():
+            error_message = poll_info_res.err()
+            return await error_message.call(query.answer)
+
+        poll_info = poll_info_res.unwrap()
+        vote_context = VoteChatContext(
+            user_id=user_id, chat_id=tele_user.id,
+            max_options=poll_info.max_options, poll_id=poll_id
+        )
+        vote_context.save_state()
+        bot_username = context.bot.username
+
+        async def send_dm(text, markup: Optional[ReplyMarkup] = None):
+            await context.bot.send_message(
+                text=text, chat_id=tele_user.id, reply_markup=markup
+            )
+
+        if newly_registered:
+            resp_header = "Registered for poll"
+        else:
+            resp_header = "Registered already"
+
+        try:
+            # check that we can send a message to user directly
+            # i.e. check that bot DM with user has been opened
+            await send_dm(strings.BOT_STARTED)
+            # raise telegram.error.BadRequest("")
+        except telegram.error.BadRequest:
+            resp = f"{resp_header} - start the bot to cast your vote"
+            return await query.answer(resp)
+
         coroutine = query.answer(resp_header)
         coroutines.append(coroutine)
         poll_message = BaseAPI.generate_poll_message(
@@ -643,6 +751,7 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
         )
         # display poll info in chat DMs at the start
         poll_contents = poll_message.text
+
         async def dm_poll_info():
             await send_dm(poll_contents, markup=reply_markup)
             await send_dm(vote_context.generate_vote_option_prompt())
@@ -664,7 +773,8 @@ class InlineKeyboardHandlers(object):
             CallbackCommands.RESET_VOTE: ResetVoteMessageHandler,
             CallbackCommands.VIEW_VOTE: ViewVoteMessageHandler,
             CallbackCommands.SUBMIT_VOTE: SubmitVoteMessageHandler,
-            CallbackCommands.REGISTER_OR_SUBMIT: RegisterSubmitMessageHandler
+            CallbackCommands.REGISTER_OR_SUBMIT: RegisterSubmitMessageHandler,
+            CallbackCommands.VOTE_VIA_DM: VoteDirectChatMessageHandler
         }
         for callback_command in CallbackCommands:
             assert callback_command in self.handlers, callback_command
