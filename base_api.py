@@ -759,7 +759,7 @@ class BaseAPI(object):
         markup_rows.append([
             cls.spawn_inline_keyboard_button(
                 text='Vote via Direct Chat',
-                command=CallbackCommands.REGISTER_OR_SUBMIT,
+                command=CallbackCommands.VOTE_VIA_DM,
                 callback_data=dict(poll_id=poll_id)
             )
         ])
