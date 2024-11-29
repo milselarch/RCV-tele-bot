@@ -697,6 +697,7 @@ class VoteDirectChatMessageHandler(BaseMessageHandler):
                     poll_locks_manager=_poll_locks_manager
                 ))
             else:
+                # TODO: this shouldn't happen
                 return await query.answer(BaseAPI.reg_status_to_msg(
                     register_status, poll_id
                 ))
@@ -737,8 +738,10 @@ class VoteDirectChatMessageHandler(BaseMessageHandler):
             resp = f"{resp_header} - start the bot to cast your vote"
             return await query.answer(resp)
 
-        coroutine = query.answer(resp_header)
+        resp = f"{resp_header} - poll info has been sent via DM"
+        coroutine = query.answer(resp)
         coroutines.append(coroutine)
+
         poll_message = BaseAPI.generate_poll_message(
             poll_info=poll_info, bot_username=bot_username,
             add_instructions=False
