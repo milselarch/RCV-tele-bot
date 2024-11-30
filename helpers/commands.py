@@ -11,6 +11,7 @@ class Command(StrEnum):
     CREATE_PRIVATE_POLL = "create_private_poll"
     CREATE_GROUP_POLL = "create_poll"
     REGISTER_USER_ID = "register_user_id"
+    WHITELIST_USERNAME = "whitelist_username"
     WHITELIST_CHAT_REGISTRATION = "whitelist_chat_registration"
     BLACKLIST_CHAT_REGISTRATION = "blacklist_chat_registration"
     DELETE_POLL = "delete_poll"

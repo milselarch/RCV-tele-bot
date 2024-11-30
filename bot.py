@@ -152,6 +152,7 @@ class RankedChoiceBot(BaseAPI):
             Command.HELP: self.show_help,
             Command.DONE: context_handlers.complete_chat_context,
             Command.SET_MAX_VOTERS: self.payment_handlers.set_max_voters,
+            Command.WHITELIST_USERNAME: self.whitelist_username,
             Command.PAY_SUPPORT: self.payment_support_handler,
 
             Command.VOTE_ADMIN: self.vote_for_poll_admin,
@@ -223,6 +224,9 @@ class RankedChoiceBot(BaseAPI):
         ), (
             Command.REGISTER_USER_ID,
             'registers a user by user_id for a poll'
+        ), (
+            Command.WHITELIST_USERNAME,
+            'whitelist a username for a poll'
         ), (
             Command.WHITELIST_CHAT_REGISTRATION,
             'whitelist a chat for self registration'
@@ -625,17 +629,21 @@ class RankedChoiceBot(BaseAPI):
         """
         pattern = re.compile(r'^\S+\s+([1-9]\d*)\s+([1-9]\d*)$')
         matches = pattern.match(raw_text)
+        format_invalid_message = textwrap.dedent(f"""
+            Format invalid. 
+            Use /{Command.REGISTER_USER_ID} {{poll_id}} {{user_tele_id}}
+        """)
 
         if tele_user is None:
             await message.reply_text(f'user not found')
             return False
         if matches is None:
-            await message.reply_text(f'Format invalid')
+            await message.reply_text(format_invalid_message)
             return False
 
         capture_groups = matches.groups()
         if len(capture_groups) != 2:
-            await message.reply_text(f'Format invalid')
+            await message.reply_text(format_invalid_message)
             return False
 
         poll_id = int(capture_groups[0])
@@ -655,9 +663,10 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'poll {poll_id} does not exist')
             return False
 
-        user_id = target_user.get_user_id()
+        target_user_id = target_user.get_user_id()
+        current_user_id = update.user.get_user_id()
         creator_id: UserID = poll.get_creator().get_user_id()
-        if creator_id != user_id:
+        if creator_id != current_user_id:
             await message.reply_text(
                 'only poll creator is allowed to whitelist chats '
                 'for open user registration'
@@ -665,14 +674,14 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         try:
-            PollVoters.get(poll_id=poll_id, user_id=user_id)
-            await message.reply_text(f'User #{user_id} already registered')
+            PollVoters.get(poll_id=poll_id, user_id=target_user_id)
+            await message.reply_text(f'User #{target_user_id} already registered')
             return False
         except PollVoters.DoesNotExist:
             pass
 
         register_result = self.register_user_id(
-            poll_id=poll_id, user_id=user_id,
+            poll_id=poll_id, user_id=target_user_id,
             ignore_voter_limit=False, from_whitelist=False
         )
 
@@ -1139,15 +1148,56 @@ class RankedChoiceBot(BaseAPI):
         else:
             return await message.reply_text('Poll has no winner')
 
+    @classmethod
+    async def whitelist_username(cls, update: ModifiedTeleUpdate, *_, **__):
+        """
+        Command usage:
+        /whitelist_username {poll_id} {username}
+        """
+        message = update.message
+        message_text = TelegramHelpers.read_raw_command_args(update)
+        invalid_format_text = textwrap.dedent(f"""
+            Input format is invalid, try:
+            /{Command.WHITELIST_USERNAME} {{poll_id}} {{username}}
+        """)
+
+        if ' ' not in message_text:
+            return await message.reply_text(invalid_format_text)
+
+        raw_poll_id = message_text[:message_text.index(' ')].strip()
+        target_username = message_text[message_text.index(' '):].strip()
+        if constants.ID_PATTERN.match(raw_poll_id) is None:
+            return await message.reply_text('Invalid poll id')
+
+        poll_id = int(raw_poll_id)
+        user_id = update.user.get_user_id()
+        poll_res = Polls.get_as_creator(poll_id, user_id)
+        if poll_res.is_err():
+            return await message.reply_text(
+                "You're not the creator of this poll"
+            )
+
+        poll = poll_res.unwrap()
+        whitelist_res = BaseAPI._whitelist_username_for_poll(
+            poll=poll, target_username=target_username
+        )
+        if whitelist_res.is_err():
+            err_msg = str(whitelist_res.unwrap_err())
+            return await message.reply_text(err_msg)
+
+        return await update.message.reply_text(
+            f"Username {target_username} has been whitelisted"
+        )
+
     @admin_only
     async def vote_for_poll_admin(self, update: ModifiedTeleUpdate, *_, **__):
         """
         telegram command formats:
-        /vote_admin {username} {poll_id}: {option_1} > ... > {option_n}
-        /vote_admin {username} {poll_id} {option_1} > ... > {option_n}
+        /vote_admin {@username or #tele_id} {poll_id}: {opt_1} > ... > {opt_n}
+        /vote_admin {@username or #tele_id} {poll_id} {opt_1} > ... > {opt_n}
         examples:
-        /vote 3: 1 > 2 > 3
-        /vote 3 1 > 2 > 3
+        /vote #100 3: 1 > 2 > 3
+        /vote #100 3 1 > 2 > 3
         """
         # vote for someone else
         message: Message = update.message

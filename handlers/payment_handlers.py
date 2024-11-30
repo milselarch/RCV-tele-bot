@@ -1,3 +1,4 @@
+import dataclasses
 import datetime
 import json
 import logging
@@ -123,6 +124,15 @@ class BasePaymentHandler(object, metaclass=ABCMeta):
         ...
 
 
+
+@dataclasses.dataclass
+class ProcessPaymentsResult(object):
+    poll: Polls
+    initial_max_voters: int
+    new_max_voters: int
+
+
+
 class IncreaseVoteLimitHandler(BasePaymentHandler):
     async def pre_checkout_callback(
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
@@ -176,14 +186,37 @@ class IncreaseVoteLimitHandler(BasePaymentHandler):
         receipt.paid = True
         receipt.save()
 
+        process_res = self._process_payment(
+            invoice=invoice, receipt=receipt,
+            voters_increase=voters_increase
+        )
+        if process_res.is_err():
+            err_message = process_res.unwrap_err()
+            return await message.reply_text(
+                ok=False, error_message=err_message
+            )
+
+        post_payment_info = process_res.unwrap()
+        poll = post_payment_info.poll
+        initial_max_voters = post_payment_info.initial_max_voters
+        new_max_voters = post_payment_info.new_max_voters
+        reply_message = (
+            f"The maximum number of voters for poll #{poll.id} "
+            f"has been raised from {initial_max_voters} to {new_max_voters}"
+        )
+        self.logger.warning(reply_message)
+        return await message.reply_text(reply_message)
+
+    def _process_payment(
+        self, invoice: IncreaseVoterLimitParams,
+        receipt: Payments, voters_increase: int
+    ) -> Result[ProcessPaymentsResult, Exception]:
         with db.atomic():
             poll_id = invoice.poll_id
             poll_res = Polls.build_from_fields(poll_id=poll_id).safe_get()
             if poll_res.is_err():
                 self.logger.error(f"FAILED TO GET POLL {poll_id}")
-                return await message.reply_text(
-                    f"Failed to get poll #{poll_id}"
-                )
+                return Err(ValueError(f"Failed to get poll #{poll_id}"))
 
             poll = poll_res.unwrap()
             initial_max_voters = poll.max_voters
@@ -194,12 +227,10 @@ class IncreaseVoteLimitHandler(BasePaymentHandler):
             receipt.processed = True
             receipt.save()
 
-        reply_message = (
-            f"The maximum number of voters for poll #{poll.id} "
-            f"has been raised from {initial_max_voters} to {new_max_voters}"
-        )
-        self.logger.warning(reply_message)
-        return await message.reply_text(reply_message)
+        return Ok(ProcessPaymentsResult(
+            poll=poll, initial_max_voters=initial_max_voters,
+            new_max_voters=new_max_voters
+        ))
 
 
 class PaymentHandlers(object):

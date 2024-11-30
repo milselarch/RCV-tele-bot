@@ -885,6 +885,37 @@ class BaseAPI(object):
 
         return Ok(whitelist_entry)
 
+    @classmethod
+    def _whitelist_username_for_poll(
+        cls, poll: Polls, target_username: str
+    ) -> Result[None, Exception]:
+        poll_id = poll.id
+
+        with db.atomic():
+            whitelist_entry = UsernameWhitelist.build_from_fields(
+                poll_id=poll_id, username=target_username
+            ).safe_get()
+
+            if whitelist_entry.is_ok():
+                # TODO: move await out of atomic block
+                return Err(ValueError(
+                    f'{target_username} already whitelisted'
+                ))
+            if poll.max_voters <= poll.num_active_voters:
+                # TODO: move await out of atomic block
+                return Err(ValueError(
+                    "Maximum number of voters reached"
+                ))
+
+            UsernameWhitelist.build_from_fields(
+                poll_id=poll_id, username=target_username
+            ).insert().execute()
+
+            poll.num_voters += 1
+            poll.save()
+
+        return Ok(None)
+
     @staticmethod
     def generate_poll_info(
         poll_id, poll_question, poll_options: list[str],
