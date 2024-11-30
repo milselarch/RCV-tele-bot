@@ -139,8 +139,8 @@ def _register_voter(
             if whitelist_user_result.is_ok():
                 whitelist_entry = whitelist_user_result.unwrap()
                 assert (
-                        (whitelist_entry.user is None) or
-                        (whitelist_entry.user == user_id)
+                    (whitelist_entry.user is None) or
+                    (whitelist_entry.user == user_id)
                 )
 
                 if whitelist_entry.user == user_id:

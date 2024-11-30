@@ -3,7 +3,7 @@ import textwrap
 
 from helpers.commands import Command
 
-__VERSION__ = '1.3.5'
+__VERSION__ = '1.3.6'
 
 READ_SUBSCRIPTION_TIER_FAILED = "Unexpected error reading subscription tier"
 POLL_OPTIONS_LIMIT_REACHED_TEXT = textwrap.dedent(f"""
@@ -43,6 +43,9 @@ HELP_TEXT = textwrap.dedent(f"""
     ——————————————————
     /{Command.REGISTER_USER_ID} {{poll_id}} {{user_id}}
     Registers a user by user_id for a poll
+    ——————————————————
+    /{Command.WHITELIST_USERNAME} {{poll_id}} {{username}}
+    Whitelists a user by username for a poll
     ——————————————————
     /{Command.WHITELIST_CHAT_REGISTRATION} {{poll_id}}
     Whitelists the current chat so that chat members can self-register
