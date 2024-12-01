@@ -1,6 +1,7 @@
+import asyncio
 import textwrap
 
-from typing import Type
+from typing import Type, Coroutine
 from abc import ABCMeta, abstractmethod
 from telegram import Message, User as TeleUser
 from telegram.ext import ContextTypes
@@ -10,9 +11,10 @@ from handlers.payment_handlers import IncMaxVotersChatContext, PaymentHandlers
 from helpers.start_get_params import StartGetParams
 from helpers import strings
 from helpers.commands import Command
-from helpers.constants import BLANK_POLL_ID
+from helpers.constants import BLANK_ID
 from load_config import SUDO_TELE_ID
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
+from handlers.inline_keyboard_handlers import PollsLockManager
 from helpers.chat_contexts import (
     PollCreationChatContext, VoteChatContext, ExtractedChatContext,
     extract_chat_context
@@ -330,13 +332,32 @@ class VoteContextHandler(BaseContextHandler):
 
         if register_vote_result.is_err():
             error_message = register_vote_result.unwrap_err()
-            await error_message.call(message.reply_text)
-            return False
+            return await error_message.call(message.reply_text)
 
         chat_context.delete_instance()
-        return await TelegramHelpers.send_post_vote_reply(
+        is_first_vote, newly_registered = register_vote_result.unwrap()
+        send_reply_coroutine = TelegramHelpers.send_post_vote_reply(
             message=message, poll_id=poll_id
         )
+
+        coroutines: list[Coroutine] = [send_reply_coroutine]
+        ref_message_id = vote_creation_context.ref_message_id
+        ref_chat_id = vote_creation_context.ref_chat_id
+        poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+        update_ref_message = (
+            (is_first_vote or newly_registered) and
+            (ref_message_id != BLANK_ID)
+        )
+
+        if update_ref_message:
+            # print('UPDATING_POLL_MESSAGE')
+            coroutines.append(TelegramHelpers.update_poll_message(
+                poll_info=poll_info, chat_id=ref_chat_id,
+                message_id=ref_message_id, context=context,
+                poll_locks_manager=PollsLockManager()
+            ))
+
+        await asyncio.gather(*coroutines)
 
 
 class IncreaseMaxVotersContextHandler(BaseContextHandler):
@@ -363,7 +384,7 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
         inc_voters_context = inc_voters_context_res.unwrap()
         poll_id = inc_voters_context.get_poll_id()
 
-        if poll_id == BLANK_POLL_ID:
+        if poll_id == BLANK_ID:
             return await msg.reply_text(strings.ENTER_POLL_ID_PROMPT)
         else:
             user_id = update.user.get_user_id()
@@ -397,7 +418,7 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
             )
 
         inc_voters_context = inc_voters_context_res.unwrap()
-        if inc_voters_context.get_poll_id() == BLANK_POLL_ID:
+        if inc_voters_context.get_poll_id() == BLANK_ID:
             try:
                 poll_id = int(message_text)
             except ValueError:

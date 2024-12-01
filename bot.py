@@ -268,6 +268,7 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def web_app_handler(self, update: ModifiedTeleUpdate, _):
+        # TODO: update reference poll message with latest voter count
         message: Message = update.message
         payload = json.loads(update.effective_message.web_app_data.data)
 

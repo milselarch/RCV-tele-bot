@@ -50,13 +50,22 @@ class PollUpdateLocks(object):
 
 
 class PollsLockManager(object):
+    _instance = None
     """
     async locks for updating the poll info messages
     with the latest voter counts
     """
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(PollsLockManager, cls).__new__(
+                cls, *args, **kwargs
+            )
+        return cls._instance
+
     def __init__(self):
-        self.poll_locks_map: Dict[int, PollUpdateLocks] = {}
-        self.lock = asyncio.Lock()
+        if not hasattr(self, 'poll_locks_map'):
+            self.poll_locks_map: Dict[int, PollUpdateLocks] = {}
+            self.lock = asyncio.Lock()
 
     async def get_poll_locks(self, poll_id: int) -> PollUpdateLocks:
         async with self.lock:

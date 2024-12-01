@@ -1,7 +1,7 @@
 import datetime
 import re
 
-BLANK_POLL_ID = -1
+BLANK_ID = -1
 POLL_MAX_OPTIONS: int = 16
 POLL_OPTION_MAX_LENGTH: int = 100
 
