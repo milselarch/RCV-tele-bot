@@ -9,7 +9,7 @@ from telegram import Message
 from helpers import helpers
 from helpers.commands import Command
 from helpers.constants import (
-    POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH, BLANK_POLL_ID
+    POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH, BLANK_ID
 )
 from helpers.contexts import BaseVoteContext
 from helpers.message_buillder import MessageBuilder
@@ -279,13 +279,21 @@ class PollCreationChatContext(SerializableChatContext):
 
 class VoteChatContext(SerializableChatContext, BaseVoteContext):
     chat_id: int
+    ref_message_id: int = BLANK_ID
+    ref_chat_id: int = BLANK_ID
 
     def __init__(
-        self, poll_id: int = BLANK_POLL_ID,
+        self, poll_id: int = BLANK_ID,
+        ref_message_id: int = BLANK_ID,
+        ref_chat_id: int = BLANK_ID,
         rankings: Sequence[int] = (), **kwargs
     ):
         # TODO: type hint the input params somehow?
-        super().__init__(poll_id=poll_id, rankings=list(rankings), **kwargs)
+        super().__init__(
+            poll_id=poll_id, rankings=list(rankings),
+            ref_message_id=ref_message_id, ref_chat_id=ref_chat_id,
+            **kwargs
+        )
 
     def get_user_id(self) -> UserID:
         return UserID(self.user_id)

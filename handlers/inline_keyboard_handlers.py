@@ -29,8 +29,6 @@ from helpers.message_contexts import (
     VoteMessageContext, extract_message_context, ExtractMessageContextErrors
 )
 
-_poll_locks_manager = PollsLockManager()
-
 
 async def register_for_poll(
     update: ModifiedTeleUpdate, context: CallbackContext,
@@ -62,7 +60,7 @@ async def register_for_poll(
     poll_message_update = TelegramHelpers.update_poll_message(
         poll_info=poll_info, chat_id=chat_id,
         message_id=message_id, context=context,
-        poll_locks_manager=_poll_locks_manager
+        poll_locks_manager=PollsLockManager()
     )
     await asyncio.gather(notification, poll_message_update)
 
@@ -227,7 +225,7 @@ class RegisterPollMessageHandler(BaseMessageHandler):
         poll_message_update = TelegramHelpers.update_poll_message(
             poll_info=poll_info, chat_id=chat_id,
             message_id=message_id, context=context,
-            poll_locks_manager=_poll_locks_manager
+            poll_locks_manager=PollsLockManager()
         )
         await asyncio.gather(notification, poll_message_update)
 
@@ -498,7 +496,7 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
             await TelegramHelpers.update_poll_message(
                 poll_info=poll_info, chat_id=chat_id,
                 message_id=message_id, context=context,
-                poll_locks_manager=_poll_locks_manager
+                poll_locks_manager=PollsLockManager()
             )
 
 
@@ -561,7 +559,7 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
                 await TelegramHelpers.update_poll_message(
                     poll_info=poll_info, chat_id=chat_id,
                     message_id=message_id, context=context,
-                    poll_locks_manager=_poll_locks_manager
+                    poll_locks_manager=PollsLockManager()
                 )
 
             return await query.answer("Vote Submitted")
@@ -586,7 +584,7 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
                 coroutines.append(TelegramHelpers.update_poll_message(
                     poll_info=poll_info, chat_id=chat_id,
                     message_id=message_id, context=context,
-                    poll_locks_manager=_poll_locks_manager
+                    poll_locks_manager=PollsLockManager()
                 ))
             else:
                 return await query.answer(BaseAPI.reg_status_to_msg(
@@ -694,7 +692,7 @@ class VoteDirectChatMessageHandler(BaseMessageHandler):
                 coroutines.append(TelegramHelpers.update_poll_message(
                     poll_info=poll_info, chat_id=chat_id,
                     message_id=message_id, context=context,
-                    poll_locks_manager=_poll_locks_manager
+                    poll_locks_manager=PollsLockManager()
                 ))
             else:
                 # TODO: this shouldn't happen
@@ -712,9 +710,11 @@ class VoteDirectChatMessageHandler(BaseMessageHandler):
             return await error_message.call(query.answer)
 
         poll_info = poll_info_res.unwrap()
+        current_chat_id = query.message.chat_id
         vote_context = VoteChatContext(
             user_id=user_id, chat_id=tele_user.id,
-            max_options=poll_info.max_options, poll_id=poll_id
+            max_options=poll_info.max_options, poll_id=poll_id,
+            ref_message_id=message_id, ref_chat_id=current_chat_id
         )
         vote_context.save_state()
         bot_username = context.bot.username

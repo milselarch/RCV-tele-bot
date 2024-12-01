@@ -18,7 +18,7 @@ from helpers.start_get_params import StartGetParams
 # from handlers.start_get_params import StartGetParams
 from helpers import constants, strings
 from helpers.commands import Command
-from helpers.constants import BLANK_POLL_ID
+from helpers.constants import BLANK_ID
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from telegram.ext import ContextTypes
 from database import (
@@ -91,7 +91,7 @@ class IncreaseVoterLimitParams(BasePaymentParams):
 class IncMaxVotersChatContext(SerializableChatContext):
     user_id: int
     chat_id: int
-    poll_id: int = BLANK_POLL_ID
+    poll_id: int = BLANK_ID
 
     def get_user_id(self) -> UserID:
         return UserID(self.user_id)

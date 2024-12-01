@@ -10,7 +10,7 @@ from database.db_helpers import UserID
 from database.message_context_state import (
     SerializableMessageContext, MessageContextStateTypes, MessageContextState
 )
-from helpers.constants import BLANK_POLL_ID
+from helpers.constants import BLANK_ID
 from helpers.contexts import BaseVoteContext
 from tele_helpers import ModifiedTeleUpdate
 
