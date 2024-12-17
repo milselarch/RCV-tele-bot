@@ -16,6 +16,8 @@ from handlers.inline_keyboard_handlers import InlineKeyboardHandlers
 from handlers.payment_handlers import PaymentHandlers
 from handlers.start_handlers import start_handlers
 from helpers.commands import Command
+from helpers.constants import BLANK_ID
+from helpers.locks_manager import PollsLockManager
 from helpers.message_buillder import MessageBuilder
 from logging import handlers as log_handlers
 from datetime import datetime
@@ -267,7 +269,9 @@ class RankedChoiceBot(BaseAPI):
         )])
 
     @track_errors
-    async def web_app_handler(self, update: ModifiedTeleUpdate, _):
+    async def web_app_handler(
+        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+    ):
         # TODO: update reference poll message with latest voter count
         message: Message = update.message
         payload = json.loads(update.effective_message.web_app_data.data)
@@ -304,6 +308,30 @@ class RankedChoiceBot(BaseAPI):
 
         await TelegramHelpers.send_post_vote_reply(
             message=message, poll_id=poll_id
+        )
+
+        ref_info = payload.get('ref_info', str(BLANK_ID))
+        ref_hash = payload.get('ref_hash', '')
+        # print('REFS', ref_info, ref_hash)
+        signed_ref_info = BaseAPI.sign_data_check_string(ref_info)
+        if signed_ref_info != ref_hash:
+            # print('REJECT_HASH')
+            return
+
+        # update the poll voter count in the originating poll message
+        _, raw_poll_id, raw_ref_msg_id, raw_ref_chat_id = ref_info.split(':')
+
+        poll_id = int(raw_poll_id)
+        ref_msg_id = int(raw_ref_msg_id)
+        ref_chat_id = int(raw_ref_chat_id)
+        if (ref_msg_id == BLANK_ID) or (ref_chat_id == BLANK_ID):
+            return
+
+        poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+        await TelegramHelpers.update_poll_message(
+            poll_info=poll_info, chat_id=ref_chat_id,
+            message_id=ref_msg_id, context=context,
+            poll_locks_manager=PollsLockManager()
         )
 
     @track_errors

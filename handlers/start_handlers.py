@@ -146,6 +146,10 @@ class StartPaymentsHandler(BaseMessageHandler):
 
 
 class StartHandlers(object):
+    """
+    chat context callbacks that get triggered when /start command
+    is run in telegram DMs
+    """
     def __init__(self):
         self.handlers_mapping: dict[
             StartGetParams, Type[BaseMessageHandler]
