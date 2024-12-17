@@ -750,7 +750,8 @@ class VoteDirectChatMessageHandler(BaseMessageHandler):
         reply_markup = BaseAPI.generate_vote_markup(
             tele_user=tele_user, poll_id=poll_id, chat_type='private',
             open_registration=poll.open_registration,
-            num_options=poll_message.poll_info.max_options
+            num_options=poll_message.poll_info.max_options,
+            ref_message_id=message_id, ref_chat_id=current_chat_id
         )
         # display poll info in chat DMs at the start
         poll_contents = poll_message.text

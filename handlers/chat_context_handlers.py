@@ -227,6 +227,8 @@ class VoteContextHandler(BaseContextHandler):
         tele_user: TeleUser = update.message.from_user
         bot_username = context.bot.username
         vote_context = vote_context_res.unwrap()
+        ref_message_id = vote_context.ref_message_id
+        ref_chat_id = vote_context.ref_chat_id
 
         if is_from_start:
             """
@@ -254,7 +256,8 @@ class VoteContextHandler(BaseContextHandler):
             reply_markup = BaseAPI.generate_vote_markup(
                 tele_user=tele_user, poll_id=poll_id, chat_type='private',
                 open_registration=poll.open_registration,
-                num_options=poll_message.poll_info.max_options
+                num_options=poll_message.poll_info.max_options,
+                ref_message_id=ref_message_id, ref_chat_id=ref_chat_id
             )
             poll_contents = poll_message.text
             await message.reply_text(poll_contents, reply_markup=reply_markup)

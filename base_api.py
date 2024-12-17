@@ -19,6 +19,7 @@ from typing_extensions import Any
 from strenum import StrEnum
 from requests import PreparedRequest
 
+from helpers.constants import BLANK_ID
 from helpers.start_get_params import StartGetParams
 from helpers import constants, strings
 from helpers.strings import generate_poll_closed_message
@@ -664,7 +665,20 @@ class BaseAPI(object):
         )
 
     @classmethod
-    def generate_poll_url(cls, poll_id: int, tele_user: TeleUser) -> str:
+    def generate_poll_url(
+        cls, poll_id: int, tele_user: TeleUser,
+        ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID
+    ) -> str:
+        """
+        :param poll_id:
+        poll to vote for
+        :param tele_user:
+        telegram user information
+        :param ref_message_id:
+        telegram chat message id of the originating poll message
+        :param ref_chat_id:
+        telegram chat id of the originating poll message
+        """
         req = PreparedRequest()
         auth_date = str(int(time.time()))
         query_id = cls.generate_secret()
@@ -676,26 +690,31 @@ class BaseAPI(object):
         data_check_string = cls.make_data_check_string(
             auth_date=auth_date, query_id=query_id, user=user_info
         )
-        validation_hash = cls.sign_data_check_string(
-            data_check_string=data_check_string
-        )
+        validation_hash = cls.sign_data_check_string(data_check_string)
+        ref_info = f'{auth_date}:{poll_id}:{ref_message_id}:{ref_chat_id}'
+        ref_hash = cls.sign_data_check_string(ref_info)
 
         params = {
             'poll_id': str(poll_id),
             'auth_date': auth_date,
             'query_id': query_id,
             'user': user_info,
-            'hash': validation_hash
+            'hash': validation_hash,
+
+            'ref_info': ref_info,
+            'ref_hash': ref_hash
         }
         req.prepare_url(WEBHOOK_URL, params)
         return req.url
 
     @classmethod
     def build_private_vote_markup(
-        cls, poll_id: int, tele_user: TeleUser
+        cls, poll_id: int, tele_user: TeleUser,
+        ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID
     ) -> List[List[KeyboardButton]]:
         poll_url = cls.generate_poll_url(
-            poll_id=poll_id, tele_user=tele_user
+            poll_id=poll_id, tele_user=tele_user,
+            ref_message_id=ref_message_id, ref_chat_id=ref_chat_id
         )
         logger.warning(f'POLL_URL = {poll_url}')
         # create vote button for reply message
@@ -1321,14 +1340,16 @@ class BaseAPI(object):
     @classmethod
     def generate_vote_markup(
         cls, tele_user: TeleUser | None, chat_type: str,
-        poll_id: int, open_registration: bool, num_options: int
+        poll_id: int, open_registration: bool, num_options: int,
+        ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID
     ) -> None | ReplyKeyboardMarkup | InlineKeyboardMarkup:
         reply_markup = None
         print('CHAT_TYPE', chat_type)
         if chat_type == 'private':
             # create vote button for reply message
             vote_markup_data = cls.build_private_vote_markup(
-                poll_id=poll_id, tele_user=tele_user
+                poll_id=poll_id, tele_user=tele_user,
+                ref_message_id=ref_message_id, ref_chat_id=ref_chat_id
             )
             reply_markup = ReplyKeyboardMarkup(vote_markup_data)
         elif open_registration:

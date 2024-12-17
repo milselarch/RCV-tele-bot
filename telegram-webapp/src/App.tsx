@@ -1,4 +1,4 @@
-import axios, { AxiosResponse } from 'axios';
+import axios from 'axios';
 // import {ReactComponent as Logo} from './logo.svg';
 import './App.scss';
 import { MainButton, WebAppProvider } from '@vkruglikov/react-telegram-web-app';
@@ -83,6 +83,9 @@ function App() {
   // const [headers, set_headers] = useState('');
   const [has_credential, set_has_credential] = useState(false);
   const [poll, set_poll] = useState<Poll | null>(null)
+  // reference telegram poll message that led to webapp inline prompt
+  const [ref_info, set_ref_info] = useState<string>("")
+  const [ref_hash, set_ref_hash] = useState<string>("")
   const [loading, set_loading] = useState(false)
   const [status, set_status] = useState<string>(null)
 
@@ -129,7 +132,8 @@ function App() {
     }
     // console.log('PAYLOAD', payload)
     window.Telegram.WebApp.sendData(JSON.stringify({
-      'poll_id': poll.metadata.id, 'option_numbers': final_vote_rankings
+      'poll_id': poll.metadata.id, 'option_numbers': final_vote_rankings,
+      'ref_info': ref_info, 'ref_hash': ref_hash
     }));
   }
 
@@ -147,6 +151,8 @@ function App() {
     const query_params = {};
     const params = new URLSearchParams(window.location.search);
     params.forEach((value, key) => { query_params[key] = value; });
+    set_ref_info(query_params['ref_info'] ?? '')
+    set_ref_hash(query_params['ref_hash'] ?? '')
 
     const poll_id = Number.parseInt(query_params['poll_id'])
     if (poll_id === null) {
@@ -174,7 +180,7 @@ function App() {
         } else if (status_code === 401) {
           set_status('Unauthorized')
         } else {
-          set_status('Server request failed ;--;')
+          set_status(`Server request failed (${status_code}) ;--;`)
         }
       } else {
         console.error('Unexpected error:', error);
