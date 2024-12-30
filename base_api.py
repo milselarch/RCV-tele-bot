@@ -10,16 +10,16 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-
 import database
-import aioredlock
 
+from aioredlock import LockError
 from enum import IntEnum
 from typing_extensions import Any
 from strenum import StrEnum
 from requests import PreparedRequest
 
 from helpers.constants import BLANK_ID
+from helpers.redis_cache_manager import RedisCacheManager
 from helpers.start_get_params import StartGetParams
 from helpers import constants, strings
 from helpers.strings import generate_poll_closed_message
@@ -42,7 +42,6 @@ from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup, User as TeleUser,
     ReplyKeyboardMarkup, KeyboardButton, WebAppInfo, Bot as TelegramBot
 )
-from aioredlock import Aioredlock, LockError
 from database.database import (
     PollWinners, UserID, PollMetadata, ChatWhitelist
 )
@@ -117,25 +116,12 @@ class GetPollWinnerStatus(IntEnum):
 
 
 class BaseAPI(object):
-    POLL_WINNER_KEY = "POLL_WINNER"
-    POLL_WINNER_LOCK_KEY = "POLL_WINNER_LOCK"
-    # CACHE_LOCK_NAME = "REDIS_CACHE_LOCK"
-    POLL_CACHE_EXPIRY = 60
     DELETION_TOKEN_EXPIRY = 60 * 5
     SHORT_HASH_LENGTH = 6
 
     def __init__(self):
+        self.cache = RedisCacheManager()
         database.initialize_db()
-        self.redis_lock_manager = self.create_redis_lock_manager()
-
-    @staticmethod
-    def create_redis_lock_manager(
-        connections: list[dict[str, str | int]] | None = None
-    ):
-        if connections is not None:
-            return Aioredlock(connections)
-        else:
-            return Aioredlock()
 
     @staticmethod
     def __get_telegram_token():
@@ -178,16 +164,6 @@ class BaseAPI(object):
         builder = ApplicationBuilder()
         builder.token(cls.__get_telegram_token())
         return builder
-
-    @staticmethod
-    def _build_cache_key(header: str, key: str):
-        return f"{header}:{key}"
-
-    def _build_poll_winner_lock_cache_key(self, poll_id: int) -> str:
-        assert isinstance(poll_id, int)
-        return self._build_cache_key(
-            self.__class__.POLL_WINNER_LOCK_KEY, str(poll_id)
-        )
 
     @staticmethod
     def get_poll_closed(poll_id: int) -> Result[int, MessageBuilder]:
@@ -239,16 +215,6 @@ class BaseAPI(object):
         poll = result.unwrap()
         return Ok(poll.num_active_voters)
 
-    @staticmethod
-    async def refresh_lock(lock: aioredlock.Lock, interval: float):
-        try:
-            while True:
-                print('WAIT')
-                await asyncio.sleep(interval)
-                await lock.extend()
-        except asyncio.CancelledError:
-            pass
-
     async def get_poll_winner(
         self, poll_id: int
     ) -> Tuple[Optional[int], GetPollWinnerStatus]:
@@ -270,22 +236,20 @@ class BaseAPI(object):
             # print('CACHE_HIT', cache_result)
             return cache_result.unwrap(), GetPollWinnerStatus.CACHED
 
-        redis_lock_key = self._build_poll_winner_lock_cache_key(poll_id)
+        redis_lock_key = self.cache.build_poll_winner_lock_cache_key(poll_id)
         # print('CACHE_KEY', redis_cache_key)
-        if await self.redis_lock_manager.is_locked(redis_lock_key):
+        if await self.cache.is_locked(redis_lock_key):
             # print('PRE_LOCKED')
             return None, GetPollWinnerStatus.COMPUTING
 
         try:
             # prevents race conditions where multiple computations
             # are run concurrently for the same poll
-            async with await self.redis_lock_manager.lock(
-                redis_lock_key, lock_timeout=self.POLL_CACHE_EXPIRY
-            ) as lock:
+            async with await self.cache.lock(redis_lock_key) as lock:
                 # Start a task to refresh the lock periodically
-                refresh_task = asyncio.create_task(self.refresh_lock(
-                    lock, self.POLL_CACHE_EXPIRY / 2
-                ))
+                refresh_task = asyncio.create_task(
+                    self.cache.refresh_lock(lock)
+                )
 
                 try:
                     cache_result = PollWinners.read_poll_winner_id(poll_id)
