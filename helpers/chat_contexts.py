@@ -317,3 +317,17 @@ class PaySupportChatContext(SerializableChatContext):
 
     def get_context_type(self) -> ChatContextStateTypes:
         return ChatContextStateTypes.PAY_SUPPORT
+
+
+class ClosePollChatContext(SerializableChatContext):
+    chat_id: int
+    user_id: int
+
+    def get_user_id(self) -> UserID:
+        return UserID(self.user_id)
+
+    def get_chat_id(self) -> int:
+        return self.chat_id
+
+    def get_context_type(self) -> ChatContextStateTypes:
+        return ChatContextStateTypes.CLOSE_POLL
