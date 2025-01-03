@@ -23,12 +23,14 @@ from logging import handlers as log_handlers
 from datetime import datetime
 
 from helpers import strings
+from helpers.rcv_tally import RCVTally
+from helpers.redis_cache_manager import GetPollWinnerStatus
 from tele_helpers import ModifiedTeleUpdate
 from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from database.database import UserID, CallbackContextState
 from database.db_helpers import EmptyField, Empty
-from handlers.chat_context_handlers import context_handlers
+from handlers.chat_context_handlers import context_handlers, ClosePollContextHandler
 from helpers import constants
 
 from telegram import (
@@ -48,18 +50,14 @@ from helpers.strings import (
 )
 from helpers.chat_contexts import (
     PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
-    VoteChatContext, PaySupportChatContext
+    VoteChatContext, PaySupportChatContext, ClosePollChatContext
 )
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
     PollOptions, VoteRankings, db, ChatWhitelist, PollWinners,
     MessageContextState, Payments
 )
-from base_api import (
-    BaseAPI, UserRegistrationStatus,
-    CallbackCommands, GetPollWinnerStatus
-)
-
+from base_api import BaseAPI, UserRegistrationStatus, CallbackCommands
 from tele_helpers import TelegramHelpers
 
 # https://stackoverflow.com/questions/15892946/
@@ -145,7 +143,7 @@ class RankedChoiceBot(BaseAPI):
             Command.VOTE: self.vote_for_poll_handler,
             Command.POLL_RESULTS: self.fetch_poll_results,
             Command.HAS_VOTED: self.has_voted,
-            Command.CLOSE_POLL: self.close_poll,
+            Command.CLOSE_POLL: self.close_poll_handler,
             Command.VIEW_VOTES: self.view_votes,
             Command.VIEW_VOTERS: self.view_poll_voters,
             Command.ABOUT: self.show_about,
@@ -1108,7 +1106,7 @@ class RankedChoiceBot(BaseAPI):
     @classmethod
     def read_vote_count(cls, poll_id: int) -> Result[int, MessageBuilder]:
         # returns all registered voters who have cast a vote
-        fetch_poll_result = cls.fetch_poll(poll_id)
+        fetch_poll_result = RCVTally.fetch_poll(poll_id)
 
         if fetch_poll_result.is_err():
             return fetch_poll_result
@@ -1116,9 +1114,19 @@ class RankedChoiceBot(BaseAPI):
         poll = fetch_poll_result.unwrap()
         return Ok(poll.num_votes)
 
-    async def close_poll(self, update, *_, **__):
+    @classmethod
+    async def close_poll_handler(cls, update, *_, **__):
         message = update.message
         message_text = TelegramHelpers.read_raw_command_args(update)
+        user = update.user
+
+        if message_text == '':
+            ClosePollChatContext(
+                user_id=user.get_user_id(), chat_id=message.chat.id
+            ).save_state()
+            return await message.reply_text(
+                'Enter the poll ID for the poll you want to close'
+            )
 
         if constants.ID_PATTERN.match(message_text) is None:
             return await message.reply_text(textwrap.dedent(f"""
@@ -1134,48 +1142,11 @@ class RankedChoiceBot(BaseAPI):
             return False
 
         poll_id = extract_result.unwrap()
-        tele_user: TeleUser | None = message.from_user
-
-        try:
-            poll = Polls.select().where(Polls.id == poll_id).get()
-        except Polls.DoesNotExist:
-            await message.reply_text(f'poll {poll_id} does not exist')
-            return False
-
-        try:
-            user = Users.build_from_fields(tele_id=tele_user.id).get()
-        except Users.DoesNotExist:
-            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
-            return False
-
-        user_id = user.get_user_id()
-        creator_id: UserID = poll.get_creator().get_user_id()
-        if creator_id != user_id:
-            await message.reply_text(
-                "Only the creator of this poll is allowed to close it"
-            )
-            return False
-
-        poll.closed = True
-        poll.save()
-
-        await message.reply_text(f'poll {poll_id} closed')
-        winning_option_id, get_status = await self.get_poll_winner(poll_id)
-
-        if get_status == GetPollWinnerStatus.COMPUTING:
-            return await message.reply_text(textwrap.dedent(f"""
-                Poll winner computation in progress
-                Please check again later
-             """))
-        elif winning_option_id is not None:
-            winning_options = PollOptions.select().where(
-                PollOptions.id == winning_option_id
-            )
-
-            option_name = winning_options[0].option_name
-            return await message.reply_text(f'Poll winner is: {option_name}')
-        else:
-            return await message.reply_text('Poll has no winner')
+        user_id = update.user.get_user_id()
+        await ClosePollContextHandler.close_poll(
+            poll_id=poll_id, user_id=user_id,
+            update=update
+        )
 
     @classmethod
     async def whitelist_username(cls, update: ModifiedTeleUpdate, *_, **__):
@@ -1677,7 +1648,8 @@ class RankedChoiceBot(BaseAPI):
             error_message = get_poll_closed_result.err()
             await error_message.call(message.reply_text)
 
-        winning_option_id, get_status = await self.get_poll_winner(poll_id)
+        get_winner_result = self.rcv_tally.get_poll_winner(poll_id)
+        winning_option_id, get_status = get_winner_result
 
         if get_status == GetPollWinnerStatus.COMPUTING:
             await message.reply_text(textwrap.dedent(f"""

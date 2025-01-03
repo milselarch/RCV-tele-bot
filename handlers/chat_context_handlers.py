@@ -7,7 +7,10 @@ from telegram import Message, User as TeleUser
 from telegram.ext import ContextTypes
 from base_api import BaseAPI
 from bot_middleware import track_errors
+from database.db_helpers import UserID
 from handlers.payment_handlers import IncMaxVotersChatContext, PaymentHandlers
+from helpers.rcv_tally import RCVTally
+from helpers.redis_cache_manager import GetPollWinnerStatus
 from helpers.start_get_params import StartGetParams
 from helpers import strings
 from helpers.commands import Command
@@ -23,7 +26,7 @@ from helpers.strings import (
     READ_SUBSCRIPTION_TIER_FAILED, generate_poll_created_message
 )
 from database import (
-    Users, CallbackContextState, ChatContextStateTypes, Polls, SupportTickets
+    Users, CallbackContextState, ChatContextStateTypes, Polls, SupportTickets, PollOptions
 )
 
 
@@ -50,32 +53,6 @@ class BaseContextHandler(object, metaclass=ABCMeta):
         """
         ...
 
-
-class ClosePollContextHandler(BaseContextHandler):
-    async def handle_messages(
-        self, extracted_context: ExtractedChatContext,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        is_from_start: bool
-    ):
-        message = update.message
-        raw_poll_id = message.text
-
-        try:
-            poll_id = int(raw_poll_id)
-        except ValueError:
-            return await message.reply_text(
-                f"Invalid poll id: {raw_poll_id}"
-            )
-
-        # TODO: implement poll closing here
-
-    async def complete_chat_context(
-        self, chat_context: CallbackContextState,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
-    ):
-        return await update.message.reply_text(
-            f"/{Command.DONE} not supported for closing polls"
-        )
 
 class PollCreationContextHandler(BaseContextHandler):
     async def handle_messages(
@@ -504,6 +481,74 @@ class PaySupportContextHandler(BaseContextHandler):
             chat_context.delete_instance()
 
 
+class ClosePollContextHandler(BaseContextHandler):
+    async def handle_messages(
+        self, extracted_context: ExtractedChatContext,
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        is_from_start: bool
+    ):
+        message = update.message
+        raw_poll_id = message.text
+        user_id = update.user.get_user_id()
+
+        try:
+            poll_id = int(raw_poll_id)
+        except ValueError:
+            return await message.reply_text(
+                f"Invalid poll id: {raw_poll_id}"
+            )
+
+        # TODO: implement poll closing here
+        chat_context = extracted_context.chat_context
+        chat_context.delete_instance()
+        await self.close_poll(
+            poll_id=poll_id, user_id=user_id,
+            update=update
+        )
+
+    @staticmethod
+    async def close_poll(
+        poll_id: int, user_id: UserID, update: ModifiedTeleUpdate
+    ):
+        message = update.message
+        poll_res = Polls.get_as_creator(poll_id, user_id)
+        if poll_res.is_err():
+            return await message.reply_text(
+                "You're not the creator of this poll"
+            )
+
+        poll = poll_res.unwrap()
+        poll.closed = True
+        poll.save()
+
+        await message.reply_text(f'poll {poll_id} closed')
+        get_winner_result = await RCVTally().get_poll_winner(poll_id)
+        winning_option_id, get_status = get_winner_result
+
+        if get_status == GetPollWinnerStatus.COMPUTING:
+            return await message.reply_text(textwrap.dedent(f"""
+                Poll winner computation in progress
+                Please check again later
+            """))
+        elif winning_option_id is not None:
+            winning_options = PollOptions.select().where(
+                PollOptions.id == winning_option_id
+            )
+
+            option_name = winning_options[0].option_name
+            return await message.reply_text(f'Poll winner is: {option_name}')
+        else:
+            return await message.reply_text('Poll has no winner')
+
+    async def complete_chat_context(
+        self, chat_context: CallbackContextState,
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+    ):
+        return await update.message.reply_text(
+            f"/{Command.DONE} not supported for closing polls"
+        )
+
+
 class ContextHandlers(object):
     def __init__(self):
         self.context_handlers: dict[
@@ -513,7 +558,8 @@ class ContextHandlers(object):
             ChatContextStateTypes.VOTE: VoteContextHandler,
             ChatContextStateTypes.INCREASE_MAX_VOTERS:
                 IncreaseMaxVotersContextHandler,
-            ChatContextStateTypes.PAY_SUPPORT: PaySupportContextHandler
+            ChatContextStateTypes.PAY_SUPPORT: PaySupportContextHandler,
+            ChatContextStateTypes.CLOSE_POLL: ClosePollContextHandler
         }
 
         for context_type in ChatContextStateTypes:
