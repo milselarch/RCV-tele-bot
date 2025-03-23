@@ -607,6 +607,7 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
         )
         vote_context.save_state()
         bot_username = context.bot.username
+
         async def send_dm(text, markup: Optional[ReplyMarkup] = None):
             await context.bot.send_message(
                 text=text, chat_id=tele_user.id, reply_markup=markup
@@ -642,6 +643,7 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
         )
         # display poll info in chat DMs at the start
         poll_contents = poll_message.text
+
         async def dm_poll_info():
             await send_dm(poll_contents, markup=reply_markup)
             await send_dm(vote_context.generate_vote_option_prompt())
