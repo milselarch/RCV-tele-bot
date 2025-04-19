@@ -138,12 +138,14 @@ class RankedChoiceBot(BaseAPI):
                 self.whitelist_chat_registration,
             Command.BLACKLIST_CHAT_REGISTRATION:
                 self.blacklist_chat_registration,
+
             Command.VIEW_POLL: self.view_poll,
             Command.VIEW_POLLS: self.view_all_polls,
             Command.VOTE: self.vote_for_poll_handler,
             Command.POLL_RESULTS: self.fetch_poll_results,
             Command.HAS_VOTED: self.has_voted,
             Command.CLOSE_POLL: self.close_poll_handler,
+            Command.EDIT_POLL_TITLE: self.edit_poll_title_handler,
             Command.VIEW_VOTES: self.view_votes,
             Command.VIEW_VOTERS: self.view_poll_voters,
             Command.ABOUT: self.show_about,
@@ -249,6 +251,10 @@ class RankedChoiceBot(BaseAPI):
             Command.CLOSE_POLL,
             'close the poll with the specified poll_id'
         ), (
+            Command.EDIT_POLL_TITLE,
+            'edit the title of the poll with the specified poll_id '
+            '(only for polls that haven\'t been voted for)'
+        ), (
             Command.VIEW_VOTES,
             'view all the votes entered for the poll'
         ), (
@@ -314,7 +320,7 @@ class RankedChoiceBot(BaseAPI):
         signed_ref_info = BaseAPI.sign_data_check_string(ref_info)
         if signed_ref_info != ref_hash:
             # print('REJECT_HASH')
-            return
+            return None
 
         # update the poll voter count in the originating poll message
         _, raw_poll_id, raw_ref_msg_id, raw_ref_chat_id = ref_info.split(':')
@@ -323,10 +329,10 @@ class RankedChoiceBot(BaseAPI):
         ref_msg_id = int(raw_ref_msg_id)
         ref_chat_id = int(raw_ref_chat_id)
         if (ref_msg_id == BLANK_ID) or (ref_chat_id == BLANK_ID):
-            return
+            return None
 
         poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
-        await TelegramHelpers.update_poll_message(
+        return await TelegramHelpers.update_poll_message(
             poll_info=poll_info, chat_id=ref_chat_id,
             message_id=ref_msg_id, context=context,
             poll_locks_manager=PollsLockManager()
@@ -392,9 +398,9 @@ class RankedChoiceBot(BaseAPI):
         voted = self.check_has_voted(poll_id=poll_id, user_id=user_id)
 
         if voted:
-            await message.reply_text("you've voted already")
+            return await message.reply_text("you've voted already")
         else:
-            await message.reply_text("you haven't voted")
+            return await message.reply_text("you haven't voted")
 
     async def create_group_poll(
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
@@ -605,7 +611,9 @@ class RankedChoiceBot(BaseAPI):
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
         await message.reply_text(poll_message, reply_markup=reply_markup)
-        await message.reply_text(generate_poll_created_message(new_poll_id))
+        return await message.reply_text(
+            generate_poll_created_message(new_poll_id)
+        )
 
     @classmethod
     async def whitelist_chat_registration(
@@ -844,7 +852,7 @@ class RankedChoiceBot(BaseAPI):
             ranking_message += rankings_str + '\n'
 
         ranking_message = ranking_message.strip()
-        await message.reply_text(f'votes recorded:\n{ranking_message}')
+        return await message.reply_text(f'votes recorded:\n{ranking_message}')
 
     async def unclose_poll_admin(self, update, *_, **__):
         await self._set_poll_status(update, False)
@@ -869,12 +877,14 @@ class RankedChoiceBot(BaseAPI):
             PollWinners.delete().where(
                 PollWinners.poll == poll_id
             ).execute()
-            # remove cached result for poll winner
+            # remove the cached result for the poll winner
             Polls.update({Polls.closed: closed}).where(
                 Polls.id == poll_id
             ).execute()
 
-        await message.reply_text(f'poll {poll_id} has been unclosed')
+        return await message.reply_text(
+            f'poll {poll_id} has been unclosed'
+        )
 
     @admin_only
     async def lookup_from_username_admin(
@@ -896,7 +906,7 @@ class RankedChoiceBot(BaseAPI):
 
         user_tele_ids = self.resolve_username_to_user_tele_ids(username)
         id_strings = ' '.join([f'#{tele_id}' for tele_id in user_tele_ids])
-        await message.reply_text(textwrap.dedent(f"""
+        return await message.reply_text(textwrap.dedent(f"""
             matching user_ids for username [{username}]:
             {id_strings}
         """))
@@ -939,12 +949,12 @@ class RankedChoiceBot(BaseAPI):
             ).get_or_create()
 
             if created:
-                await message.reply_text(
+                return await message.reply_text(
                     f'User with tele_id {tele_id} and username '
                     f'{username} created'
                 )
             else:
-                await message.reply_text(
+                return await message.reply_text(
                     'User already exists, use --force to '
                     'override existing entry'
                 )
@@ -956,7 +966,7 @@ class RankedChoiceBot(BaseAPI):
                 update={Users.username: username}
             ).execute()
 
-            await message.reply_text(
+            return await message.reply_text(
                 f'User with tele_id {tele_id} and username '
                 f'{username} replaced'
             )
@@ -980,7 +990,7 @@ class RankedChoiceBot(BaseAPI):
 
         matching_users = Users.select().where(Users.username == username)
         user_tele_ids = [user.tele_id for user in matching_users]
-        await message.reply_text(textwrap.dedent(f"""
+        return await message.reply_text(textwrap.dedent(f"""
             matching user_tele_ids for username [{username}]:
             {' '.join([f'#{tele_id}' for tele_id in user_tele_ids])}
         """))
@@ -1023,12 +1033,12 @@ class RankedChoiceBot(BaseAPI):
             ).get_or_create()
 
             if created:
-                await message.reply_text(
+                return await message.reply_text(
                     f'User with user_id {tele_id} and username '
                     f'{username} created'
                 )
             else:
-                await message.reply_text(
+                return await message.reply_text(
                     'User already exists, use --force to '
                     'override existing entry'
                 )
@@ -1041,7 +1051,7 @@ class RankedChoiceBot(BaseAPI):
                 update={Users.username: username}
             ).execute()
 
-            await message.reply_text(
+            return await message.reply_text(
                 f'User with user_id {tele_id} and username '
                 f'{username} replaced'
             )
@@ -1099,7 +1109,7 @@ class RankedChoiceBot(BaseAPI):
                 f'#{poll.id}: {poll.desc}'
             )
 
-        await message.reply_text(
+        return await message.reply_text(
             'Polls found:\n' + '\n'.join(poll_descriptions)
         )
 
@@ -1143,7 +1153,7 @@ class RankedChoiceBot(BaseAPI):
 
         poll_id = extract_result.unwrap()
         user_id = update.user.get_user_id()
-        await ClosePollContextHandler.close_poll(
+        return await ClosePollContextHandler.close_poll(
             poll_id=poll_id, user_id=user_id,
             update=update
         )
@@ -1304,7 +1314,7 @@ class RankedChoiceBot(BaseAPI):
         # raw_text = raw_text[raw_text.index(' ')+1:].strip()
         # print('RAW', [raw_text])
 
-        await TelegramHelpers.vote_and_report(
+        return await TelegramHelpers.vote_and_report(
             raw_text, user_tele_id=user_tele_id, message=message,
             username=username, chat_id=message.chat_id
         )
@@ -1590,7 +1600,7 @@ class RankedChoiceBot(BaseAPI):
             else:
                 not_voted_usernames.append(username)
 
-        await message.reply_text(textwrap.dedent(f"""
+        return await message.reply_text(textwrap.dedent(f"""
             voted:
             {' '.join(voted_usernames)}
             not voted:
@@ -1652,7 +1662,7 @@ class RankedChoiceBot(BaseAPI):
         winning_option_id, get_status = get_winner_result
 
         if get_status == GetPollWinnerStatus.COMPUTING:
-            await message.reply_text(textwrap.dedent(f"""
+            return await message.reply_text(textwrap.dedent(f"""
                 Poll winner computation in progress
                 Please check again later
             """))
@@ -1733,6 +1743,8 @@ class RankedChoiceBot(BaseAPI):
             payment = payment_res.unwrap()
             payment.refunded_at = datetime.now()
             payment.save()
+
+        return None
 
     @admin_only
     async def enter_maintenance_admin(

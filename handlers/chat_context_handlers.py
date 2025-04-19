@@ -36,6 +36,10 @@ class BaseContextHandler(object, metaclass=ABCMeta):
         self, chat_context: CallbackContextState,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
+        """
+        handler for when chat context is completed
+        executed when user sends /done command
+        """
         ...
 
     @abstractmethod
@@ -45,6 +49,9 @@ class BaseContextHandler(object, metaclass=ABCMeta):
         is_from_start: bool
     ):
         """
+        handler for when user sends additional arguments for the
+        construction of the current chat context
+
         :param extracted_context:
         :param update:
         :param context:
@@ -338,6 +345,7 @@ class VoteContextHandler(BaseContextHandler):
             ))
 
         await asyncio.gather(*coroutines)
+        return None
 
 
 class IncreaseMaxVotersContextHandler(BaseContextHandler):
@@ -378,7 +386,6 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
             return await msg.reply_text(strings.generate_max_voters_prompt(
                 poll_id, current_max=poll.max_voters
             ))
-
 
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
@@ -431,6 +438,8 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
             )
             if invoice_sent:
                 chat_context.delete_instance()
+
+            return None
 
 
 class PaySupportContextHandler(BaseContextHandler):
@@ -505,6 +514,7 @@ class ClosePollContextHandler(BaseContextHandler):
             poll_id=poll_id, user_id=user_id,
             update=update
         )
+        return None
 
     @staticmethod
     async def close_poll(
@@ -551,15 +561,14 @@ class ClosePollContextHandler(BaseContextHandler):
 
 class ContextHandlers(object):
     def __init__(self):
-        self.context_handlers: dict[
-            ChatContextStateTypes, Type[BaseContextHandler]
-        ] = {
-            ChatContextStateTypes.POLL_CREATION: PollCreationContextHandler,
-            ChatContextStateTypes.VOTE: VoteContextHandler,
-            ChatContextStateTypes.INCREASE_MAX_VOTERS:
-                IncreaseMaxVotersContextHandler,
-            ChatContextStateTypes.PAY_SUPPORT: PaySupportContextHandler,
-            ChatContextStateTypes.CLOSE_POLL: ClosePollContextHandler
+        T = ChatContextStateTypes
+        self.context_handlers: dict[T, Type[BaseContextHandler]] = {
+            T.POLL_CREATION: PollCreationContextHandler,
+            T.VOTE: VoteContextHandler,
+            T.INCREASE_MAX_VOTERS: IncreaseMaxVotersContextHandler,
+            T.PAY_SUPPORT: PaySupportContextHandler,
+            T.CLOSE_POLL: ClosePollContextHandler,
+            T.EDIT_POLL_TITLE: EditPollTitleContextHandler
         }
 
         for context_type in ChatContextStateTypes:
@@ -617,6 +626,24 @@ class ContextHandlers(object):
         return await context_handler.complete_chat_context(
             chat_context, update, context
         )
+
+
+class EditPollTitleContextHandler(BaseContextHandler):
+    async def complete_chat_context(
+        self, chat_context: CallbackContextState,
+        update: ModifiedTeleUpdate,
+        context: ContextTypes.DEFAULT_TYPE
+    ):
+        # TODO: implement edit poll title context handler
+        raise NotImplementedError
+
+    async def handle_messages(
+        self, extracted_context: ExtractedChatContext,
+        update: ModifiedTeleUpdate,
+        context: ContextTypes.DEFAULT_TYPE, is_from_start: bool
+    ):
+        # TODO: implement edit poll title context handler
+        raise NotImplementedError
 
 
 context_handlers = ContextHandlers()
