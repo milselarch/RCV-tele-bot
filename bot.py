@@ -50,7 +50,8 @@ from helpers.strings import (
 )
 from helpers.chat_contexts import (
     PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
-    VoteChatContext, PaySupportChatContext, ClosePollChatContext
+    VoteChatContext, PaySupportChatContext, ClosePollChatContext,
+    EditPollTitleChatContext
 )
 from database import (
     Users, Polls, PollVoters, UsernameWhitelist,
@@ -1157,6 +1158,67 @@ class RankedChoiceBot(BaseAPI):
             poll_id=poll_id, user_id=user_id,
             update=update
         )
+
+    @classmethod
+    async def edit_poll_title_handler(cls, update: ModifiedTeleUpdate, *_, **__):
+        """
+        Command usage:
+        /edit_poll_title {poll_id} {new_title}
+        /edit_poll_title {poll_id}
+        /edit_poll_title
+        """
+        message = update.message
+        user_id = update.user.get_user_id()
+
+        new_title = ""
+        message_text = TelegramHelpers.read_raw_command_args(update)
+        invalid_format_text = textwrap.dedent(f"""
+            Input format is invalid, try:
+            /{Command.EDIT_POLL_TITLE} {{poll_id}} {{new_title}}
+        """)
+
+        if ' ' in message_text:
+            # both poll_id and new title are specified
+            raw_poll_id = message_text[:message_text.index(' ')].strip()
+            new_title = message_text[message_text.index(' '):].strip()
+            poll_id = int(raw_poll_id)
+            # TODO: edit the poll title
+        elif constants.ID_PATTERN.match(message_text) is not None:
+            # only poll_id is specified, poll_id is valid
+            poll_id = int(message_text)
+        else:
+            # only poll_id is specified, poll_id is invalid
+            return await message.reply_text(invalid_format_text)
+
+        poll_res = Polls.get_as_creator(poll_id, user_id)
+        if poll_res.is_err():
+            return await message.reply_text(
+                "You're not the creator of this poll"
+            )
+
+        poll = poll_res.unwrap()
+        if poll.num_votes > 0:
+            return await message.reply_text(
+                "Cannot edit poll title after voting has started"
+            )
+
+        if new_title == '':
+            EditPollTitleChatContext(
+                user_id=user_id, chat_id=message.chat.id,
+                poll_id=poll_id
+            ).save_state()
+
+            return await message.reply_text(textwrap.dedent(f"""
+                Existing poll title: 
+                {poll.desc}
+                ——————————————————
+                Enter the new title for the poll:
+            """))
+        else:
+            poll.desc = new_title
+            # TODO: implement poll title update
+            # TODO: implement poll title update in chat context
+
 
     @classmethod
     async def whitelist_username(cls, update: ModifiedTeleUpdate, *_, **__):

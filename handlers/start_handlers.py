@@ -171,7 +171,7 @@ class StartHandlers(object):
             # check for existing chat context and process it if it exists
             chat_context_res = extract_chat_context(update)
             if chat_context_res.is_err():
-                return
+                return None
 
             extracted_context = chat_context_res.unwrap()
             context_type = extracted_context.context_type

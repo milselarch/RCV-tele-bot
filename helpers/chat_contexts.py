@@ -9,7 +9,7 @@ from telegram import Message
 from helpers import helpers
 from helpers.commands import Command
 from helpers.constants import (
-    POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH, BLANK_ID
+    POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH, BLANK_ID, MAX_POLL_QUESTION_LENGTH
 )
 from helpers.contexts import BaseVoteContext
 from helpers.message_buillder import MessageBuilder
@@ -101,6 +101,11 @@ class PollCreatorTemplate(object):
         error_message = MessageBuilder()
         if self.poll_question == '':
             return Err(error_message.add('Poll question cannot be empty'))
+        elif len(self.poll_question) > MAX_POLL_QUESTION_LENGTH:
+            return Err(error_message.add(textwrap.dedent(f"""
+                Poll question character limit is {MAX_POLL_QUESTION_LENGTH}
+                Poll question is {len(self.poll_question)} characters long
+            """)))
 
         if len(self.poll_options) > POLL_MAX_OPTIONS:
             return Err(error_message.add(textwrap.dedent(f"""
@@ -185,13 +190,13 @@ class PollCreatorTemplate(object):
                     poll_id=new_poll_id, option_name=poll_option,
                     option_number=poll_choice_number
                 ))
-            # whitelist voters in poll by username
+            # whitelist voters in the poll by username
             for raw_poll_user in self.whitelisted_usernames:
                 row_fields = UsernameWhitelist.build_from_fields(
                     poll_id=new_poll_id, username=raw_poll_user
                 )
                 whitelist_user_rows.append(row_fields)
-            # whitelist voters in poll by user id
+            # whitelist voters in the poll by user id
             for poll_user_id in poll_user_ids:
                 poll_voter_rows.append(PollVoters.build_from_fields(
                     poll_id=new_poll_id, user_id=poll_user_id
@@ -249,8 +254,14 @@ class PollCreationChatContext(SerializableChatContext):
 
     def set_question(self, question: str) -> Result[bool, Exception]:
         question = question.strip()
+
         if len(question) == 0:
             return Err(ValueError("Question cannot be empty"))
+        elif len(question) > MAX_POLL_QUESTION_LENGTH:
+            return Err(ValueError(
+                f"Question cannot exceed {MAX_POLL_QUESTION_LENGTH} "
+                f"characters"
+            ))
 
         self.question = question
         return Ok(self.is_complete)
@@ -303,6 +314,22 @@ class VoteChatContext(SerializableChatContext, BaseVoteContext):
 
     def get_context_type(self) -> ChatContextStateTypes:
         return ChatContextStateTypes.VOTE
+
+
+class EditPollTitleChatContext(SerializableChatContext):
+    chat_id: int
+    user_id: int
+    poll_id: int
+    new_title: str = ""
+
+    def get_user_id(self) -> UserID:
+        return UserID(self.user_id)
+
+    def get_chat_id(self) -> int:
+        return self.chat_id
+
+    def get_context_type(self) -> ChatContextStateTypes:
+        return ChatContextStateTypes.EDIT_POLL_TITLE
 
 
 class PaySupportChatContext(SerializableChatContext):
