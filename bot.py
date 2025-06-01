@@ -1219,7 +1219,6 @@ class RankedChoiceBot(BaseAPI):
             # TODO: implement poll title update
             # TODO: implement poll title update in chat context
 
-
     @classmethod
     async def whitelist_username(cls, update: ModifiedTeleUpdate, *_, **__):
         """
