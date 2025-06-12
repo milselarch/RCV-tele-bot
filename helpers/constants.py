@@ -4,6 +4,7 @@ import re
 BLANK_ID = -1
 POLL_MAX_OPTIONS: int = 16
 POLL_OPTION_MAX_LENGTH: int = 100
+MAX_POLL_QUESTION_LENGTH: int = 256
 
 # how long before the delete poll button expires
 DELETE_POLL_BUTTON_EXPIRY = 60

@@ -26,6 +26,7 @@ class ChatContextStateTypes(StrEnum):
     INCREASE_MAX_VOTERS = "INCREASE_MAX_VOTERS"
     PAY_SUPPORT = "PAY_SUPPORT"
     CLOSE_POLL = "CLOSE_POLL"
+    EDIT_POLL_TITLE = "EDIT_POLL_TITLE"
     VOTE = "VOTE"
 
 
@@ -149,4 +150,4 @@ class SerializableChatContext(pydantic.BaseModel, metaclass=ABCMeta):
             model: P = cls.model_validate_json(context.state)
             return Ok(model)
         except ValueError as e:
-            Err(e)
+            return Err(e)
