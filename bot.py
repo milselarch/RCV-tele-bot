@@ -117,7 +117,8 @@ class RankedChoiceBot(BaseAPI):
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        # ensure scheduled tasks don't crash before running them in background
+        # ensure scheduled tasks don't crash before running
+        # them in the background
         loop.run_until_complete(self._call_polling_tasks_once())
         loop.create_task(self._call_polling_tasks_routine())
 
@@ -1177,12 +1178,21 @@ class RankedChoiceBot(BaseAPI):
             /{Command.EDIT_POLL_TITLE} {{poll_id}} {{new_title}}
         """)
 
-        if ' ' in message_text:
+        if message_text == '':
+            # no poll_id or new title specified
+            EditPollTitleChatContext(
+                user_id=user_id, chat_id=message.chat.id,
+                poll_id=BLANK_ID
+            ).save_state()
+
+            return await message.reply_text(textwrap.dedent(f"""
+                Enter the poll ID for the poll you want to edit:
+            """))
+        elif ' ' in message_text:
             # both poll_id and new title are specified
             raw_poll_id = message_text[:message_text.index(' ')].strip()
             new_title = message_text[message_text.index(' '):].strip()
             poll_id = int(raw_poll_id)
-            # TODO: edit the poll title
         elif constants.ID_PATTERN.match(message_text) is not None:
             # only poll_id is specified, poll_id is valid
             poll_id = int(message_text)
@@ -1203,21 +1213,23 @@ class RankedChoiceBot(BaseAPI):
             )
 
         if new_title == '':
+            # TODO: implement poll title update in chat context
             EditPollTitleChatContext(
                 user_id=user_id, chat_id=message.chat.id,
                 poll_id=poll_id
             ).save_state()
 
-            return await message.reply_text(textwrap.dedent(f"""
-                Existing poll title: 
-                {poll.desc}
-                ——————————————————
-                Enter the new title for the poll:
-            """))
+            return await message.reply_text(
+                strings.build_poll_title_edit_prompt(poll.desc)
+            )
         else:
+            prev_title = poll.desc
             poll.desc = new_title
-            # TODO: implement poll title update
-            # TODO: implement poll title update in chat context
+            poll.save()
+
+            return await message.reply_text(
+                strings.build_poll_title_edit_message(prev_title, new_title)
+            )
 
     @classmethod
     async def whitelist_username(cls, update: ModifiedTeleUpdate, *_, **__):

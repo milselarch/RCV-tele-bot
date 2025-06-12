@@ -325,6 +325,9 @@ class EditPollTitleChatContext(SerializableChatContext):
     def get_user_id(self) -> UserID:
         return UserID(self.user_id)
 
+    def set_poll_id(self, poll_id: int) -> None:
+        self.poll_id = poll_id
+
     def get_chat_id(self) -> int:
         return self.chat_id
 

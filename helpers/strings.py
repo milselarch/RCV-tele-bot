@@ -3,7 +3,7 @@ import textwrap
 
 from helpers.commands import Command
 
-__VERSION__ = '1.3.7'
+__VERSION__ = '1.3.8'
 
 READ_SUBSCRIPTION_TIER_FAILED = "Unexpected error reading subscription tier"
 POLL_OPTIONS_LIMIT_REACHED_TEXT = textwrap.dedent(f"""
@@ -127,6 +127,7 @@ def generate_delete_text(deletion_token: str) -> str:
         /{Command.DELETE_ACCOUNT} {deletion_token}
     """)
 
+
 MAX_VOTERS_NOT_EDITABLE = (
     "Invalid poll ID - note that only the poll's creator is allowed to "
     "change the max number of voters"
@@ -180,5 +181,26 @@ def generate_max_voters_prompt(poll_id: int, current_max: int):
 def generate_poll_closed_message(poll_id: int):
     return f"Poll #{poll_id} has been closed already"
 
+
 def generate_poll_deleted_message(poll_id: int):
     return f"Poll #{poll_id} has been deleted already"
+
+
+def build_poll_title_edit_prompt(poll_title: str) -> str:
+    return textwrap.dedent(f"""
+        Existing poll title: 
+        {poll_title}
+        ——————————————————
+        Enter the new title for the poll:
+    """)
+
+
+def build_poll_title_edit_message(
+    prev_title: str, new_title: str
+) -> str:
+    return (
+        f'poll title updated from:\n'
+        f'{repr(prev_title)}\n'
+        f'to:\n'
+        f'{repr(new_title)}'
+    )
