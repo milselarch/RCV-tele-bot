@@ -6,7 +6,7 @@ Typescript using React and [react-telegram-web-app](https://github.com/vkrugliko
 Poll results are conducted using the [https://github.com/milselarch/trie_rcv](https://github.com/milselarch/trie_rcv) 
 crate via a maturin bridge.
 
-![RCV-3S2-50p](https://raw.githubusercontent.com/milselarch/RCV-tele-bot/refs/heads/feat/close_poll_context/images/RCV-3S2-small.png)
+![RCV-3S1-50p](https://github.com/user-attachments/assets/cd526424-a34c-47da-a97a-e78b62e65f0f)
 
 ### Commands
 1) `/start` - start bot
