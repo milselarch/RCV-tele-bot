@@ -1,13 +1,17 @@
 import axios from 'axios';
 // import {ReactComponent as Logo} from './logo.svg';
 import './App.scss';
-import { MainButton, WebAppProvider } from '@vkruglikov/react-telegram-web-app';
+
+import {
+  MainButton, WebAppProvider, useThemeParams
+} from '@vkruglikov/react-telegram-web-app';
 import {useEffect, useState} from "react";
 import {BACKEND_DEV_URL, BACKEND_PROD_URL} from "./config";
 import ReactLoading from 'react-loading';
 
 import {PollOptionsList} from "./PollOptionsList";
 import {Poll} from "./poll";
+import {applyThemeParams} from "./themeing";
 
 // import { MainButton, useShowPopup } from '@vkruglikov/react-telegram-web-app';
 
@@ -36,18 +40,19 @@ const get_backend_url = () => {
 
 const fetch_poll = async (poll_id: number) => {
   const backend_url = get_backend_url()
+  // console.log('BACKEND_URL', backend_url)
   const endpoint = `${backend_url}/fetch_poll`;
-  console.log('ENDPOINT', endpoint, poll_id)
+  // console.log('ENDPOINT', endpoint, poll_id)
 
   const request = axios.post(
     endpoint, {'poll_id': poll_id}, {
       headers: {'Content-Type': 'application/json'},
-      timeout: 15 * 1000 // time out after 15 seconds
+      timeout: 30 * 1000
     }
   )
 
   const response = await request
-  console.log('ENDPOINT RESPONSE', response)
+  // console.log('ENDPOINT RESPONSE', response)
   return response
 }
 
@@ -60,7 +65,7 @@ const StatusLoader = ({
     return (
       <div>
         <p>{status}</p>
-        <ReactLoading type="spin" height={'10rem'} width={'10rem'}/>
+        <ReactLoading type="bars" height={'10rem'} width={'10rem'}/>
       </div>
     )
   } else {
@@ -92,6 +97,10 @@ function App() {
   const [vote_rankings, set_vote_rankings] = useState<Array<number>>([])
   const [withhold_final, set_withhold_final] = useState<boolean>(false);
   const [abstain_final, set_abstain_final] = useState<boolean>(false);
+
+  const [_, themeParams] = useThemeParams();
+  console.log('THEME PARAMS', themeParams)
+  applyThemeParams(themeParams)
 
   const remove_ranking = (option_number: number) => {
     set_vote_rankings(vote_rankings.filter(
@@ -179,8 +188,10 @@ function App() {
           set_status('Connection timed out')
         } else if (status_code === 401) {
           set_status('Unauthorized')
-        } else {
+        } else if (status_code !== undefined) {
           set_status(`Server request failed (${status_code}) ;--;`)
+        } else {
+          set_status(`Server request failed ;--;`)
         }
       } else {
         console.error('Unexpected error:', error);
