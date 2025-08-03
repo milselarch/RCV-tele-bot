@@ -20,13 +20,14 @@ from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from handlers.inline_keyboard_handlers import PollsLockManager
 from helpers.chat_contexts import (
     PollCreationChatContext, VoteChatContext, ExtractedChatContext,
-    extract_chat_context
+    extract_chat_context, EditPollTitleChatContext
 )
 from helpers.strings import (
     READ_SUBSCRIPTION_TIER_FAILED, generate_poll_created_message
 )
 from database import (
-    Users, CallbackContextState, ChatContextStateTypes, Polls, SupportTickets, PollOptions
+    Users, CallbackContextState, ChatContextStateTypes, Polls,
+    SupportTickets, PollOptions
 )
 
 
@@ -36,6 +37,10 @@ class BaseContextHandler(object, metaclass=ABCMeta):
         self, chat_context: CallbackContextState,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
+        """
+        handler for when chat context is completed
+        executed when user sends /done command
+        """
         ...
 
     @abstractmethod
@@ -45,6 +50,9 @@ class BaseContextHandler(object, metaclass=ABCMeta):
         is_from_start: bool
     ):
         """
+        handler for when user sends additional arguments for the
+        construction of the current chat context
+
         :param extracted_context:
         :param update:
         :param context:
@@ -73,7 +81,7 @@ class PollCreationContextHandler(BaseContextHandler):
 
         poll_creation_context = poll_creation_context_res.unwrap()
         if not poll_creation_context.has_question:
-            # set the poll question and prompt for first poll option
+            # set the poll question and prompt for the first poll option
             set_res = poll_creation_context.set_question(message.text)
             if set_res.is_err():
                 error = set_res.unwrap_err()
@@ -338,6 +346,7 @@ class VoteContextHandler(BaseContextHandler):
             ))
 
         await asyncio.gather(*coroutines)
+        return None
 
 
 class IncreaseMaxVotersContextHandler(BaseContextHandler):
@@ -378,7 +387,6 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
             return await msg.reply_text(strings.generate_max_voters_prompt(
                 poll_id, current_max=poll.max_voters
             ))
-
 
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
@@ -431,6 +439,8 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
             )
             if invoice_sent:
                 chat_context.delete_instance()
+
+            return None
 
 
 class PaySupportContextHandler(BaseContextHandler):
@@ -505,6 +515,7 @@ class ClosePollContextHandler(BaseContextHandler):
             poll_id=poll_id, user_id=user_id,
             update=update
         )
+        return None
 
     @staticmethod
     async def close_poll(
@@ -551,15 +562,14 @@ class ClosePollContextHandler(BaseContextHandler):
 
 class ContextHandlers(object):
     def __init__(self):
-        self.context_handlers: dict[
-            ChatContextStateTypes, Type[BaseContextHandler]
-        ] = {
-            ChatContextStateTypes.POLL_CREATION: PollCreationContextHandler,
-            ChatContextStateTypes.VOTE: VoteContextHandler,
-            ChatContextStateTypes.INCREASE_MAX_VOTERS:
-                IncreaseMaxVotersContextHandler,
-            ChatContextStateTypes.PAY_SUPPORT: PaySupportContextHandler,
-            ChatContextStateTypes.CLOSE_POLL: ClosePollContextHandler
+        T = ChatContextStateTypes
+        self.context_handlers: dict[T, Type[BaseContextHandler]] = {
+            T.POLL_CREATION: PollCreationContextHandler,
+            T.VOTE: VoteContextHandler,
+            T.INCREASE_MAX_VOTERS: IncreaseMaxVotersContextHandler,
+            T.PAY_SUPPORT: PaySupportContextHandler,
+            T.CLOSE_POLL: ClosePollContextHandler,
+            T.EDIT_POLL_TITLE: EditPollTitleContextHandler
         }
 
         for context_type in ChatContextStateTypes:
@@ -617,6 +627,80 @@ class ContextHandlers(object):
         return await context_handler.complete_chat_context(
             chat_context, update, context
         )
+
+
+class EditPollTitleContextHandler(BaseContextHandler):
+    async def complete_chat_context(
+        self, chat_context: CallbackContextState,
+        update: ModifiedTeleUpdate,
+        context: ContextTypes.DEFAULT_TYPE
+    ):
+        message: Message = update.message
+        return await message.reply_text(
+            f"Please enter the new title of the poll you want to edit"
+        )
+
+    async def handle_messages(
+        self, extracted_context: ExtractedChatContext,
+        update: ModifiedTeleUpdate,
+        context: ContextTypes.DEFAULT_TYPE, is_from_start: bool
+    ):
+        message: Message = update.message
+        # tele_user: TeleUser | None = message.from_user
+        chat_context = extracted_context.chat_context
+        message_text = extracted_context.message_text
+
+        edit_poll_context_res = EditPollTitleChatContext.load(chat_context)
+        if edit_poll_context_res.is_err():
+            return await message.reply_text(
+                "Unexpected error loading edit poll title context"
+            )
+
+        coroutines: list[Coroutine] = []
+        edit_poll_context: EditPollTitleChatContext = (
+            edit_poll_context_res.unwrap()
+        )
+
+        if edit_poll_context.poll_id == BLANK_ID:
+            # set the poll_id from the message text
+            try:
+                poll_id = int(message_text)
+            except ValueError:
+                return await message.reply_text("Invalid poll ID")
+
+            poll_res = Polls.get_as_creator(poll_id, update.user.get_user_id())
+            if poll_res.is_err():
+                return await message.reply_text(
+                    "You're not the creator of this poll"
+                )
+
+            current_poll = poll_res.unwrap()
+            edit_poll_context.set_poll_id(poll_id)
+            edit_poll_context.save_state()
+            coroutines.append(message.reply_text(
+                strings.build_poll_title_edit_prompt(current_poll.desc)
+            ))
+        else:
+            # update the poll title with message text
+            poll_id = edit_poll_context.poll_id
+            poll_res = Polls.get_as_creator(poll_id, update.user.get_user_id())
+            if poll_res.is_err():
+                return await message.reply_text(
+                    "You're not the creator of this poll"
+                )
+
+            poll = poll_res.unwrap()
+            prev_title = poll.desc
+            poll.desc = message_text
+            poll.save()
+
+            chat_context.delete_instance()
+            coroutines.append(message.reply_text(
+                strings.build_poll_title_edit_message(prev_title, poll.desc)
+            ))
+
+        await asyncio.gather(*coroutines)
+        return None
 
 
 context_handlers = ContextHandlers()

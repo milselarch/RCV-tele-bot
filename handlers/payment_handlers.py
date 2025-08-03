@@ -124,7 +124,6 @@ class BasePaymentHandler(object, metaclass=ABCMeta):
         ...
 
 
-
 @dataclasses.dataclass
 class ProcessPaymentsResult(object):
     poll: Polls
@@ -132,25 +131,35 @@ class ProcessPaymentsResult(object):
     new_max_voters: int
 
 
-
 class IncreaseVoteLimitHandler(BasePaymentHandler):
     async def pre_checkout_callback(
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
+        # telegram calls this as a test-run before the actual payment
         query = update.pre_checkout_query
+
+        async def fail(err_message: str):
+            return await query.answer(ok=False, error_message=err_message)
+
         invoice_payload = query.invoice_payload
         invoice_res = IncreaseVoterLimitParams.safe_load_from_json(
             invoice_payload
         )
         if invoice_res.is_err():
-            return await query.answer(
-                ok=False, error_message=f"Failed to read invoice data"
-            )
+            return await fail(f"Failed to read invoice data")
+
         invoice = invoice_res.unwrap()
         poll_id = invoice.poll_id
         poll_res = Polls.build_from_fields(poll_id=poll_id).safe_get()
         if poll_res.is_err():
-            return await query.answer(f"Failed to get poll #{poll_id}")
+            return await fail(f"Failed to get poll #{poll_id}")
+
+        poll = poll_res.unwrap()
+        if poll.closed:
+            # TODO: fix potential race condition between pre-checkout and
+            #   poll being closed at the same time to avoid making payments
+            #   for closed polls
+            return await fail(f"Poll #{poll_id} has been closed already")
 
         return await query.answer(ok=True)
 
@@ -297,6 +306,7 @@ class PaymentHandlers(object):
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
     ):
         query = update.pre_checkout_query
+
         async def fail(err_message: str):
             return await query.answer(ok=False, error_message=err_message)
 
