@@ -63,11 +63,11 @@ const StatusLoader = ({
     return null
   } else if (loading) {
     return (
-      <div>
+      <div className="status-loader">
         <p>{status}</p>
         <ReactLoading
           type="bars" height={'10rem'} width={'10rem'}
-          className="react-loading-hint"
+          color="var(--tg-hint-color)"
         />
       </div>
     )
@@ -209,7 +209,7 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <StatusLoader loading={loading} status={status}/>
+        <StatusLoader loading={true} status={status}/>
         <PollOptionsList
           authenticated={has_credential} poll={poll}
           vote_rankings={vote_rankings}
