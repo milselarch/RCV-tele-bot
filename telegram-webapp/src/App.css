@@ -17,8 +17,11 @@ p {
   color: var(--tg-text-color);
 }
 
-.react-loading-hint {
-  color: var(--tg-hint-color);
+div.status-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .App {
