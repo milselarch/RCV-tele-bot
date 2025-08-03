@@ -13,6 +13,6 @@ telegram:
 webapp:
   cors_origins:
     - https://rcvdev.milselarch.com
-    - https://rcvprod.milselarch.com
+    - https://server.milselarch.com
     - https://ranked-choice-bot.web.app
     - http://localhost:5001

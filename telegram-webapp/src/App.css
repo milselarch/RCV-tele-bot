@@ -1,3 +1,22 @@
+:root {
+  --tg-bg-color: #282c34;
+  --tb-bg-color-rgb: 40, 44, 52; /* RGB for Telegram background */
+  --tg-text-color: #fff;
+  --tg-text-color-rgb: 255, 255, 255; /* RGB for Telegram text */
+  --tg-hint-color: #b87474;
+  --tg-hint-color-rgb: 85, 85, 85; /* RGB for Telegram hint text */
+  --tg-link-color: #61dafb;
+  --tg-link-color-rgb: 97, 218, 251; /* RGB for Telegram link text */
+  --tg-button-color: #444;
+  --tg-button-color-rgb: 68, 68, 68; /* RGB for Telegram button */
+  --tg-button-text-color: #fff;
+  --tg-button-text-color-rgb: 255, 255, 255; /* RGB for Telegram button text */
+}
+
+p {
+  color: var(--tg-text-color);
+}
+
 .App {
   text-align: center;
 }
@@ -13,7 +32,7 @@
   }
 }
 .App-header {
-  background-color: #282c34;
+  background-color: var(--tg-bg-color);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -39,7 +58,7 @@
   src: url(fonts/ubuntu_mono.ttf) format("ttf");
 }
 .App-link {
-  color: #61dafb;
+  color: var(--tg-link-color);
 }
 
 @keyframes App-logo-spin {
@@ -78,13 +97,14 @@ div.poll-container div.title {
   width: 100%;
   top: 0;
   left: 0;
-  background: linear-gradient(to top, rgba(40, 44, 52, 0) 0%, rgba(40, 44, 52, 0.7) 30%, rgb(40, 44, 52) 100%);
+  background: linear-gradient(to top, rgba(var(--tg-bg-color-rgb), 0) 0%, rgba(var(--tg-bg-color-rgb), 0.7) 30%, rgba(var(--tg-bg-color-rgb), 1) 100%);
 }
 div.poll-container div.title > p {
   width: fit-content;
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
   margin: auto;
+  color: var(--tg-text-color);
 }
 div.poll-container > div.buffer {
   height: 6rem;
@@ -116,13 +136,14 @@ div.poll-container > div.poll-selector > div.poll-options > div.poll-option:last
 }
 div.poll-container > div.poll-selector > div.poll-options div.poll-option {
   display: flex;
-  border: 2px solid #555;
+  border: 2px solid rgba(var(--tg-text-color-rgb), 0.5);
+  cursor: pointer;
 }
 div.poll-container > div.poll-selector > div.poll-options div.poll-option:active {
-  border-color: white;
+  border-color: var(--tg-hint-color);
 }
 div.poll-container > div.poll-selector > div.poll-options div.poll-option > p {
-  color: #DDD;
+  color: var(--tg-text-color);
   font-family: "Ubuntu Mono", sans-serif;
   font-size: 1rem;
 }
@@ -141,6 +162,10 @@ div.poll-container > div.poll-selector > div.poll-options > div.special-votes {
   flex-direction: row;
   justify-content: space-between;
   gap: 0.5rem;
+}
+div.poll-container > div.poll-selector > div.poll-options > div.special-votes > div.poll-option {
+  padding-left: 1rem;
+  padding-right: 1rem;
 }
 div.poll-container > div.poll-selector > div.poll-options > div.special-votes:first-child > div.poll-option:first-child {
   border-top-left-radius: 0.5rem;
@@ -165,6 +190,7 @@ div.poll-container > span.mono {
   margin-top: 2rem;
   font-size: 1.25rem;
   margin-bottom: 2rem;
+  color: var(--tg-text-color);
 }
 
 /*# sourceMappingURL=App.css.map */
