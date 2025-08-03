@@ -65,7 +65,10 @@ const StatusLoader = ({
     return (
       <div>
         <p>{status}</p>
-        <ReactLoading type="bars" height={'10rem'} width={'10rem'}/>
+        <ReactLoading
+          type="bars" height={'10rem'} width={'10rem'}
+          className="react-loading-hint"
+        />
       </div>
     )
   } else {
@@ -206,7 +209,6 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-
         <StatusLoader loading={loading} status={status}/>
         <PollOptionsList
           authenticated={has_credential} poll={poll}
