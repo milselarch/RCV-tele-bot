@@ -342,7 +342,16 @@ class RankedChoiceBot(BaseAPI):
 
     @track_errors
     async def handle_unknown_command(self, update: ModifiedTeleUpdate, _):
-        await update.message.reply_text("Command not found")
+        chat_type = update.message.chat.type
+
+        if chat_type != 'private':
+            # don't reply to unknown commands issued from group chats
+            return None
+
+        return await update.message.reply_text(
+            f"Command not found - use /{Command.HELP} "
+            f"to see available commands."
+        )
 
     @staticmethod
     def is_whitelisted_chat(poll_id: int, chat_id: int):
