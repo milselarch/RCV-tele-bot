@@ -499,6 +499,8 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
                 poll_locks_manager=PollsLockManager()
             )
 
+        return None
+
 
 class RegisterSubmitMessageHandler(BaseMessageHandler):
     async def handle_queries(

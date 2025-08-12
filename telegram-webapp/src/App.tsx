@@ -31,7 +31,7 @@ const load_tele_headers = () => {
 }
 
 const get_backend_url = () => {
-    if (!process.env.NODE_ENV || process.env.NODE_ENV === 'development') {
+  if (!process.env.NODE_ENV || process.env.NODE_ENV === 'development') {
       return BACKEND_DEV_URL
   } else {
       return BACKEND_PROD_URL
