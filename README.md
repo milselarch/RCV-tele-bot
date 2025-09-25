@@ -3,8 +3,9 @@ Ranked choice voting telegram bot - try it at [@ranked_choice_voting_bot](https:
 Bot and webapp backends were written in Python3.12 using the python-telegram-bot bot
 library, and the peewee SQL ORM. Voting webapp interface integration was written in 
 Typescript using React and [react-telegram-web-app](https://github.com/vkruglikov/react-telegram-web-app) components. 
-Poll results are conducted using the [https://github.com/milselarch/trie_rcv](https://github.com/milselarch/trie_rcv) 
-crate via a maturin bridge.
+The actual poll result calculation logic has been moved to its
+own rust repo [https://github.com/milselarch/trie_rcv](https://github.com/milselarch/trie_rcv) that is 
+called from Python via a maturin bridge.
 
 ![RCV-3S2-50p](https://github.com/milselarch/RCV-tele-bot/blob/chore/image_update/images/RCV-SS3-small.png)
 
