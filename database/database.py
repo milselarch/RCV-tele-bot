@@ -21,7 +21,7 @@ from database.db_helpers import (
     BoundRowFields, Empty, EmptyField, UserID
 )
 from peewee import (
-    BigIntegerField, CharField,
+    BigIntegerField, CharField, SmallIntegerField,
     IntegerField, AutoField, TextField, DateTimeField,
     BooleanField, ForeignKeyField, SQL, Database, BigAutoField,
 )
@@ -81,6 +81,7 @@ class Polls(BaseModel):
     open_time = DateTimeField(default=datetime.datetime.now)
     closed = BooleanField(default=False)
 
+    vote_algorithm = SmallIntegerField(default=0)
     # whether users are allowed to self register for the poll
     open_registration = BooleanField(default=False)
     auto_refill = BooleanField(default=False)

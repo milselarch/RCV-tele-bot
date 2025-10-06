@@ -2,6 +2,7 @@ use crate::pymethods;
 use enum_iterator::{all, Sequence};
 use pyo3::{pyclass, Bound, PyResult};
 use pyo3::exceptions::PyValueError;
+use pyo3::types::PyType;
 use pyo3_stub_gen::define_stub_info_gatherer;
 use pyo3_stub_gen::derive::{gen_stub_pyclass_enum, gen_stub_pymethods};
 use trie_rcv::EliminationStrategies;
@@ -53,15 +54,17 @@ impl PyEliminationStrategies {
         }
     }
     #[classmethod]
-    pub fn spawn_default<'_py>(_cls: Bound<'_py, pyo3::types::PyType>) -> Self {
+    pub fn spawn_default(_cls: &Bound<'_, PyType>) -> Self {
         PyEliminationStrategies::DowdallScoring
     }
     #[classmethod]
-    pub fn spawn_from_num<'_py>(
-        _cls: Bound<'_py, pyo3::types::PyType>,
-        value: u8
+    pub fn from_int(
+        _cls: &Bound<'_, PyType>, value: u8
     ) -> PyResult<Self> {
         PyEliminationStrategies::new(value)
+    }
+    pub fn to_int(&self) -> u8 {
+        *self as u8
     }
 }
 

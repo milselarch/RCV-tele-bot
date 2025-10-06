@@ -8,7 +8,7 @@ from result import Result, Err, Ok
 from database import PollWinners, Polls, VoteRankings, PollVoters
 from helpers.message_buillder import MessageBuilder
 from helpers.redis_cache_manager import RedisCacheManager, GetPollWinnerStatus
-from py_rcv import VotesCounter as PyVotesCounter
+from py_rcv import VotesCounter as PyVotesCounter, PyEliminationStrategies
 
 
 class RCVTally(object):
@@ -47,11 +47,16 @@ class RCVTally(object):
         :return:
         ID of winning option, or None if there's no winner
         """
-        num_poll_voters_result = cls.get_num_active_poll_voters(poll_id)
-        if num_poll_voters_result.is_err():
+        poll = cls.fetch_poll(poll_id)
+        if poll.is_err():
             return None
 
-        num_poll_voters: int = num_poll_voters_result.unwrap()
+        poll = poll.unwrap()
+        num_poll_voters = poll.num_active_voters
+        vote_algorithm_no = poll.vote_algorithm
+        vote_strategy = PyEliminationStrategies.from_int(vote_algorithm_no)
+        # TODO: add a way for poll creator to specify the vote strategy
+
         # get votes for the poll sorted by PollVoter and from
         # the lowest ranking option (most favored)
         # to the highest ranking option (least favored)
@@ -64,7 +69,7 @@ class RCVTally(object):
         )
 
         prev_voter_id, num_votes_cast = None, 0
-        votes_aggregator = PyVotesCounter()
+        votes_aggregator = PyVotesCounter(elimination_strategy=vote_strategy)
 
         for vote_ranking in votes:
             option_row = vote_ranking.option

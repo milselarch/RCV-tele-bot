@@ -133,6 +133,14 @@ Project was built using `Python3.12`
    8.2. production (requires ASGI configuration as well)  
    `uvicorn webapp:app --host 0.0.0.0 --port <YOUR_PORT_NUMBER>`
 
+### Migrations
+
+Migrations are handled using `peewee-migrations`
+1. Create a new migration
+   `pw_migrate create --database ranked_choice_voting --auto migrations/<MIGRATION_NAME>`
+2. Apply the migration
+   `ppw_migrate migrate`
+
 ### Database Schema
 Database ORM definition can be found in `database.py`
 
