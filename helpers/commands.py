@@ -16,7 +16,9 @@ class Command(StrEnum):
     BLACKLIST_CHAT_REGISTRATION = "blacklist_chat_registration"
     DELETE_POLL = "delete_poll"
     CLOSE_POLL = "close_poll"
+
     EDIT_POLL_TITLE = "edit_poll_title"
+    EDIT_POLL_ALGORITHM = "edit_poll_algorithm"
 
     VIEW_POLL = "view_poll"
     VIEW_POLLS = "view_polls"

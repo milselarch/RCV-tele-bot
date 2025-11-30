@@ -63,8 +63,29 @@ impl PyEliminationStrategies {
     ) -> PyResult<Self> {
         PyEliminationStrategies::new(value)
     }
+
     pub fn to_int(&self) -> u8 {
         *self as u8
+    }
+
+    #[classmethod]
+    pub fn get_all_strategies(
+        _cls: &Bound<'_, PyType>
+    ) -> Vec<PyEliminationStrategies> {
+        all::<PyEliminationStrategies>().collect()
+    }
+
+    pub fn to_one_liner(&self) -> String {
+        match self {
+            PyEliminationStrategies::DowdallScoring =>
+                "IRV with Dowdall Scoring".to_string(),
+            PyEliminationStrategies::EliminateAll =>
+                "IRV with multi-candidate elimination".to_string(),
+            PyEliminationStrategies::RankedPairs =>
+                "Ranked Pairs".to_string(),
+            PyEliminationStrategies::CondorcetRankedPairs =>
+                "Condorcet Ranked Pairs".to_string()
+        }
     }
 }
 

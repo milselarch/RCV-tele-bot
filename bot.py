@@ -147,7 +147,10 @@ class RankedChoiceBot(BaseAPI):
             Command.POLL_RESULTS: self.fetch_poll_results,
             Command.HAS_VOTED: self.has_voted,
             Command.CLOSE_POLL: self.close_poll_handler,
+
             Command.EDIT_POLL_TITLE: self.edit_poll_title_handler,
+            Command.EDIT_POLL_ALGORITHM: self.edit_poll_algorithm_handler,
+
             Command.VIEW_VOTES: self.view_votes,
             Command.VIEW_VOTERS: self.view_poll_voters,
             Command.ABOUT: self.show_about,
@@ -1239,6 +1242,13 @@ class RankedChoiceBot(BaseAPI):
             return await message.reply_text(
                 strings.build_poll_title_edit_message(prev_title, new_title)
             )
+
+    @classmethod
+    async def edit_poll_algorithm_handler(
+        cls, update: ModifiedTeleUpdate, *_, **__
+    ):
+        
+
 
     @classmethod
     async def whitelist_username(cls, update: ModifiedTeleUpdate, *_, **__):
