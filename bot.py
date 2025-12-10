@@ -25,6 +25,7 @@ from datetime import datetime
 from helpers import strings
 from helpers.rcv_tally import RCVTally
 from helpers.redis_cache_manager import GetPollWinnerStatus
+from py_rcv import PyEliminationStrategies
 from tele_helpers import ModifiedTeleUpdate
 from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
@@ -1247,8 +1248,57 @@ class RankedChoiceBot(BaseAPI):
     async def edit_poll_algorithm_handler(
         cls, update: ModifiedTeleUpdate, *_, **__
     ):
-        
+        """
+        Command usage:
+        /edit_poll_algorithm {poll_id} {algorithm}
+        """
+        # TODO: complete this
+        # TODO: add chat context variant of this command
+        #    e.g. /edit_poll_algorithm {poll_id}
+        message = update.message
+        message_text = TelegramHelpers.read_raw_command_args(update)
+        algorithm_prompt = BaseAPI.generate_elimination_strategy_prompt()
+        invalid_format_text = textwrap.dedent(f"""
+            Input format is invalid, try:
+            /{Command.EDIT_POLL_ALGORITHM} {{poll_id}} {{algorithm}}
+        """ + algorithm_prompt)
 
+        if ' ' not in message_text:
+            # TODO: implement chat context variant of this command
+            #   e.g. /edit_poll_algorithm {poll_id}
+            return await message.reply_text(invalid_format_text)
+
+        raw_poll_id = message_text[:message_text.index(' ')].strip()
+        if constants.ID_PATTERN.match(raw_poll_id) is None:
+            return await message.reply_text('Invalid poll id')
+
+        poll_id = int(raw_poll_id)
+        raw_algorithm_choice = message_text[message_text.index(' '):].strip()
+        algo_id_match = constants.ID_PATTERN.match(message_text)
+        all_strategies = PyEliminationStrategies.get_all_strategies()
+        # TODO: complete algorithm covnerison
+
+        if algo_id_match is not None:
+            try:
+                strategy = PyEliminationStrategies(algo_id_match)
+            except ValueError:
+                return await message.reply_text(
+                    BaseAPI.generate_elimination_strategy_prompt()
+                )
+        else:
+            try:
+                strategy = PyEliminationStrategies.convert_from_stub_string(
+                    message_text
+                )
+            except ValueError:
+                return await message.reply_text(
+                    BaseAPI.generate_elimination_strategy_prompt()
+                )
+
+        return await message.reply_text(
+            f"Selected elimination strategy: "
+            f"{strategy.to_display_string()}"
+        )
 
     @classmethod
     async def whitelist_username(cls, update: ModifiedTeleUpdate, *_, **__):

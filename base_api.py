@@ -9,6 +9,9 @@ import time
 import hashlib
 import textwrap
 import dataclasses
+
+from py_rcv import PyEliminationStrategies
+
 import database
 
 from enum import IntEnum
@@ -1158,7 +1161,7 @@ class BaseAPI(object):
         ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID
     ) -> None | ReplyKeyboardMarkup | InlineKeyboardMarkup:
         reply_markup = None
-        print('CHAT_TYPE', chat_type)
+        # print('CHAT_TYPE', chat_type)
         if chat_type == 'private':
             # create vote button for reply message
             vote_markup_data = cls.build_private_vote_markup(
@@ -1173,6 +1176,15 @@ class BaseAPI(object):
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
         return reply_markup
+
+    @classmethod
+    def generate_elimination_strategy_prompt(cls):
+        all_strategies = PyEliminationStrategies.get_all_strategies()
+        strategy_list = '\n'.join([
+            f'- {strategy.to_stub_string()} ({strategy.to_int()})'
+            for strategy in all_strategies
+        ])
+        return "Available algorithms are:\n" + strategy_list
 
     @staticmethod
     def kwargify(**kwargs):

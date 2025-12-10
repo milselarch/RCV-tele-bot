@@ -87,6 +87,30 @@ impl PyEliminationStrategies {
                 "Condorcet Ranked Pairs".to_string()
         }
     }
+    pub fn to_stub_string(&self) -> String {
+        match self {
+            PyEliminationStrategies::DowdallScoring =>
+                "DowdallScoring".to_string(),
+            PyEliminationStrategies::EliminateAll =>
+                "EliminateAll".to_string(),
+            PyEliminationStrategies::RankedPairs =>
+                "RankedPairs".to_string(),
+            PyEliminationStrategies::CondorcetRankedPairs =>
+                "CondorcetRankedPairs".to_string()
+        }
+    }
+    pub fn convert_from_stub_string(
+        &self, strategy_str: &str
+    ) -> PyResult<PyEliminationStrategies> {
+        for strategy in all::<PyEliminationStrategies>() {
+            if strategy.to_stub_string() == strategy_str {
+                return Ok(strategy);
+            }
+        }
+        Err(PyValueError::new_err(format!(
+            "Invalid elimination strategy string: {}", strategy_str
+        )))
+    }
 }
 
 define_stub_info_gatherer!(stub_info);
