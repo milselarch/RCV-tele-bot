@@ -4,6 +4,7 @@ import telegram
 
 from typing import Callable, Coroutine, Any, Dict, Optional, List
 from result import Result, Err, Ok
+from sqlalchemy.util import await_only
 
 from base_api import BaseAPI, PollInfo
 from bot_middleware import track_errors
@@ -23,7 +24,10 @@ from telegram import (
 )
 
 from database import Users, Polls, ChatWhitelist
-from database.database import UserID
+from database.database import UserID, PollOptions
+
+from helpers.rcv_tally import RCVTally, GetPollWinnerInfo
+from helpers.redis_cache_manager import GetPollWinnerStatus
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -436,3 +440,40 @@ class TelegramHelpers(object):
 
         if verbose:
             print('POST_LOCK', poll_locks_manager.poll_locks_map)
+
+    @classmethod
+    async def handle_poll_winner_request(
+        cls, rcv_tally: RCVTally,
+        update: ModifiedTeleUpdate, poll_id: int
+    ) -> Result[GetPollWinnerInfo, GetPollWinnerStatus]:
+        message = update.message
+        get_winner_result = await rcv_tally.get_poll_winner(poll_id)
+
+        if get_winner_result.is_err():
+            err_status = get_winner_result.unwrap_err()
+            await message.reply_text(textwrap.dedent(f"""
+                Unexpected error occurred ({err_status})
+            """))
+            return get_winner_result
+
+        get_winner_info = get_winner_result.unwrap()
+        winning_option_id: int = get_winner_info.poll_winner_id
+        get_status: GetPollWinnerStatus = get_winner_info.status
+
+        if get_status == GetPollWinnerStatus.COMPUTING:
+            await message.reply_text(textwrap.dedent(f"""
+                Poll winner computation in progress
+                Please check again later
+            """))
+            return get_winner_result
+        elif winning_option_id is not None:
+            winning_options = PollOptions.select().where(
+                PollOptions.id == winning_option_id
+            )
+
+            option_name = winning_options[0].option_name
+            await message.reply_text(f'Poll winner is: {option_name}')
+            return get_winner_result
+        else:
+            await message.reply_text('Poll has no winner')
+            return get_winner_result

@@ -18,7 +18,7 @@ class Command(StrEnum):
     CLOSE_POLL = "close_poll"
 
     EDIT_POLL_TITLE = "edit_poll_title"
-    EDIT_POLL_ALGORITHM = "edit_poll_algorithm"
+    EDIT_POLL_STRATEGY = "edit_poll_strategy"
 
     VIEW_POLL = "view_poll"
     VIEW_POLLS = "view_polls"

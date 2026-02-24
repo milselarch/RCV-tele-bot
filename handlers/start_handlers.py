@@ -15,6 +15,7 @@ from handlers.payment_handlers import (
     PaymentHandlers
 )
 
+
 class BaseMessageHandler(object, metaclass=ABCMeta):
     @abstractmethod
     async def handle_messages(

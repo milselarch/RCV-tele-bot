@@ -1,7 +1,7 @@
 import asyncio
+import dataclasses
 
 from concurrent.futures import ThreadPoolExecutor
-from typing import Tuple, Optional
 from aioredlock import LockError
 from result import Result, Err, Ok
 
@@ -9,6 +9,24 @@ from database import PollWinners, Polls, VoteRankings, PollVoters
 from helpers.message_buillder import MessageBuilder
 from helpers.redis_cache_manager import RedisCacheManager, GetPollWinnerStatus
 from py_rcv import VotesCounter as PyVotesCounter, PyEliminationStrategies
+
+"""
+helpers to actually calculate / retrieve the winner of a 
+ranked choice poll
+"""
+
+
+@dataclasses.dataclass
+class GetPollWinnerInfo(object):
+    poll: Polls
+    poll_winner_id: int
+    status: GetPollWinnerStatus
+
+
+@dataclasses.dataclass
+class DeterminePollWinnerInfo(object):
+    winning_option_id: int
+    poll: Polls
 
 
 class RCVTally(object):
@@ -39,7 +57,9 @@ class RCVTally(object):
         return Ok(poll.num_active_voters)
 
     @classmethod
-    def _determine_poll_winner(cls, poll_id: int) -> Optional[int]:
+    def _determine_poll_winner(
+        cls, poll_id: int
+    ) -> Result[DeterminePollWinnerInfo, None]:
         """
         Runs the ranked choice voting algorithm to determine
         the winner of the poll
@@ -49,7 +69,7 @@ class RCVTally(object):
         """
         poll = cls.fetch_poll(poll_id)
         if poll.is_err():
-            return None
+            return Err(None)
 
         poll = poll.unwrap()
         num_poll_voters = poll.num_active_voters
@@ -93,11 +113,14 @@ class RCVTally(object):
         assert voters_without_votes >= 0
         votes_aggregator.insert_empty_votes(voters_without_votes)
         winning_option_id = votes_aggregator.determine_winner()
-        return winning_option_id
+
+        return Ok(DeterminePollWinnerInfo(
+            winning_option_id=winning_option_id, poll=poll
+        ))
 
     async def get_poll_winner(
         self, poll_id: int
-    ) -> Tuple[Optional[int], GetPollWinnerStatus]:
+    ) -> Result[GetPollWinnerInfo, GetPollWinnerStatus]:
         """
         Returns poll winner for specified poll
         Attempts to get poll winner from cache if it exists,
@@ -110,18 +133,27 @@ class RCVTally(object):
         poll winner, status of poll winner computation
         """
         assert isinstance(poll_id, int)
-
         cache_result = PollWinners.read_poll_winner_id(poll_id)
+
         if cache_result.is_ok():
+            poll_winner_id = cache_result.unwrap()
+            fetch_poll_result = self.fetch_poll(poll_id)
+
+            if fetch_poll_result.is_err():
+                return Err(GetPollWinnerStatus.POLL_FETCH_FAILED)
+
+            poll = fetch_poll_result.unwrap()
             # print('CACHE_HIT', cache_result)
-            return cache_result.unwrap(), GetPollWinnerStatus.CACHED
+            return Ok(GetPollWinnerInfo(
+                poll=poll, poll_winner_id=poll_winner_id,
+                status=GetPollWinnerStatus.CACHED
+            ))
 
         redis_lock_key = self.cache.build_poll_winner_lock_cache_key(poll_id)
         # print('CACHE_KEY', redis_cache_key)
         if await self.cache.is_locked(redis_lock_key):
             # print('PRE_LOCKED')
-            return None, GetPollWinnerStatus.COMPUTING
-
+            return Err(GetPollWinnerStatus.COMPUTING)
         try:
             # prevents race conditions where multiple computations
             # are run concurrently for the same poll
@@ -133,17 +165,35 @@ class RCVTally(object):
 
                 try:
                     cache_result = PollWinners.read_poll_winner_id(poll_id)
+
                     if cache_result.is_ok():
+                        poll_winner_id = cache_result.unwrap()
+                        fetch_poll_result = self.fetch_poll(poll_id)
+
+                        if fetch_poll_result.is_err():
+                            return Err(GetPollWinnerStatus.FAILED)
+
+                        poll = fetch_poll_result.unwrap()
                         # print('INNER_CACHE_HIT', cache_result)
-                        return cache_result.unwrap(), GetPollWinnerStatus.CACHED
+                        return Ok(GetPollWinnerInfo(
+                            poll=poll, poll_winner_id=poll_winner_id,
+                            status=GetPollWinnerStatus.CACHED
+                        ))
 
                     # compute the winner in a separate thread to not block
                     # the async event loop
                     loop = asyncio.get_event_loop()
                     with ThreadPoolExecutor() as executor:
-                        poll_winner_id = await loop.run_in_executor(
+                        poll_winner_res = await loop.run_in_executor(
                             executor, self._determine_poll_winner, poll_id
                         )
+
+                    if poll_winner_res.is_err():
+                        return Err(GetPollWinnerStatus.FAILED)
+
+                    poll_winner_info = poll_winner_res.unwrap()
+                    poll_winner_id = poll_winner_info.winning_option_id
+                    poll = poll_winner_info.poll
 
                     # Store computed winner in the db
                     PollWinners.build_from_fields(
@@ -156,7 +206,10 @@ class RCVTally(object):
 
         except LockError:
             # print('LOCK_ERROR')
-            return None, GetPollWinnerStatus.COMPUTING
+            return Err(GetPollWinnerStatus.COMPUTING)
 
         # print('CACHE_MISS', poll_winner_id)
-        return poll_winner_id, GetPollWinnerStatus.NEWLY_COMPUTED
+        return Ok(GetPollWinnerInfo(
+            poll_winner_id=poll_winner_id, poll=poll,
+            status=GetPollWinnerStatus.NEWLY_COMPUTED
+        ))

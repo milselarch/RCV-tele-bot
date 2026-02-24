@@ -99,8 +99,9 @@ impl PyEliminationStrategies {
                 "CondorcetRankedPairs".to_string()
         }
     }
+    #[classmethod]
     pub fn convert_from_stub_string(
-        &self, strategy_str: &str
+        _cls: &Bound<'_, PyType>, strategy_str: &str
     ) -> PyResult<PyEliminationStrategies> {
         for strategy in all::<PyEliminationStrategies>() {
             if strategy.to_stub_string() == strategy_str {
