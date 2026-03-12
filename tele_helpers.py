@@ -3,6 +3,8 @@ import textwrap
 import telegram
 
 from typing import Callable, Coroutine, Any, Dict, Optional, List
+
+from py_rcv.py_rcv import PyEliminationStrategies
 from result import Result, Err, Ok
 from sqlalchemy.util import await_only
 
@@ -459,6 +461,15 @@ class TelegramHelpers(object):
         get_winner_info = get_winner_result.unwrap()
         winning_option_id: int = get_winner_info.poll_winner_id
         get_status: GetPollWinnerStatus = get_winner_info.status
+        poll = get_winner_info.poll
+        vote_strategy_name = 'unknown'
+
+        try:
+            vote_algorithm_no = poll.vote_algorithm
+            vote_strategy = PyEliminationStrategies.from_int(vote_algorithm_no)
+            vote_strategy_name = str(vote_strategy)
+        except Exception as e:
+            logger.error(f'load vote stat failed: {e}')
 
         if get_status == GetPollWinnerStatus.COMPUTING:
             await message.reply_text(textwrap.dedent(f"""
@@ -472,8 +483,14 @@ class TelegramHelpers(object):
             )
 
             option_name = winning_options[0].option_name
-            await message.reply_text(f'Poll winner is: {option_name}')
+            await message.reply_text(textwrap.dedent(f"""
+                Poll winner is: {option_name}
+                (Voting strategy used: {vote_strategy_name})
+            """))
             return get_winner_result
         else:
-            await message.reply_text('Poll has no winner')
+            await message.reply_text(textwrap.dedent(f"""
+                Poll has no winner
+                (Voting strategy used: {vote_strategy_name})
+            """))
             return get_winner_result
