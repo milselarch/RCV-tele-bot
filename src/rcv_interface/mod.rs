@@ -1,3 +1,5 @@
+pub mod strategies;
+
 use std::collections::HashMap;
 use std::hash::Hash;
 use pyo3::exceptions::PyValueError;
@@ -12,6 +14,7 @@ use trie_rcv::{
     EliminationStrategies, RankedChoiceVoteTrie,
     RankedVote, SpecialVotes, VoteErrors
 };
+use crate::rcv_interface::strategies::PyEliminationStrategies;
 
 const WITHOLD_VOTE_VAL: i32 = SpecialVotes::WITHHOLD.to_int();
 
@@ -61,14 +64,10 @@ impl ValidateVoteResult {
     fn get_error_message(&self) -> PyResult<String> {
         Ok(self.error_message.clone())
     }
-    fn to_tuple(&self) -> PyResult<Py<PyTuple>> {
-         Python::with_gil(|py| {
-            let elements: Vec<PyObject> = vec![
-                self.valid.into_py(py),
-                (&self.error_message).into_py(py)
-            ];
-            Ok(PyTuple::new_bound(py, elements).into())
-        })
+    fn to_tuple(&self, py: Python<'_>) -> PyResult<Py<PyTuple>> {
+        let elements = ( self.valid, self.error_message.clone() );
+        let tuple = elements.into_pyobject(py)?;
+        Ok(Py::from(tuple))
     }
 }
 
@@ -131,10 +130,14 @@ impl VotesCounter {
 #[pymethods]
 impl VotesCounter {
     #[new]
-    fn new() -> Self {
+    #[pyo3(signature = (elimination_strategy = PyEliminationStrategies::DowdallScoring))]
+    fn new(elimination_strategy: PyEliminationStrategies) -> Self {
+        let strategy = elimination_strategy._to_strategy();
+        let mut rcv = RankedChoiceVoteTrie::new();
+        rcv.set_elimination_strategy(strategy);
+
         VotesCounter {
-            raw_votes_cache: Default::default(),
-            rcv: Default::default()
+            raw_votes_cache: Default::default(), rcv
         }
     }
     fn flush_votes(&mut self) -> PyResult<bool> {
@@ -173,7 +176,6 @@ impl VotesCounter {
     }
     fn determine_winner(&mut self) -> PyResult<Option<u32>> {
         // TODO: implement elimination strategy selection
-        self.rcv.set_elimination_strategy(EliminationStrategies::DowdallScoring);
         let flush_result = self._flush_votes();
         if flush_result.is_err() {
             return Err(PyValueError::new_err(flush_result.unwrap_err().to_string()))

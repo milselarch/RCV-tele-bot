@@ -1,3 +1,4 @@
+import functools
 import hmac
 import json
 import logging
@@ -9,6 +10,9 @@ import time
 import hashlib
 import textwrap
 import dataclasses
+
+from py_rcv import PyEliminationStrategies
+
 import database
 
 from enum import IntEnum
@@ -155,22 +159,6 @@ class BaseAPI(object):
         builder = ApplicationBuilder()
         builder.token(cls.__get_telegram_token())
         return builder
-
-    @staticmethod
-    def get_poll_closed(poll_id: int) -> Result[int, MessageBuilder]:
-        error_message = MessageBuilder()
-
-        try:
-            poll = Polls.select().where(Polls.id == poll_id).get()
-        except Polls.DoesNotExist:
-            error_message.add(f'poll {poll_id} does not exist')
-            return Err(error_message)
-
-        if not poll.closed:
-            error_message.add('poll votes can only be viewed after closing')
-            return Err(error_message)
-
-        return Ok(poll_id)
 
     @classmethod
     def spawn_inline_keyboard_button(
@@ -637,6 +625,37 @@ class BaseAPI(object):
             metadata=poll_metadata, poll_options=poll_options,
             option_numbers=poll_option_rankings
         )
+
+    @staticmethod
+    def get_poll_closed(poll_id: int) -> Result[int, MessageBuilder]:
+        error_message = MessageBuilder()
+
+        try:
+            poll = Polls.select().where(Polls.id == poll_id).get()
+        except Polls.DoesNotExist:
+            error_message.add(f'poll {poll_id} does not exist')
+            return Err(error_message)
+
+        if not poll.closed:
+            error_message.add('poll votes can only be viewed after closing')
+            return Err(error_message)
+
+        return Ok(poll_id)
+
+    @classmethod
+    def get_poll_as_owner(
+        cls, poll_id: int, user_id: UserID
+    ) -> Result[Polls, None]:
+        try:
+            poll = Polls.select().where(Polls.id == poll_id).get()
+        except Polls.DoesNotExist:
+            return Err(None)
+
+        creator_id = poll.creator.id
+        if creator_id == user_id:
+            return Ok(poll)
+        else:
+            return Err(None)
 
     @classmethod
     def has_access_to_poll_id(
@@ -1158,7 +1177,7 @@ class BaseAPI(object):
         ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID
     ) -> None | ReplyKeyboardMarkup | InlineKeyboardMarkup:
         reply_markup = None
-        print('CHAT_TYPE', chat_type)
+        # print('CHAT_TYPE', chat_type)
         if chat_type == 'private':
             # create vote button for reply message
             vote_markup_data = cls.build_private_vote_markup(
@@ -1173,6 +1192,18 @@ class BaseAPI(object):
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
         return reply_markup
+
+    @classmethod
+    def generate_elimination_strategy_prompt(cls):
+        all_strategies = PyEliminationStrategies.get_all_strategies()
+        strategy_list = '\n'.join([
+            f'- {strategy.to_stub_string()} ({strategy.to_int() + 1})'
+            for strategy in all_strategies
+        ])
+        return (
+            "Available elimination strategies are:\n" +
+            strategy_list
+        )
 
     @staticmethod
     def kwargify(**kwargs):

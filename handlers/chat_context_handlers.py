@@ -9,12 +9,14 @@ from base_api import BaseAPI
 from bot_middleware import track_errors
 from database.db_helpers import UserID
 from handlers.payment_handlers import IncMaxVotersChatContext, PaymentHandlers
+
 from helpers.rcv_tally import RCVTally
 from helpers.redis_cache_manager import GetPollWinnerStatus
 from helpers.start_get_params import StartGetParams
 from helpers import strings
 from helpers.commands import Command
 from helpers.constants import BLANK_ID
+
 from load_config import SUDO_TELE_ID
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from handlers.inline_keyboard_handlers import PollsLockManager
@@ -533,23 +535,11 @@ class ClosePollContextHandler(BaseContextHandler):
         poll.save()
 
         await message.reply_text(f'poll {poll_id} closed')
-        get_winner_result = await RCVTally().get_poll_winner(poll_id)
-        winning_option_id, get_status = get_winner_result
-
-        if get_status == GetPollWinnerStatus.COMPUTING:
-            return await message.reply_text(textwrap.dedent(f"""
-                Poll winner computation in progress
-                Please check again later
-            """))
-        elif winning_option_id is not None:
-            winning_options = PollOptions.select().where(
-                PollOptions.id == winning_option_id
-            )
-
-            option_name = winning_options[0].option_name
-            return await message.reply_text(f'Poll winner is: {option_name}')
-        else:
-            return await message.reply_text('Poll has no winner')
+        await TelegramHelpers.handle_poll_winner_request(
+            rcv_tally=RCVTally(),
+            update=update, poll_id=poll_id
+        )
+        return None
 
     async def complete_chat_context(
         self, chat_context: CallbackContextState,

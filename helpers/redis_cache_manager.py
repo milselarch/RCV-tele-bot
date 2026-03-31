@@ -11,6 +11,7 @@ class GetPollWinnerStatus(IntEnum):
     NEWLY_COMPUTED = 1
     COMPUTING = 2
     FAILED = 3
+    POLL_FETCH_FAILED = 4
 
 
 class RedisCacheManager(object):

@@ -24,7 +24,7 @@ from datetime import datetime
 
 from helpers import strings
 from helpers.rcv_tally import RCVTally
-from helpers.redis_cache_manager import GetPollWinnerStatus
+from py_rcv import PyEliminationStrategies
 from tele_helpers import ModifiedTeleUpdate
 from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
@@ -147,7 +147,10 @@ class RankedChoiceBot(BaseAPI):
             Command.POLL_RESULTS: self.fetch_poll_results,
             Command.HAS_VOTED: self.has_voted,
             Command.CLOSE_POLL: self.close_poll_handler,
+
             Command.EDIT_POLL_TITLE: self.edit_poll_title_handler,
+            Command.EDIT_POLL_STRATEGY: self.edit_poll_algorithm_handler,
+
             Command.VIEW_VOTES: self.view_votes,
             Command.VIEW_VOTERS: self.view_poll_voters,
             Command.ABOUT: self.show_about,
@@ -256,6 +259,9 @@ class RankedChoiceBot(BaseAPI):
             Command.EDIT_POLL_TITLE,
             'edit the title of the poll with the specified poll_id '
             '(only for polls that haven\'t been voted for)'
+        ), (
+            Command.EDIT_POLL_STRATEGY,
+            'edit the election strategy used to determine the winner'
         ), (
             Command.VIEW_VOTES,
             'view all the votes entered for the poll'
@@ -1241,6 +1247,89 @@ class RankedChoiceBot(BaseAPI):
             )
 
     @classmethod
+    async def edit_poll_algorithm_handler(
+        cls, update: ModifiedTeleUpdate, *_, **__
+    ):
+        """
+        Command usage:
+        /edit_poll_strategy {poll_id} {algorithm}
+        """
+        # TODO: add chat context variant of this command
+        #    e.g. /edit_poll_strategy {poll_id}
+        message = update.message
+        message_text = TelegramHelpers.read_raw_command_args(update)
+        strategy_prompt = BaseAPI.generate_elimination_strategy_prompt()
+        invalid_format_text = textwrap.dedent(f"""
+            Input format is invalid, try:
+            /{Command.EDIT_POLL_STRATEGY} {{poll_id}} {{algorithm}}
+        """) + strategy_prompt
+
+        if ' ' not in message_text:
+            # TODO: implement chat context variant of this command
+            #   e.g. /edit_poll_algorithm {poll_id}
+            return await message.reply_text(invalid_format_text)
+
+        arguments = message_text.split(' ')
+        if len(arguments) != 2:
+            # TODO: should consider using argparse or something instead
+            return await message.reply_text(invalid_format_text)
+
+        raw_poll_id, raw_algorithm_choice = arguments
+        if constants.ID_PATTERN.match(raw_poll_id) is None:
+            return await message.reply_text('Invalid poll id')
+
+        poll_id = int(raw_poll_id)
+        strat_id_match = constants.ID_PATTERN.match(raw_algorithm_choice)
+        strat_prompt = BaseAPI.generate_elimination_strategy_prompt()
+        # print('STRAT_ID_MATCH', strat_id_match, message_text)
+
+        if strat_id_match is not None:
+            # voting algorithm was specified as an ID
+            # the prompt uses 1-indexed ids but the struct ids are 0-indexed,
+            # so we need to subtract 1 from the raw_poll_id
+            strat_id = int(strat_id_match.group(0)) - 1
+            try:
+                strategy = PyEliminationStrategies(strat_id)
+            except ValueError:
+                return await message.reply_text(strat_prompt)
+        else:
+            # voting algorithm was specified as a string
+            try:
+                strategy = PyEliminationStrategies.convert_from_stub_string(
+                    raw_algorithm_choice
+                )
+            except ValueError:
+                return await message.reply_text(strat_prompt)
+
+        await message.reply_text(
+            f"Selected elimination strategy: "
+            f"{strategy.to_stub_string()}"
+        )
+
+        user_id = update.user.get_user_id()
+        poll_res = BaseAPI.get_poll_as_owner(poll_id=poll_id, user_id=user_id)
+
+        if poll_res.is_err():
+            err_message = "You're not the creator of this poll"
+            return await message.reply_text(err_message)
+
+        poll = poll_res.unwrap()
+        prev_strategy = PyEliminationStrategies(poll.vote_algorithm)
+        if prev_strategy == strategy:
+            return await message.reply_text(
+                f"Poll #{poll_id} voting algorithm is already "
+                f"{strategy.to_stub_string()}"
+            )
+
+        poll.vote_algorithm = strategy.to_int()
+        poll.save()
+
+        return await message.reply_text(
+            f"Poll #{poll_id} voting algorithm updated from "
+            f"{prev_strategy.to_stub_string()} to {strategy.to_stub_string()}"
+        )
+
+    @classmethod
     async def whitelist_username(cls, update: ModifiedTeleUpdate, *_, **__):
         """
         Command usage:
@@ -1700,7 +1789,7 @@ class RankedChoiceBot(BaseAPI):
             https://t.me/+fs0WPn1pfmYxNjg1
         """))
 
-    async def fetch_poll_results(self, update, *_, **__):
+    async def fetch_poll_results(self, update: ModifiedTeleUpdate, *_, **__):
         """
         /poll_results 5
         :param update:
@@ -1740,23 +1829,11 @@ class RankedChoiceBot(BaseAPI):
             error_message = get_poll_closed_result.err()
             await error_message.call(message.reply_text)
 
-        get_winner_result = self.rcv_tally.get_poll_winner(poll_id)
-        winning_option_id, get_status = get_winner_result
-
-        if get_status == GetPollWinnerStatus.COMPUTING:
-            return await message.reply_text(textwrap.dedent(f"""
-                Poll winner computation in progress
-                Please check again later
-            """))
-        elif winning_option_id is not None:
-            winning_options = PollOptions.select().where(
-                PollOptions.id == winning_option_id
-            )
-
-            option_name = winning_options[0].option_name
-            return await message.reply_text(f'Poll winner is: {option_name}')
-        else:
-            return await message.reply_text('Poll has no winner')
+        await TelegramHelpers.handle_poll_winner_request(
+            rcv_tally=self.rcv_tally,
+            update=update, poll_id=poll_id
+        )
+        return None
 
     @classmethod
     async def payment_support_handler(

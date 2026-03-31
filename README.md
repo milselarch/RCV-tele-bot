@@ -3,8 +3,9 @@ Ranked choice voting telegram bot - try it at [@ranked_choice_voting_bot](https:
 Bot and webapp backends were written in Python3.12 using the python-telegram-bot bot
 library, and the peewee SQL ORM. Voting webapp interface integration was written in 
 Typescript using React and [react-telegram-web-app](https://github.com/vkruglikov/react-telegram-web-app) components. 
-Poll results are conducted using the [https://github.com/milselarch/trie_rcv](https://github.com/milselarch/trie_rcv) 
-crate via a maturin bridge.
+The actual poll result calculation logic has been moved to its
+own rust repo [https://github.com/milselarch/trie_rcv](https://github.com/milselarch/trie_rcv) that is 
+called from Python via a maturin bridge.
 
 ![RCV-3S2-50p](https://github.com/milselarch/RCV-tele-bot/blob/chore/image_update/images/RCV-SS3-small.png)
 
@@ -131,6 +132,14 @@ Project was built using `Python3.12`
    `python webapp.py --port <YOUR_PORT_NUMBER>`  
    8.2. production (requires ASGI configuration as well)  
    `uvicorn webapp:app --host 0.0.0.0 --port <YOUR_PORT_NUMBER>`
+
+### Migrations
+
+Migrations are handled using `peewee-migrations`
+1. Create a new migration
+   `pw_migrate create --database ranked_choice_voting --auto migrations/<MIGRATION_NAME>`
+2. Apply the migration
+   `ppw_migrate migrate`
 
 ### Database Schema
 Database ORM definition can be found in `database.py`
