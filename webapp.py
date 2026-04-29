@@ -152,8 +152,8 @@ class VotingWebApp(BaseAPI):
 
 
 app = FastAPI()
-predictor = VotingWebApp()
-app.include_router(predictor.router)
+vote_app = VotingWebApp()
+app.include_router(vote_app.router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
