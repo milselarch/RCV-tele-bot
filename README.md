@@ -139,7 +139,7 @@ Migrations are handled using `peewee-migrations`
 1. Create a new migration
    `pw_migrate create --database ranked_choice_voting --auto migrations/<MIGRATION_NAME>`
 2. Apply the migration
-   `ppw_migrate migrate`
+   `pw_migrate migrate`
 
 ### Database Schema
 Database ORM definition can be found in `database.py`

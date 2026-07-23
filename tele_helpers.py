@@ -459,7 +459,7 @@ class TelegramHelpers(object):
             return get_winner_result
 
         get_winner_info = get_winner_result.unwrap()
-        winning_option_id: int = get_winner_info.poll_winner_id
+        winning_option_id: int | None = get_winner_info.poll_winner_id
         get_status: GetPollWinnerStatus = get_winner_info.status
         poll = get_winner_info.poll
         vote_strategy_name = 'unknown'
