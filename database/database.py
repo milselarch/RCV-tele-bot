@@ -5,6 +5,7 @@ import datetime
 import os
 import sys
 
+import peewee
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok, Err
@@ -38,6 +39,7 @@ def get_tables() -> list[Type[BaseModel]]:
     ]
 
 
+# TODO: use a dataclass to type YAML_CONFIG and its subfields
 def initialize_db(db: Database | None = None):
     if db is None:
         db = DB(
@@ -73,7 +75,7 @@ class PollMetadata(object):
         return self._num_voters - self.num_deleted
 
 
-# stores poll metadata (description, open time, etc etc)
+# stores poll metadata (description, open time, etc)
 class Polls(BaseModel):
     id = AutoField(primary_key=True)
     desc = TextField(default="")
@@ -141,7 +143,7 @@ class Polls(BaseModel):
         open_registration: bool | EmptyField = Empty,
         max_voters: int | EmptyField = Empty
     ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
+        return BoundRowFields[Self](cls, {
             cls.id: poll_id, cls.desc: desc, cls.creator: creator_id,
             cls.num_voters: num_voters,
             cls.open_registration: open_registration,
@@ -151,7 +153,7 @@ class Polls(BaseModel):
     @classmethod
     def get_as_creator(
         cls, poll_id: int, user_id: UserID
-    ) -> Result[Polls, Polls.DoesNotExist]:
+    ) -> Result[Polls, peewee.DoesNotExist]:
         # TODO: wrap this in a Result with an enum error type
         #   (not found, unauthorized, etc) and use this in
         #   register_user_by_tele_id
@@ -191,7 +193,7 @@ class ChatWhitelist(BaseModel):
         cls, poll_id: int | EmptyField = Empty,
         chat_id: int | EmptyField = Empty
     ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
+        return BoundRowFields[Self](cls, {
             cls.poll: poll_id, cls.chat_id: chat_id
         })
 
@@ -225,7 +227,7 @@ class PollVoters(BaseModel):
         poll_id: int | EmptyField = Empty,
         voted: bool | EmptyField = Empty
     ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
+        return BoundRowFields[Self](cls, {
             cls.user: user_id, cls.poll: poll_id,
             cls.voted: voted
         })
@@ -238,7 +240,7 @@ class PollVoters(BaseModel):
     @classmethod
     def get_poll_voter(
         cls, poll_id: int, user_id: UserID
-    ) -> Result[PollVoters, Optional[BaseModel.DoesNotExist]]:
+    ) -> Result[PollVoters, Optional[peewee.DoesNotExist]]:
         # check if voter is part of the poll
         return cls.safe_get(
             (cls.poll == poll_id) & (cls.user == user_id)
@@ -276,7 +278,7 @@ class UsernameWhitelist(BaseModel):
         poll_id: int | EmptyField = Empty,
         user_id: UserID | EmptyField = Empty
     ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
+        return BoundRowFields[Self](cls, {
             cls.username: username, cls.poll: poll_id, cls.user: user_id
         })
 
@@ -293,7 +295,7 @@ class PollOptions(BaseModel):
         option_name: str | EmptyField = Empty,
         option_number: int | EmptyField = Empty
     ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
+        return BoundRowFields[Self](cls, {
             cls.poll: poll_id, cls.option_name: option_name,
             cls.option_number: option_number
         })
@@ -327,21 +329,23 @@ class PollWinners(BaseModel):
     @classmethod
     def build_from_fields(
         cls, poll_id: int | EmptyField = Empty,
-        option_id: int | EmptyField = Empty
+        option_id: int | None | EmptyField = Empty
     ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
+        return BoundRowFields[Self](cls, {
             cls.poll: poll_id, cls.option: option_id
         })
 
     @classmethod
-    def read_poll_winner_id(cls, poll_id: int) -> Result[Optional[int]]:
+    def read_poll_winner_id(cls, poll_id: int) -> Result[
+        Optional[int], peewee.DoesNotExist
+    ]:
         get_result = cls.build_from_fields(poll_id=poll_id).safe_get()
         if get_result.is_err():
             return get_result
 
         poll_winner = get_result.unwrap()
         winning_option = poll_winner.option
-        if winning_option is None:
+        if winning_option.id is None:
             return Ok(None)
 
         winning_option_id = int(winning_option.id)
@@ -361,7 +365,7 @@ class SupportTickets(BaseModel):
         is_payment_support: bool | EmptyField = Empty,
         resolved: bool | EmptyField = Empty
     ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
+        return BoundRowFields[Self](cls, {
             cls.id: ticket_id, cls.info: info,
             cls.is_payment_support: is_payment_support,
             cls.resolved: resolved

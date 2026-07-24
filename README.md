@@ -162,3 +162,13 @@ Production build instructions:
 1. `firebase init`
 2. `npm run build`
 3. `firebase deploy`
+
+### TODO:
+1. load config from yml using dataclass 
+2. allow multiple poll option entries to be entered at once in interactive mode
+3. dockerization
+4. GitHub action for CI/CD
+5. GitHub action for version increments
+
+### TODO DONE:
+1. add webapp interface for voting

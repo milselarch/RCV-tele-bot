@@ -25,7 +25,7 @@ class GetPollWinnerInfo(object):
 
 @dataclasses.dataclass
 class DeterminePollWinnerInfo(object):
-    winning_option_id: int
+    winning_option_id: int | None
     poll: Polls
 
 
