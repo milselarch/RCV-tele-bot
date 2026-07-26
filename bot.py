@@ -1782,7 +1782,7 @@ class RankedChoiceBot(BaseAPI):
     async def show_about(update: ModifiedTeleUpdate, *_, **__):
         message: Message = update.message
         await message.reply_text(textwrap.dedent(f"""
-            Version {strings.__VERSION__}
+            Version {constants.__VERSION__}
             The source code for this bot can be found at:
             https://github.com/milselarch/RCV-tele-bot
             Join the feedback and discussion group at: 

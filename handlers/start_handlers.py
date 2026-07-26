@@ -165,7 +165,7 @@ class StartHandlers(object):
     ):
         # Send a message when the command /start is issued.
         message = update.message
-        args = context.args
+        args = context.args or []
 
         if len(args) == 0:
             await update.message.reply_text(strings.BOT_STARTED)

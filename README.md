@@ -170,5 +170,10 @@ Production build instructions:
 4. GitHub action for CI/CD
 5. GitHub action for version increments
 
-### TODO DONE:
+### todos done:
 1. add webapp interface for voting
+2. handle emoji support in poll options
+3. use own maturin lib for RCV poll result computation
+4. support choice of RCV algorithm for poll result computation
+5. desegregate id and tele_id in users table
+6. allow voter registration by telegram ID

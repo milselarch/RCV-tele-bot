@@ -462,12 +462,12 @@ class TelegramHelpers(object):
         winning_option_id: int | None = get_winner_info.poll_winner_id
         get_status: GetPollWinnerStatus = get_winner_info.status
         poll = get_winner_info.poll
-        vote_strategy_name = 'unknown'
+        vote_strategy_name: str = 'unknown'
 
         try:
             vote_algorithm_no = poll.vote_algorithm
             vote_strategy = PyEliminationStrategies.from_int(vote_algorithm_no)
-            vote_strategy_name = str(vote_strategy)
+            vote_strategy_name = vote_strategy.to_stub_string()
         except Exception as e:
             logger.error(f'load vote stat failed: {e}')
 
