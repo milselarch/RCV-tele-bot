@@ -19,13 +19,13 @@ ranked choice poll
 @dataclasses.dataclass
 class GetPollWinnerInfo(object):
     poll: Polls
-    poll_winner_id: int
+    poll_winner_id: int | None
     status: GetPollWinnerStatus
 
 
 @dataclasses.dataclass
 class DeterminePollWinnerInfo(object):
-    winning_option_id: int
+    winning_option_id: int | None
     poll: Polls
 
 

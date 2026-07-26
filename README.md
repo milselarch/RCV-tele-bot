@@ -139,7 +139,7 @@ Migrations are handled using `peewee-migrations`
 1. Create a new migration
    `pw_migrate create --database ranked_choice_voting --auto migrations/<MIGRATION_NAME>`
 2. Apply the migration
-   `ppw_migrate migrate`
+   `pw_migrate migrate`
 
 ### Database Schema
 Database ORM definition can be found in `database.py`
@@ -162,3 +162,18 @@ Production build instructions:
 1. `firebase init`
 2. `npm run build`
 3. `firebase deploy`
+
+### TODO:
+1. load config from yml using dataclass 
+2. allow multiple poll option entries to be entered at once in interactive mode
+3. dockerization
+4. GitHub action for CI/CD
+5. GitHub action for version increments
+
+### todos done:
+1. add webapp interface for voting
+2. handle emoji support in poll options
+3. use own maturin lib for RCV poll result computation
+4. support choice of RCV algorithm for poll result computation
+5. desegregate id and tele_id in users table
+6. allow voter registration by telegram ID

@@ -59,10 +59,10 @@ class TypedModel(Model, Generic[M]):
     @classmethod
     def safe_get(
         cls: Type[M], *query, **filters
-    ) -> Result[M, M.DoesNotExist]:
+    ) -> Result[M, peewee.DoesNotExist]:
         try:
             return Ok(cls.get(*query, **filters))
-        except cls.DoesNotExist as e:
+        except peewee.DoesNotExist as e:
             return Err(e)
 
     @classmethod
@@ -90,7 +90,7 @@ class BoundRowFields(ModelRowFields, Generic[T]):
     def get(self) -> T:
         return self.__base_model.get(**self._fields)
 
-    def safe_get(self) -> Result[T, T.DoesNotExist]:
+    def safe_get(self) -> Result[T, peewee.DoesNotExist]:
         try:
             return Ok(self.__base_model.get(**self._fields))
         except self.__base_model.DoesNotExist as e:
