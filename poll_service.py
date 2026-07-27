@@ -10,15 +10,13 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-
-from py_rcv import PyEliminationStrategies
-
+import typing
 import database
 
-from enum import IntEnum
-from typing_extensions import Any
+from typing import Any
 from strenum import StrEnum
 from requests import PreparedRequest
+from helpers.config_loader import BotConfig, ConfigLoader
 
 from helpers.constants import BLANK_ID
 from helpers.rcv_tally import RCVTally
@@ -26,14 +24,13 @@ from helpers.redis_cache_manager import RedisCacheManager
 from helpers.start_get_params import StartGetParams
 from helpers import constants, strings
 from helpers.strings import generate_poll_closed_message
-from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
+from py_rcv import PyEliminationStrategies
 from helpers.message_buillder import MessageBuilder
 from helpers.special_votes import SpecialVotes
-from load_config import WEBHOOK_URL
 
 from database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
@@ -109,19 +106,21 @@ class PollMessage(object):
     poll_info: PollInfo
 
 
-class BaseAPI(object):
+class PollService(object):
     DELETION_TOKEN_EXPIRY = 60 * 5
     SHORT_HASH_LENGTH = 6
 
-    def __init__(self):
+    def __init__(self, config: BotConfig):
+        self.config = config
         self.cache = RedisCacheManager()
         self.rcv_tally = RCVTally()
-        database.initialize_db()
+        database.initialize_db(db_config=config.database)
 
     @staticmethod
     def __get_telegram_token():
+        config = ConfigLoader.load_config()
         # TODO: move methods using tele token to a separate class
-        return TELEGRAM_BOT_TOKEN
+        return config.telegram.bot_token
 
     def generate_delete_token(self, user: Users):
         stamp = int(time.time())
@@ -150,20 +149,18 @@ class BaseAPI(object):
 
         return Ok(True)
 
-    @classmethod
-    def create_tele_bot(cls):
-        return TelegramBot(token=cls.__get_telegram_token())
+    def create_tele_bot(self) -> TelegramBot:
+        return TelegramBot(token=self.__get_telegram_token())
 
-    @classmethod
-    def create_application_builder(cls):
+    def create_application_builder(self) -> ApplicationBuilder:
         builder = ApplicationBuilder()
-        builder.token(cls.__get_telegram_token())
+        builder.token(self.__get_telegram_token())
         return builder
 
     @classmethod
     def spawn_inline_keyboard_button(
         cls, text: str, command: CallbackCommands,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ) -> InlineKeyboardButton:
         return InlineKeyboardButton(
             text=text, callback_data=json.dumps(dict(
@@ -466,9 +463,8 @@ class BaseAPI(object):
             poll_info=poll_info
         )
 
-    @classmethod
     def generate_poll_url(
-        cls, poll_id: int, tele_user: TeleUser,
+        self, poll_id: int, tele_user: TeleUser,
         ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID
     ) -> str:
         """
@@ -483,18 +479,18 @@ class BaseAPI(object):
         """
         req = PreparedRequest()
         auth_date = str(int(time.time()))
-        query_id = cls.generate_secret()
+        query_id = self.generate_secret()
         user_info = json.dumps({
             'id': tele_user.id,
             'username': tele_user.username
         })
 
-        data_check_string = cls.make_data_check_string(
+        data_check_string = self.make_data_check_string(
             auth_date=auth_date, query_id=query_id, user=user_info
         )
-        validation_hash = cls.sign_data_check_string(data_check_string)
+        validation_hash = self.sign_data_check_string(data_check_string)
         ref_info = f'{auth_date}:{poll_id}:{ref_message_id}:{ref_chat_id}'
-        ref_hash = cls.sign_data_check_string(ref_info)
+        ref_hash = self.sign_data_check_string(ref_info)
 
         params = {
             'poll_id': str(poll_id),
@@ -506,7 +502,11 @@ class BaseAPI(object):
             'ref_info': ref_info,
             'ref_hash': ref_hash
         }
-        req.prepare_url(WEBHOOK_URL, params)
+        webhook_url = self.config.telegram.webhook_url
+        req.prepare_url(webhook_url, params)
+        if req.url is None:
+            raise ValueError('Invalid URL')
+
         return req.url
 
     @classmethod

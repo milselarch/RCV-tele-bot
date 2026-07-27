@@ -10,19 +10,20 @@ import asyncio
 import re
 
 from peewee import JOIN
-from result import Ok, Result
+from result import Ok, Result, Err
 
 from handlers.inline_keyboard_handlers import InlineKeyboardHandlers
 from handlers.payment_handlers import PaymentHandlers
 from handlers.start_handlers import start_handlers
 from helpers.commands import Command
+from helpers.config_loader import ConfigLoader, BotConfig
 from helpers.constants import BLANK_ID
 from helpers.locks_manager import PollsLockManager
 from helpers.message_buillder import MessageBuilder
 from logging import handlers as log_handlers
 from datetime import datetime
 
-from helpers import strings
+from helpers import strings, constants
 from helpers.rcv_tally import RCVTally
 from py_rcv import PyEliminationStrategies
 from tele_helpers import ModifiedTeleUpdate
@@ -30,11 +31,12 @@ from helpers.special_votes import SpecialVotes
 from bot_middleware import track_errors, admin_only
 from database.database import UserID, CallbackContextState
 from database.db_helpers import EmptyField, Empty
-from handlers.chat_context_handlers import context_handlers, ClosePollContextHandler
-from helpers import constants
+from handlers.chat_context_handlers import (
+    context_handlers, ClosePollContextHandler
+)
 
 from telegram import (
-    Message, ReplyKeyboardMarkup, InlineKeyboardMarkup,
+    Message, InlineKeyboardMarkup,
     User as TeleUser, Update as BaseTeleUpdate, Bot
 )
 from telegram.ext import (
@@ -49,7 +51,7 @@ from helpers.strings import (
     generate_poll_created_message
 )
 from helpers.chat_contexts import (
-    PollCreationChatContext, PollCreatorTemplate, POLL_MAX_OPTIONS,
+    PollCreationChatContext, PollBuilderTemplate, POLL_MAX_OPTIONS,
     VoteChatContext, PaySupportChatContext, ClosePollChatContext,
     EditPollTitleChatContext
 )
@@ -58,7 +60,7 @@ from database import (
     PollOptions, VoteRankings, db, ChatWhitelist, PollWinners,
     MessageContextState, Payments
 )
-from base_api import BaseAPI, UserRegistrationStatus, CallbackCommands
+from poll_service import PollService, UserRegistrationStatus, CallbackCommands
 from tele_helpers import TelegramHelpers
 
 # https://stackoverflow.com/questions/15892946/
@@ -81,10 +83,13 @@ logger = logging.getLogger(__name__)
 logger.warning("<<< INITIALIZING >>>")
 
 
-class RankedChoiceBot(BaseAPI):
-    def __init__(self, config_path='config.yml'):
-        super().__init__()
-        self.config_path = config_path
+class RankedChoiceBot(PollService):
+    def __init__(self, config: BotConfig | None = None):
+        if config is None:
+            config = ConfigLoader.load_config()
+
+        super().__init__(config)
+        self.config = config
         self.scheduled_processes = []
         self.payment_handlers = None
 
@@ -325,7 +330,7 @@ class RankedChoiceBot(BaseAPI):
         ref_info = payload.get('ref_info', str(BLANK_ID))
         ref_hash = payload.get('ref_hash', '')
         # print('REFS', ref_info, ref_hash)
-        signed_ref_info = BaseAPI.sign_data_check_string(ref_info)
+        signed_ref_info = PollService.sign_data_check_string(ref_info)
         if signed_ref_info != ref_hash:
             # print('REJECT_HASH')
             return None
@@ -339,7 +344,7 @@ class RankedChoiceBot(BaseAPI):
         if (ref_msg_id == BLANK_ID) or (ref_chat_id == BLANK_ID):
             return None
 
-        poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+        poll_info = PollService.unverified_read_poll_info(poll_id=poll_id)
         return await TelegramHelpers.update_poll_message(
             poll_info=poll_info, chat_id=ref_chat_id,
             message_id=ref_msg_id, context=context,
@@ -443,8 +448,9 @@ class RankedChoiceBot(BaseAPI):
             whitelisted_chat_ids=whitelisted_chat_ids
         )
 
+    @classmethod
     async def create_poll(
-        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        cls, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
         open_registration: bool = False,
         whitelisted_chat_ids: Sequence[int] = ()
     ):
@@ -504,139 +510,12 @@ class RankedChoiceBot(BaseAPI):
             )
             return True
 
-        assert raw_poll_creation_args != ''
-        subscription_tier_res = user_entry.get_subscription_tier()
-        if subscription_tier_res.is_err():
-            err_msg = "Unexpected error reading subscription tier"
-            await message.reply_text(err_msg)
-            return False
-
-        subscription_tier = subscription_tier_res.unwrap()
-        if '\n' not in raw_poll_creation_args:
-            await message.reply_text("poll creation format wrong")
-            return False
-
-        all_lines = raw_poll_creation_args.split('\n')
-        if ':' in all_lines[0]:
-            # separate poll voters (before :) from poll title and options
-            split_index = raw_poll_creation_args.index(':')
-            # first part of command is all the users that are in the poll
-            command_p1: str = raw_poll_creation_args[:split_index].strip()
-            # second part of command is the poll question + poll options
-            command_p2: str = raw_poll_creation_args[split_index+1:].strip()
-        else:
-            # no : on first line to separate poll voters and
-            # poll title + questions
-            command_p1 = all_lines[0]
-            command_p2 = raw_poll_creation_args[len(command_p1)+1:]
-
-        poll_info_lines = command_p2.split('\n')
-        if len(poll_info_lines) < 3:
-            await message.reply_text('Poll requires at least 2 options')
-            return False
-
-        poll_question = poll_info_lines[0].strip().replace('\n', '')
-        poll_options = poll_info_lines[1:]
-        poll_options = [
-            poll_option.strip().replace('\n', '')
-            for poll_option in poll_options
-        ]
-        # print('COMMAND_P2', lines)
-        if (command_p1 == '') and not open_registration:
-            await message.reply_text('poll voters not specified!')
-            return False
-
-        raw_poll_usernames: List[str] = command_p1.split()
-        whitelisted_usernames: List[str] = []
-        poll_user_tele_ids: List[int] = []
-
-        for raw_poll_user in raw_poll_usernames:
-            if raw_poll_user.startswith('#'):
-                raw_poll_user_tele_id = raw_poll_user[1:]
-                if constants.ID_PATTERN.match(raw_poll_user_tele_id) is None:
-                    await message.reply_text(
-                        f'Invalid poll user id: {raw_poll_user}'
-                    )
-                    return False
-
-                poll_user_tele_id = int(raw_poll_user_tele_id)
-                poll_user_tele_ids.append(poll_user_tele_id)
-                continue
-
-            if raw_poll_user.startswith('@'):
-                whitelisted_username = raw_poll_user[1:]
-            else:
-                whitelisted_username = raw_poll_user
-
-            if len(whitelisted_username) < 4:
-                await message.reply_text(
-                    f'username too short: {whitelisted_username}'
-                )
-                return False
-
-            whitelisted_usernames.append(whitelisted_username)
-
-        try:
-            db_user = Users.build_from_fields(tele_id=creator_tele_id).get()
-        except Users.DoesNotExist:
-            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
-            return False
-
-        creator_id = db_user.get_user_id()
-        # create users if they don't exist
-        user_rows = [
-            Users.build_from_fields(tele_id=tele_id)
-            for tele_id in poll_user_tele_ids
-        ]
-
-        poll_creator = PollCreatorTemplate(
-            creator_id=creator_id, user_rows=user_rows,
-            poll_user_tele_ids=poll_user_tele_ids,
-            poll_question=poll_question,
-            subscription_tier=subscription_tier,
+        return await TelegramHelpers.create_poll(
+            update=update, context=context,
             open_registration=open_registration,
-            poll_options=poll_options,
-            whitelisted_usernames=whitelisted_usernames,
-            whitelisted_chat_ids=whitelisted_chat_ids
-        )
-
-        create_poll_res = poll_creator.save_poll_to_db()
-        if create_poll_res.is_err():
-            error_message = create_poll_res.unwrap_err()
-            await error_message.call(message.reply_text)
-            return False
-
-        new_poll: Polls = create_poll_res.unwrap()
-        new_poll_id = int(new_poll.id)
-        bot_username = context.bot.username
-
-        poll_message = self.generate_poll_info(
-            new_poll_id, poll_question, poll_options,
-            bot_username=bot_username, closed=False,
-            num_voters=poll_creator.initial_num_voters,
-            max_voters=new_poll.max_voters,
-            add_instructions=update.is_group_chat()
-        )
-
-        chat_type = update.message.chat.type
-        reply_markup = None
-
-        if chat_type == 'private':
-            # create vote button for reply message
-            vote_markup_data = self.build_private_vote_markup(
-                poll_id=new_poll_id, tele_user=creator_user
-            )
-            reply_markup = ReplyKeyboardMarkup(vote_markup_data)
-        elif open_registration:
-            vote_markup_data = self.build_group_vote_markup(
-                poll_id=new_poll_id,
-                num_options=len(poll_options)
-            )
-            reply_markup = InlineKeyboardMarkup(vote_markup_data)
-
-        await message.reply_text(poll_message, reply_markup=reply_markup)
-        return await message.reply_text(
-            generate_poll_created_message(new_poll_id)
+            whitelisted_chat_ids=whitelisted_chat_ids,
+            user_entry=user_entry,
+            raw_poll_creation_args=raw_poll_creation_args
         )
 
     @classmethod
@@ -1143,7 +1022,7 @@ class RankedChoiceBot(BaseAPI):
         fetch_poll_result = RCVTally.fetch_poll(poll_id)
 
         if fetch_poll_result.is_err():
-            return fetch_poll_result
+            return Err(fetch_poll_result.unwrap_err())
 
         poll = fetch_poll_result.unwrap()
         return Ok(poll.num_votes)
@@ -1265,7 +1144,7 @@ class RankedChoiceBot(BaseAPI):
         #    e.g. /edit_poll_strategy {poll_id}
         message = update.message
         message_text = TelegramHelpers.read_raw_command_args(update)
-        strategy_prompt = BaseAPI.generate_elimination_strategy_prompt()
+        strategy_prompt = PollService.generate_elimination_strategy_prompt()
         invalid_format_text = textwrap.dedent(f"""
             Input format is invalid, try:
             /{Command.EDIT_POLL_STRATEGY} {{poll_id}} {{algorithm}}
@@ -1287,7 +1166,7 @@ class RankedChoiceBot(BaseAPI):
 
         poll_id = int(raw_poll_id)
         strat_id_match = constants.ID_PATTERN.match(raw_algorithm_choice)
-        strat_prompt = BaseAPI.generate_elimination_strategy_prompt()
+        strat_prompt = PollService.generate_elimination_strategy_prompt()
         # print('STRAT_ID_MATCH', strat_id_match, message_text)
 
         if strat_id_match is not None:
@@ -1314,8 +1193,9 @@ class RankedChoiceBot(BaseAPI):
         )
 
         user_id = update.user.get_user_id()
-        poll_res = BaseAPI.get_poll_as_owner(poll_id=poll_id, user_id=user_id)
-
+        poll_res = PollService.get_poll_as_owner(
+            poll_id=poll_id, user_id=user_id
+        )
         if poll_res.is_err():
             err_message = "You're not the creator of this poll"
             return await message.reply_text(err_message)
@@ -1366,7 +1246,7 @@ class RankedChoiceBot(BaseAPI):
             )
 
         poll = poll_res.unwrap()
-        whitelist_res = BaseAPI._whitelist_username_for_poll(
+        whitelist_res = PollService._whitelist_username_for_poll(
             poll=poll, target_username=target_username
         )
         if whitelist_res.is_err():
@@ -1613,7 +1493,7 @@ class RankedChoiceBot(BaseAPI):
             await message.reply_text(f'poll #{poll_id} must be closed first')
             return False
 
-        markup_layout = [[BaseAPI.spawn_inline_keyboard_button(
+        markup_layout = [[PollService.spawn_inline_keyboard_button(
             text=f'Delete poll #{poll_id}',
             command=CallbackCommands.DELETE_POLL,
             callback_data=dict(
@@ -1636,7 +1516,7 @@ class RankedChoiceBot(BaseAPI):
         # print('DEL_TOKEN', [deletion_token])
 
         if deletion_token == '':
-            # deletion token not provided, send deletion instructions
+            # deletion token isn't provided, send deletion instructions
             delete_token = self.generate_delete_token(update.user)
             return await update.message.reply_text(
                 strings.generate_delete_text(delete_token)

@@ -1,7 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from typing import Type
 
-from base_api import BaseAPI
+from poll_service import PollService
 from database import Users, Payments, Polls
 from helpers import strings
 from helpers.chat_contexts import extract_chat_context
@@ -49,7 +49,7 @@ class StartVoteHandler(BaseMessageHandler):
         user: Users = update.user
 
         user_id = user.get_user_id()
-        view_poll_result = BaseAPI.get_poll_message(
+        view_poll_result = PollService.get_poll_message(
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
             username=tele_user.username,
@@ -63,7 +63,7 @@ class StartVoteHandler(BaseMessageHandler):
 
         poll_message = view_poll_result.unwrap()
         reply_markup = ReplyKeyboardMarkup(
-            BaseAPI.build_private_vote_markup(
+            PollService.build_private_vote_markup(
                 poll_id=poll_id, tele_user=tele_user
             )
         )

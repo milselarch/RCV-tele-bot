@@ -2,21 +2,22 @@ import logging
 import textwrap
 import telegram
 
-from typing import Callable, Coroutine, Any, Dict, Optional, List
+from typing import (
+    Callable, Coroutine, Any, Dict, Optional, List, Sequence
+)
 
-from py_rcv.py_rcv import PyEliminationStrategies
-
+from database import Users
 from helpers import constants
-from helpers.chat_contexts import PollCreatorTemplate
+from helpers.chat_contexts import PollBuilderTemplate
 from result import Result, Err, Ok
-from sqlalchemy.util import await_only
 
-from base_api import BaseAPI, PollInfo
+from helpers.modified_tele_update import ModifiedTeleUpdate
+from poll_service import PollService, PollInfo
 from bot_middleware import track_errors
 from helpers.locks_manager import PollsLockManager
 from helpers.message_buillder import MessageBuilder
 
-from telegram import Message
+from telegram import Message, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, MessageHandler, CallbackContext, CallbackQueryHandler,
     CommandHandler, ContextTypes, PreCheckoutQueryHandler
@@ -28,11 +29,11 @@ from telegram import (
     Update as BaseTeleUpdate, User as TeleUser
 )
 
-from database import Users, Polls, ChatWhitelist
-from database.database import UserID, PollOptions
-
+from database.database import UserID, PollOptions, Polls, ChatWhitelist
 from helpers.rcv_tally import RCVTally, GetPollWinnerInfo
 from helpers.redis_cache_manager import GetPollWinnerStatus
+from py_rcv import PyEliminationStrategies
+from helpers.strings import generate_poll_created_message
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -40,33 +41,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-class ModifiedTeleUpdate(object):
-    def __init__(
-        self, update: BaseTeleUpdate, user: Users
-    ):
-        self.update: BaseTeleUpdate = update
-        self.user: Users = user
-
-    @property
-    def callback_query(self):
-        return self.update.callback_query
-
-    @property
-    def message(self):
-        return self.update.message
-
-    @property
-    def effective_message(self):
-        return self.update.effective_message
-
-    @property
-    def pre_checkout_query(self):
-        return self.update.pre_checkout_query
-
-    def is_group_chat(self) -> bool:
-        return self.update.message.chat.type != 'private'
 
 
 class TelegramHelpers(object):
@@ -90,7 +64,7 @@ class TelegramHelpers(object):
             error_message.add('no poll id specified')
             return Err(error_message)
 
-        unpack_result = BaseAPI.unpack_rankings_and_poll_id(raw_text)
+        unpack_result = PollService.unpack_rankings_and_poll_id(raw_text)
 
         if unpack_result.is_err():
             assert isinstance(unpack_result, Err)
@@ -101,7 +75,7 @@ class TelegramHelpers(object):
         rankings: List[int] = unpacked_result[1]
 
         # print('PRE_REGISTER')
-        register_result = BaseAPI.register_vote(
+        register_result = PollService.register_vote(
             poll_id=poll_id, rankings=rankings,
             user_tele_id=user_tele_id, username=username,
             chat_id=chat_id
@@ -275,6 +249,7 @@ class TelegramHelpers(object):
         if ' ' not in raw_text:
             return ''
 
+        # slice out everything after the space after the command
         raw_args = raw_text[raw_text.index(' ')+1:]
         raw_args = raw_args.strip() if strip else raw_args
         return raw_args
@@ -375,7 +350,7 @@ class TelegramHelpers(object):
         tele_user: TeleUser | None = update.message.from_user
 
         user_id = user.get_user_id()
-        view_poll_result = BaseAPI.get_poll_message(
+        view_poll_result = PollService.get_poll_message(
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
             username=user.username,
@@ -392,7 +367,7 @@ class TelegramHelpers(object):
         poll_message = view_poll_result.unwrap()
         poll = poll_message.poll_info.metadata
 
-        reply_markup = BaseAPI.generate_vote_markup(
+        reply_markup = PollService.generate_vote_markup(
             tele_user=tele_user, poll_id=poll_id, chat_type=chat_type,
             open_registration=poll.open_registration,
             num_options=poll_message.poll_info.max_options
@@ -427,7 +402,7 @@ class TelegramHelpers(object):
         async with chat_lock:
             if await poll_locks.has_correct_voter_count(voter_count):
                 try:
-                    poll_display_message = BaseAPI.generate_poll_message(
+                    poll_display_message = PollService.generate_poll_message(
                         poll_info=poll_info, bot_username=bot_username,
                         add_instructions=add_instructions
                     )
@@ -498,12 +473,35 @@ class TelegramHelpers(object):
             """))
             return get_winner_result
 
+    @staticmethod
     async def create_poll(
-        self, message: Message, user_entry: Users,
+        update: ModifiedTeleUpdate, user_entry: Users,
         context: ContextTypes.DEFAULT_TYPE,
-        raw_poll_creation_args: str, open_registration: bool
+        raw_poll_creation_args: str, open_registration: bool,
+        whitelisted_chat_ids: Sequence[int] = ()
     ) -> bool:
+        """
+        :param update:
+        :param user_entry:
+        :param context:
+        :param raw_poll_creation_args:
+        Everything after the command + space
+        e.g., /create_poll {args} -> {args}
+        :param open_registration:
+        :param whitelisted_chat_ids:
+        :return:
+        """
+        if (message := update.message) is None:
+            logger.error('NO MESSAGE FOUND IN UPDATE')
+            return False
+        if (creator_user := message.from_user) is None:
+            await message.reply_text("Creator user not specified")
+            return False
+
+        creator_tele_id = creator_user.id
+        assert isinstance(creator_tele_id, int)
         assert raw_poll_creation_args != ''
+
         subscription_tier_res = user_entry.get_subscription_tier()
         if subscription_tier_res.is_err():
             err_msg = "Unexpected error reading subscription tier"
@@ -588,7 +586,7 @@ class TelegramHelpers(object):
             for tele_id in poll_user_tele_ids
         ]
 
-        poll_creator = PollCreatorTemplate(
+        poll_builder = PollBuilderTemplate(
             creator_id=creator_id, user_rows=user_rows,
             poll_user_tele_ids=poll_user_tele_ids,
             poll_question=poll_question,
@@ -599,7 +597,7 @@ class TelegramHelpers(object):
             whitelisted_chat_ids=whitelisted_chat_ids
         )
 
-        create_poll_res = poll_creator.save_poll_to_db()
+        create_poll_res = poll_builder.save_poll_to_db()
         if create_poll_res.is_err():
             error_message = create_poll_res.unwrap_err()
             await error_message.call(message.reply_text)
@@ -609,31 +607,32 @@ class TelegramHelpers(object):
         new_poll_id = int(new_poll.id)
         bot_username = context.bot.username
 
-        poll_message = self.generate_poll_info(
+        poll_message = PollService.generate_poll_info(
             new_poll_id, poll_question, poll_options,
             bot_username=bot_username, closed=False,
-            num_voters=poll_creator.initial_num_voters,
+            num_voters=poll_builder.initial_num_voters,
             max_voters=new_poll.max_voters,
             add_instructions=update.is_group_chat()
         )
 
-        chat_type = update.message.chat.type
+        chat_type = message.chat.type
         reply_markup = None
 
         if chat_type == 'private':
             # create vote button for reply message
-            vote_markup_data = self.build_private_vote_markup(
+            vote_markup_data = PollService.build_private_vote_markup(
                 poll_id=new_poll_id, tele_user=creator_user
             )
             reply_markup = ReplyKeyboardMarkup(vote_markup_data)
         elif open_registration:
-            vote_markup_data = self.build_group_vote_markup(
+            vote_markup_data = PollService.build_group_vote_markup(
                 poll_id=new_poll_id,
                 num_options=len(poll_options)
             )
             reply_markup = InlineKeyboardMarkup(vote_markup_data)
 
         await message.reply_text(poll_message, reply_markup=reply_markup)
-        return await message.reply_text(
+        await message.reply_text(
             generate_poll_created_message(new_poll_id)
         )
+        return True

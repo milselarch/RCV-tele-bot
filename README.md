@@ -133,13 +133,26 @@ Project was built using `Python3.12`
    8.2. production (requires ASGI configuration as well)  
    `uvicorn webapp:app --host 0.0.0.0 --port <YOUR_PORT_NUMBER>`
 
+## Docker Deployment
+To run supporting redis and mysql containers, create 
+a `db_user_pw.txt` file with your DB password and 
+run the following command from the project root:
+```shell
+docker-compose -f ./docker-compose.mariadb.yml up -d
+```
+
+Tear down everything including volumes with:
+```shell
+docker compose -f .\docker-compose.mariadb.yml down -v
+```
+
 ### Migrations
 
 Migrations are handled using `peewee-migrations`
-1. Create a new migration
-   `pw_migrate create --database ranked_choice_voting --auto migrations/<MIGRATION_NAME>`
-2. Apply the migration
-   `pw_migrate migrate`
+1. Create a new migration  
+   `pw_migrate create --database mysql://rcv_user:YOUR_PASSWORD@localhost/ranked_choice_voting" --auto migrations/<MIGRATION_NAME>`
+2. Apply the migration  
+   `pw_migrate migrate --database mysql://rcv_user:YOUR_PASSWORD@localhost/ranked_choice_voting"`
 
 ### Database Schema
 Database ORM definition can be found in `database.py`
@@ -168,12 +181,15 @@ Production build instructions:
 2. allow multiple poll option entries to be entered at once in interactive mode
 3. dockerization
 4. GitHub action for CI/CD
-5. GitHub action for version increments
+5. add a todo bot (I ran out of bots)
+6. rewrite everything in rust
+   - could probably start with db related code
 
 ### todos done:
-1. add webapp interface for voting
-2. handle emoji support in poll options
-3. use own maturin lib for RCV poll result computation
-4. support choice of RCV algorithm for poll result computation
-5. desegregate id and tele_id in users table
-6. allow voter registration by telegram ID
+1. GitHub action for version increments
+2. add webapp interface for voting
+3. handle emoji support in poll options
+4. use own maturin lib for RCV poll result computation
+5. support the choice of RCV algorithm for poll result computation
+6. desegregate id and tele_id in users table
+7. allow voter registration by telegram ID

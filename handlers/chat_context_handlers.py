@@ -5,7 +5,9 @@ from typing import Type, Coroutine
 from abc import ABCMeta, abstractmethod
 from telegram import Message, User as TeleUser
 from telegram.ext import ContextTypes
-from base_api import BaseAPI
+
+from helpers.config_loader import BotConfig, ConfigLoader
+from poll_service import PollService
 from bot_middleware import track_errors
 from database.db_helpers import UserID
 from handlers.payment_handlers import IncMaxVotersChatContext, PaymentHandlers
@@ -16,7 +18,6 @@ from helpers import strings
 from helpers.commands import Command
 from helpers.constants import BLANK_ID
 
-from load_config import SUDO_TELE_ID
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from handlers.inline_keyboard_handlers import PollsLockManager
 from helpers.chat_contexts import (
@@ -36,11 +37,12 @@ class BaseContextHandler(object, metaclass=ABCMeta):
     @abstractmethod
     async def complete_chat_context(
         self, chat_context: CallbackContextState,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        config: BotConfig
     ):
         """
         handler for when chat context is completed
-        executed when user sends /done command
+        executed when the user sends /done command
         """
         ...
 
@@ -48,7 +50,7 @@ class BaseContextHandler(object, metaclass=ABCMeta):
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        is_from_start: bool
+        is_from_start: bool, config: BotConfig
     ):
         """
         handler for when user sends additional arguments for the
@@ -67,7 +69,7 @@ class PollCreationContextHandler(BaseContextHandler):
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        is_from_start: bool
+        is_from_start: bool, config: BotConfig
     ):
         message: Message = update.message
         chat_context = extracted_context.chat_context
@@ -108,7 +110,8 @@ class PollCreationContextHandler(BaseContextHandler):
 
     async def complete_chat_context(
         self, chat_context: CallbackContextState,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        config: BotConfig
     ):
         user_entry: Users = update.user
         message: Message = update.message
@@ -144,7 +147,7 @@ class PollCreationContextHandler(BaseContextHandler):
         # self-destruct context once processed
         chat_context.delete_instance()
 
-        view_poll_result = BaseAPI.get_poll_message(
+        view_poll_result = PollService.get_poll_message(
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
             username=user_entry.username,
@@ -158,7 +161,7 @@ class PollCreationContextHandler(BaseContextHandler):
             return await error_message.call(reply_text)
 
         poll_message = view_poll_result.unwrap()
-        reply_markup = BaseAPI.generate_vote_markup(
+        reply_markup = PollService.generate_vote_markup(
             tele_user=tele_user, poll_id=poll_id,
             chat_type=chat_type, open_registration=True,
             num_options=poll_message.poll_info.max_options
@@ -197,7 +200,7 @@ class VoteContextHandler(BaseContextHandler):
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        is_from_start: bool
+        is_from_start: bool, config: BotConfig
     ):
         message: Message = update.message
         chat_context = extracted_context.chat_context
@@ -227,7 +230,7 @@ class VoteContextHandler(BaseContextHandler):
                 return await message.reply_text("Invalid poll ID")
 
             poll_id = vote_context.poll_id
-            poll_info_res = BaseAPI.read_poll_info(
+            poll_info_res = PollService.read_poll_info(
                 poll_id=poll_id, user_id=user.get_user_id(),
                 username=tele_user.username, chat_id=message.chat_id
             )
@@ -236,11 +239,11 @@ class VoteContextHandler(BaseContextHandler):
                 return await error_message.call(message.reply_text)
 
             poll_info = poll_info_res.unwrap()
-            poll_message = BaseAPI.generate_poll_message(
+            poll_message = PollService.generate_poll_message(
                 poll_info=poll_info, bot_username=bot_username
             )
             poll = poll_message.poll_info.metadata
-            reply_markup = BaseAPI.generate_vote_markup(
+            reply_markup = PollService.generate_vote_markup(
                 tele_user=tele_user, poll_id=poll_id, chat_type='private',
                 open_registration=poll.open_registration,
                 num_options=poll_message.poll_info.max_options,
@@ -258,7 +261,7 @@ class VoteContextHandler(BaseContextHandler):
             except ValueError:
                 return await message.reply_text("Invalid poll ID")
 
-            poll_info_res = BaseAPI.read_poll_info(
+            poll_info_res = PollService.read_poll_info(
                 poll_id=poll_id, user_id=user.get_user_id(),
                 username=tele_user.username, chat_id=message.chat_id
             )
@@ -280,7 +283,7 @@ class VoteContextHandler(BaseContextHandler):
                 vote_context.generate_vote_option_prompt()
             )
         else:
-            ranked_option_res = BaseAPI.parse_ranked_option(message_text)
+            ranked_option_res = PollService.parse_ranked_option(message_text)
             if ranked_option_res.is_err():
                 error = ranked_option_res.unwrap_err()
                 return await message.reply_text(str(error))
@@ -314,7 +317,7 @@ class VoteContextHandler(BaseContextHandler):
         tele_user: TeleUser = message.from_user
         vote_creation_context = vote_creation_context_res.unwrap()
         poll_id = vote_creation_context.poll_id
-        register_vote_result = BaseAPI.register_vote(
+        register_vote_result = PollService.register_vote(
             chat_id=message.chat_id, rankings=vote_creation_context.rankings,
             poll_id=vote_creation_context.poll_id,
             username=tele_user.username, user_tele_id=tele_user.id
@@ -333,7 +336,7 @@ class VoteContextHandler(BaseContextHandler):
         coroutines: list[Coroutine] = [send_reply_coroutine]
         ref_message_id = vote_creation_context.ref_message_id
         ref_chat_id = vote_creation_context.ref_chat_id
-        poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+        poll_info = PollService.unverified_read_poll_info(poll_id=poll_id)
         update_ref_message = (
             (is_first_vote or newly_registered) and
             (ref_message_id != BLANK_ID)
@@ -354,7 +357,8 @@ class VoteContextHandler(BaseContextHandler):
 class IncreaseMaxVotersContextHandler(BaseContextHandler):
     async def complete_chat_context(
         self, chat_context: CallbackContextState,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        config: BotConfig
     ):
         msg: Message = update.message
         extract_context_res = extract_chat_context(update)
@@ -393,7 +397,7 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        is_from_start: bool
+        is_from_start: bool, config: BotConfig
     ):
         msg: Message = update.message
         chat_context = extracted_context.chat_context
@@ -448,7 +452,8 @@ class IncreaseMaxVotersContextHandler(BaseContextHandler):
 class PaySupportContextHandler(BaseContextHandler):
     async def complete_chat_context(
         self, chat_context: CallbackContextState,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        config: BotConfig
     ):
         return update.message.reply_text(
             "Please enter your payment support ticket details"
@@ -457,7 +462,7 @@ class PaySupportContextHandler(BaseContextHandler):
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        is_from_start: bool
+        is_from_start: bool, config: BotConfig
     ):
         chat_context = extracted_context.chat_context
         raw_args = TelegramHelpers.read_raw_command_args(update)
@@ -482,9 +487,11 @@ class PaySupportContextHandler(BaseContextHandler):
             {user_id=} {tele_id=} {username=} {support_ticket_id=}
         """) + raw_args
 
+        sudo_tele_id = config.telegram.sudo_id
+
         try:
             await context.bot.send_message(
-                chat_id=SUDO_TELE_ID, text=support_message
+                chat_id=sudo_tele_id, text=support_message
             )
             await message.reply_text(
                 f"Support ticket #{support_ticket_id} has been created"
@@ -497,7 +504,7 @@ class ClosePollContextHandler(BaseContextHandler):
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        is_from_start: bool
+        is_from_start: bool, config: BotConfig
     ):
         message = update.message
         raw_poll_id = message.text
@@ -543,16 +550,23 @@ class ClosePollContextHandler(BaseContextHandler):
 
     async def complete_chat_context(
         self, chat_context: CallbackContextState,
-        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE
+        update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        config: BotConfig
     ):
         return await update.message.reply_text(
             f"/{Command.DONE} not supported for closing polls"
         )
 
 
+T = ChatContextStateTypes
+
+
 class ContextHandlers(object):
-    def __init__(self):
-        T = ChatContextStateTypes
+    def __init__(self, config: BotConfig | None = None):
+        if config is None:
+            config = ConfigLoader.load_config()
+
+        self.config = config
         self.context_handlers: dict[T, Type[BaseContextHandler]] = {
             T.POLL_CREATION: PollCreationContextHandler,
             T.VOTE: VoteContextHandler,
@@ -590,7 +604,7 @@ class ContextHandlers(object):
         context_handler = context_handler_cls()
         return await context_handler.handle_messages(
             extracted_context, update, context,
-            is_from_start=is_from_start
+            is_from_start=is_from_start, config=self.config
         )
 
     @track_errors
@@ -615,7 +629,7 @@ class ContextHandlers(object):
         context_handler_cls = self.context_handlers[context_type]
         context_handler = context_handler_cls()
         return await context_handler.complete_chat_context(
-            chat_context, update, context
+            chat_context, update, context, config=self.config
         )
 
 
@@ -623,7 +637,8 @@ class EditPollTitleContextHandler(BaseContextHandler):
     async def complete_chat_context(
         self, chat_context: CallbackContextState,
         update: ModifiedTeleUpdate,
-        context: ContextTypes.DEFAULT_TYPE
+        context: ContextTypes.DEFAULT_TYPE,
+        config: BotConfig
     ):
         message: Message = update.message
         return await message.reply_text(
@@ -633,7 +648,8 @@ class EditPollTitleContextHandler(BaseContextHandler):
     async def handle_messages(
         self, extracted_context: ExtractedChatContext,
         update: ModifiedTeleUpdate,
-        context: ContextTypes.DEFAULT_TYPE, is_from_start: bool
+        context: ContextTypes.DEFAULT_TYPE, is_from_start: bool,
+        config: BotConfig
     ):
         message: Message = update.message
         # tele_user: TeleUser | None = message.from_user
