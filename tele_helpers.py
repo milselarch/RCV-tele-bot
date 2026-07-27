@@ -5,6 +5,9 @@ import telegram
 from typing import Callable, Coroutine, Any, Dict, Optional, List
 
 from py_rcv.py_rcv import PyEliminationStrategies
+
+from helpers import constants
+from helpers.chat_contexts import PollCreatorTemplate
 from result import Result, Err, Ok
 from sqlalchemy.util import await_only
 
@@ -260,7 +263,7 @@ class TelegramHelpers(object):
         if no args are found, or the message is empty
         e.g. /command {args} -> {args}
         """
-        message: telegram.Message = update.message
+        message: telegram.Message | None = update.message
         if message is None:
             return ''
 
@@ -494,3 +497,143 @@ class TelegramHelpers(object):
                 (Voting strategy used: {vote_strategy_name})
             """))
             return get_winner_result
+
+    async def create_poll(
+        self, message: Message, user_entry: Users,
+        context: ContextTypes.DEFAULT_TYPE,
+        raw_poll_creation_args: str, open_registration: bool
+    ) -> bool:
+        assert raw_poll_creation_args != ''
+        subscription_tier_res = user_entry.get_subscription_tier()
+        if subscription_tier_res.is_err():
+            err_msg = "Unexpected error reading subscription tier"
+            await message.reply_text(err_msg)
+            return False
+
+        subscription_tier = subscription_tier_res.unwrap()
+        if '\n' not in raw_poll_creation_args:
+            await message.reply_text("poll creation format wrong")
+            return False
+
+        all_lines = raw_poll_creation_args.split('\n')
+        if ':' in all_lines[0]:
+            # separate poll voters (before :) from poll title and options
+            split_index = raw_poll_creation_args.index(':')
+            # first part of command is all the users that are in the poll
+            command_p1: str = raw_poll_creation_args[:split_index].strip()
+            # second part of command is the poll question + poll options
+            command_p2: str = raw_poll_creation_args[split_index+1:].strip()
+        else:
+            # no : on first line to separate poll voters and
+            # poll title + questions
+            command_p1 = all_lines[0]
+            command_p2 = raw_poll_creation_args[len(command_p1)+1:]
+
+        poll_info_lines = command_p2.split('\n')
+        if len(poll_info_lines) < 3:
+            await message.reply_text('Poll requires at least 2 options')
+            return False
+
+        poll_question = poll_info_lines[0].strip().replace('\n', '')
+        poll_options = poll_info_lines[1:]
+        poll_options = [
+            poll_option.strip().replace('\n', '')
+            for poll_option in poll_options
+        ]
+        # print('COMMAND_P2', lines)
+        if (command_p1 == '') and not open_registration:
+            await message.reply_text('poll voters not specified!')
+            return False
+
+        raw_poll_usernames: List[str] = command_p1.split()
+        whitelisted_usernames: List[str] = []
+        poll_user_tele_ids: List[int] = []
+
+        for raw_poll_user in raw_poll_usernames:
+            if raw_poll_user.startswith('#'):
+                raw_poll_user_tele_id = raw_poll_user[1:]
+                if constants.ID_PATTERN.match(raw_poll_user_tele_id) is None:
+                    await message.reply_text(
+                        f'Invalid poll user id: {raw_poll_user}'
+                    )
+                    return False
+
+                poll_user_tele_id = int(raw_poll_user_tele_id)
+                poll_user_tele_ids.append(poll_user_tele_id)
+                continue
+
+            if raw_poll_user.startswith('@'):
+                whitelisted_username = raw_poll_user[1:]
+            else:
+                whitelisted_username = raw_poll_user
+
+            if len(whitelisted_username) < 4:
+                await message.reply_text(
+                    f'username too short: {whitelisted_username}'
+                )
+                return False
+
+            whitelisted_usernames.append(whitelisted_username)
+
+        try:
+            db_user = Users.build_from_fields(tele_id=creator_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        creator_id = db_user.get_user_id()
+        # create users if they don't exist
+        user_rows = [
+            Users.build_from_fields(tele_id=tele_id)
+            for tele_id in poll_user_tele_ids
+        ]
+
+        poll_creator = PollCreatorTemplate(
+            creator_id=creator_id, user_rows=user_rows,
+            poll_user_tele_ids=poll_user_tele_ids,
+            poll_question=poll_question,
+            subscription_tier=subscription_tier,
+            open_registration=open_registration,
+            poll_options=poll_options,
+            whitelisted_usernames=whitelisted_usernames,
+            whitelisted_chat_ids=whitelisted_chat_ids
+        )
+
+        create_poll_res = poll_creator.save_poll_to_db()
+        if create_poll_res.is_err():
+            error_message = create_poll_res.unwrap_err()
+            await error_message.call(message.reply_text)
+            return False
+
+        new_poll: Polls = create_poll_res.unwrap()
+        new_poll_id = int(new_poll.id)
+        bot_username = context.bot.username
+
+        poll_message = self.generate_poll_info(
+            new_poll_id, poll_question, poll_options,
+            bot_username=bot_username, closed=False,
+            num_voters=poll_creator.initial_num_voters,
+            max_voters=new_poll.max_voters,
+            add_instructions=update.is_group_chat()
+        )
+
+        chat_type = update.message.chat.type
+        reply_markup = None
+
+        if chat_type == 'private':
+            # create vote button for reply message
+            vote_markup_data = self.build_private_vote_markup(
+                poll_id=new_poll_id, tele_user=creator_user
+            )
+            reply_markup = ReplyKeyboardMarkup(vote_markup_data)
+        elif open_registration:
+            vote_markup_data = self.build_group_vote_markup(
+                poll_id=new_poll_id,
+                num_options=len(poll_options)
+            )
+            reply_markup = InlineKeyboardMarkup(vote_markup_data)
+
+        await message.reply_text(poll_message, reply_markup=reply_markup)
+        return await message.reply_text(
+            generate_poll_created_message(new_poll_id)
+        )

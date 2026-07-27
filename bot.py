@@ -449,7 +449,10 @@ class RankedChoiceBot(BaseAPI):
         whitelisted_chat_ids: Sequence[int] = ()
     ):
         """
-        example:
+        :open_registration:
+        whether the poll allows users to self-register as voters for it
+
+        Example:
         ---------------------------
         /create_poll @asd @fad:
         what ice cream is the best
@@ -472,7 +475,7 @@ class RankedChoiceBot(BaseAPI):
             update, strip=False
         ).rstrip()
 
-        # initiate poll creation context here
+        # initiate interactive poll creation context here
         if raw_poll_creation_args == '':
             num_user_created_polls = Polls.count_polls_created(user_id)
             subscription_tier_res = user_entry.get_subscription_tier()
@@ -492,8 +495,12 @@ class RankedChoiceBot(BaseAPI):
                 open_registration=open_registration
             ).save_state()
 
-            await message.reply_text(
-                "Enter the title / question for your new poll:"
+            command = Command.CREATE_PRIVATE_POLL
+            if open_registration:
+                command = Command.CREATE_GROUP_POLL
+
+            await message.reply_markdown_v2(
+                strings.generate_poll_prompt(command)
             )
             return True
 
@@ -595,7 +602,7 @@ class RankedChoiceBot(BaseAPI):
 
         create_poll_res = poll_creator.save_poll_to_db()
         if create_poll_res.is_err():
-            error_message = create_poll_res.err()
+            error_message = create_poll_res.unwrap_err()
             await error_message.call(message.reply_text)
             return False
 

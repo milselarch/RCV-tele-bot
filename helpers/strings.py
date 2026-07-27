@@ -17,21 +17,21 @@ HELP_TEXT = textwrap.dedent(f"""
     ——————————————————
     /{Command.CREATE_GROUP_POLL}
     /{Command.CREATE_GROUP_POLL} @username_1 @username_2 ... @username_n:
-    poll title
-    poll option 1
-    poll option 2
+    Your poll's title / question to vote on
+    poll option (no.1)
+    poll option (no.2)
     ...
-    poll option m
+    poll option (last)
     
     Creates a new poll that chat members can self-register for   
     ——————————————————
     /{Command.CREATE_PRIVATE_POLL}
     /{Command.CREATE_PRIVATE_POLL} @username_1 @username_2 ... @username_n:
-    poll title
-    poll option 1
-    poll option 2
+    Your poll's title / question to vote on
+    poll option (no.1)
+    poll option (no.2)
     ...
-    poll option m
+    poll option (last)
     
     Creates a new poll that chat members cannot self-register for   
     ——————————————————
@@ -124,6 +124,21 @@ def generate_delete_text(deletion_token: str) -> str:
         ——————————————————
         /{Command.DELETE_ACCOUNT} {deletion_token}
     """)
+
+
+def generate_poll_prompt(command: Command):
+    return (
+        "Enter the title / question for your new poll\n\n"
+        "Alternatively, run the following to create your poll in one shot:\n" 
+        "`\n"
+        f"/{command}\n"
+        "Your poll's title / question to vote on\n"
+        "poll option (no.1)\n"
+        "poll option (no.2)\n"
+        "...\n"
+        "poll option (last)\n"
+        "`"
+    )
 
 
 MAX_VOTERS_NOT_EDITABLE = (

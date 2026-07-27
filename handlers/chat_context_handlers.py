@@ -11,7 +11,6 @@ from database.db_helpers import UserID
 from handlers.payment_handlers import IncMaxVotersChatContext, PaymentHandlers
 
 from helpers.rcv_tally import RCVTally
-from helpers.redis_cache_manager import GetPollWinnerStatus
 from helpers.start_get_params import StartGetParams
 from helpers import strings
 from helpers.commands import Command
@@ -29,7 +28,7 @@ from helpers.strings import (
 )
 from database import (
     Users, CallbackContextState, ChatContextStateTypes, Polls,
-    SupportTickets, PollOptions
+    SupportTickets
 )
 
 
@@ -74,6 +73,7 @@ class PollCreationContextHandler(BaseContextHandler):
         chat_context = extracted_context.chat_context
         message_text = extracted_context.message_text
 
+        print("MESSAGE_TEXT", message_text)
         poll_creation_context_res = PollCreationChatContext.load(chat_context)
         if poll_creation_context_res.is_err():
             chat_context.delete()
@@ -84,7 +84,7 @@ class PollCreationContextHandler(BaseContextHandler):
         poll_creation_context = poll_creation_context_res.unwrap()
         if not poll_creation_context.has_question:
             # set the poll question and prompt for the first poll option
-            set_res = poll_creation_context.set_question(message.text)
+            set_res = poll_creation_context.set_question(message_text)
             if set_res.is_err():
                 error = set_res.unwrap_err()
                 reply_message = str(error)
@@ -130,13 +130,13 @@ class PollCreationContextHandler(BaseContextHandler):
             return await reply_text(READ_SUBSCRIPTION_TIER_FAILED)
 
         subscription_tier = subscription_tier_res.unwrap()
-        poll_creator = poll_creation_context.to_template(
+        poll_creation_template = poll_creation_context.to_template(
             creator_id=user_id, subscription_tier=subscription_tier
         )
 
-        create_poll_res = poll_creator.save_poll_to_db()
+        create_poll_res = poll_creation_template.save_poll_to_db()
         if create_poll_res.is_err():
-            error_message = create_poll_res.err()
+            error_message = create_poll_res.unwrap_err()
             return await error_message.call(reply_text)
 
         new_poll: Polls = create_poll_res.unwrap()
@@ -154,7 +154,7 @@ class PollCreationContextHandler(BaseContextHandler):
             add_instructions=update.is_group_chat()
         )
         if view_poll_result.is_err():
-            error_message = view_poll_result.err()
+            error_message = view_poll_result.unwrap_err()
             return await error_message.call(reply_text)
 
         poll_message = view_poll_result.unwrap()

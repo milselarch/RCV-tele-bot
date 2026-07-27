@@ -3,7 +3,7 @@ import re
 
 from typing import Final
 
-__VERSION__: Final[str] = '1.3.10'
+__VERSION__: Final[str] = '1.3.11'
 
 BLANK_ID: Final[int] = -1
 POLL_MAX_OPTIONS: Final[int] = 16
