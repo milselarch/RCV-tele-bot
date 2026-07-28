@@ -11,7 +11,8 @@ from helpers import constants
 from helpers.chat_contexts import PollBuilderTemplate
 from result import Result, Err, Ok
 
-from helpers.modified_tele_update import ModifiedTeleUpdate
+from helpers.commands import Command
+from helpers.modified_tele_update import ModifiedTeleUpdate, CommandsMapping
 from poll_service import PollService, PollInfo
 from bot_middleware import track_errors
 from helpers.locks_manager import PollsLockManager
@@ -210,16 +211,24 @@ class TelegramHelpers(object):
     @classmethod
     def register_commands(
         cls, dispatcher: Application,
-        commands_mapping: Dict[
-            str, Callable[[ModifiedTeleUpdate, ...], Coroutine]
-        ],
+        commands_mapping: CommandsMapping
     ):
         for command_name in commands_mapping:
-            handler = commands_mapping[command_name]
-            wrapped_handler = cls.wrap_command_handler(handler)
-            dispatcher.add_handler(CommandHandler(
-                command_name, wrapped_handler
-            ))
+            cls.register_command(
+                dispatcher=dispatcher,
+                command=command_name,
+                handler=commands_mapping[command_name]
+            )
+
+    @classmethod
+    def register_command(
+        cls, dispatcher: Application, command: Command,
+        handler: Callable[[ModifiedTeleUpdate, ...], Coroutine]
+    ):
+        wrapped_handler = cls.wrap_command_handler(handler)
+        dispatcher.add_handler(CommandHandler(
+            command, wrapped_handler
+        ))
 
     @classmethod
     def wrap_command_handler(cls, handler):

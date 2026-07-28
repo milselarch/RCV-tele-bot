@@ -11,7 +11,7 @@ __VERSION__: Final[str] = '1.3.11'
 # project root directory
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH: Final[str] = os.path.join(
-    BASE_DIR, 'config', 'config.yml'
+    BASE_DIR, 'config', '../config/config.yml'
 )
 DEFAULT_PG_PASSWORD_FILE_PATH: Final[str] = os.path.join(
     BASE_DIR, 'postgres_db_user_pw.txt'

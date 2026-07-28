@@ -7,6 +7,7 @@ from telegram import Message, User as TeleUser
 from telegram.ext import ContextTypes
 
 from helpers.config_loader import BotConfig, ConfigLoader
+from helpers.modified_tele_update import CommandsMapping
 from poll_service import PollService
 from bot_middleware import track_errors
 from database.db_helpers import UserID
@@ -562,11 +563,15 @@ T = ChatContextStateTypes
 
 
 class ContextHandlers(object):
-    def __init__(self, config: BotConfig | None = None):
+    def __init__(
+        self, commands_mapping: CommandsMapping,
+        config: BotConfig | None = None,
+    ):
         if config is None:
             config = ConfigLoader.load_config()
 
         self.config = config
+        self.commands_mapping = commands_mapping
         self.context_handlers: dict[T, Type[BaseContextHandler]] = {
             T.POLL_CREATION: PollCreationContextHandler,
             T.VOTE: VoteContextHandler,
@@ -588,6 +593,7 @@ class ContextHandlers(object):
         is_from_start: bool = False
     ):
         message: Message = update.message
+        # TODO: match against commands mapping first
         chat_context_res = extract_chat_context(update)
         if chat_context_res.is_err():
             error = chat_context_res.unwrap_err()
@@ -707,6 +713,3 @@ class EditPollTitleContextHandler(BaseContextHandler):
 
         await asyncio.gather(*coroutines)
         return None
-
-
-context_handlers = ContextHandlers()

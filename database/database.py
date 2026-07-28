@@ -24,7 +24,7 @@ from database.db_helpers import (
 from peewee import (
     BigIntegerField, CharField, SmallIntegerField,
     IntegerField, AutoField, TextField, DateTimeField,
-    BooleanField, ForeignKeyField, SQL, Database, BigAutoField,
+    BooleanField, ForeignKeyField, SQL, BigAutoField,
 )
 
 initialised_db: DB | None = None
@@ -343,7 +343,7 @@ class PollWinners(BaseModel):
     ]:
         get_result = cls.build_from_fields(poll_id=poll_id).safe_get()
         if get_result.is_err():
-            return get_result
+            return Err(get_result.unwrap_err())
 
         poll_winner = get_result.unwrap()
         winning_option = poll_winner.option

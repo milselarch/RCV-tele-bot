@@ -22,7 +22,13 @@ def admin_only(func: Callable[..., Awaitable]) -> Callable[..., Awaitable]:
 
     async def caller(self, update: Update, *args, **kwargs):
         message = update.message
+        if not message:
+            return False
+
         user = message.from_user
+        if user is None:
+            return False
+
         user_id = user.id
 
         if user_id != sudo_tele_id:

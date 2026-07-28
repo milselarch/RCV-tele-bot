@@ -5,6 +5,7 @@ services:
       MARIADB_DATABASE: ranked_choice_voting
       MARIADB_USER: rcv_user
       MARIADB_ROOT_PASSWORD_FILE: /run/secrets/mariadb_root_pw
+      MARIADB_PASSWORD_FILE: /run/secrets/mariadb_root_pw
     volumes:
       - mariadb_data:/var/lib/mysql
     secrets:

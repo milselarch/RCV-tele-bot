@@ -1,6 +1,8 @@
 from abc import ABCMeta, abstractmethod
 from typing import Type
 
+from handlers.chat_context_handlers import ContextHandlers
+from helpers.config_loader import BotConfig
 from poll_service import PollService
 from database import Users, Payments, Polls
 from helpers import strings
@@ -9,7 +11,6 @@ from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from telegram import User as TeleUser, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from helpers.start_get_params import StartGetParams
-from handlers.chat_context_handlers import context_handlers
 from handlers.payment_handlers import (
     BasePaymentParams, InvoiceTypes, IncreaseVoterLimitParams,
     PaymentHandlers
@@ -151,7 +152,12 @@ class StartHandlers(object):
     chat context callbacks that get triggered when /start command
     is run in telegram DMs
     """
-    def __init__(self):
+    def __init__(
+        self, config: BotConfig,
+        context_handlers: ContextHandlers
+    ):
+        self.config = config
+        self.context_handlers = context_handlers
         self.handlers_mapping: dict[
             StartGetParams, Type[BaseMessageHandler]
         ] = {
@@ -176,7 +182,7 @@ class StartHandlers(object):
 
             extracted_context = chat_context_res.unwrap()
             context_type = extracted_context.context_type
-            chat_handlers = context_handlers.context_handlers
+            chat_handlers = self.context_handlers.context_handlers
 
             if context_type not in chat_handlers:
                 return await message.reply_text(
@@ -187,7 +193,7 @@ class StartHandlers(object):
             context_handler = context_handler_cls()
             return await context_handler.handle_messages(
                 extracted_context, update, context,
-                is_from_start=True
+                is_from_start=True, config=self.config
             )
 
         command_params: str = args[0]
@@ -215,6 +221,3 @@ class StartHandlers(object):
         return await context_handler.handle_messages(
             update=update, context=context, raw_payload=param_value
         )
-
-
-start_handlers = StartHandlers()

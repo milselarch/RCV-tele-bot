@@ -129,15 +129,15 @@ def generate_delete_text(deletion_token: str) -> str:
 def generate_poll_prompt(command: Command):
     return (
         "Enter the title / question for your new poll\n\n"
-        "Alternatively, run the following to create your poll in one shot:\n" 
-        "`\n"
+        "Alternatively, run the following to create your poll in one shot:" 
+        "```\n"
         f"/{command}\n"
         "Your poll's title / question to vote on\n"
         "poll option (no.1)\n"
         "poll option (no.2)\n"
         "...\n"
         "poll option (last)\n"
-        "`"
+        "```"
     )
 
 

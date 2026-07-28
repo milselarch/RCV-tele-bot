@@ -14,7 +14,7 @@ from result import Ok, Result, Err
 
 from handlers.inline_keyboard_handlers import InlineKeyboardHandlers
 from handlers.payment_handlers import PaymentHandlers
-from handlers.start_handlers import start_handlers
+from handlers.start_handlers import StartHandlers
 from helpers.commands import Command
 from helpers.config_loader import ConfigLoader, BotConfig
 from helpers.constants import BLANK_ID
@@ -32,7 +32,7 @@ from bot_middleware import track_errors, admin_only
 from database.database import UserID, CallbackContextState
 from database.db_helpers import EmptyField, Empty
 from handlers.chat_context_handlers import (
-    context_handlers, ClosePollContextHandler
+    ClosePollContextHandler, ContextHandlers
 )
 
 from telegram import (
@@ -47,11 +47,10 @@ from typing import (
 )
 
 from helpers.strings import (
-    POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED,
-    generate_poll_created_message
+    POLL_OPTIONS_LIMIT_REACHED_TEXT, READ_SUBSCRIPTION_TIER_FAILED
 )
 from helpers.chat_contexts import (
-    PollCreationChatContext, PollBuilderTemplate, POLL_MAX_OPTIONS,
+    PollCreationChatContext, POLL_MAX_OPTIONS,
     VoteChatContext, PaySupportChatContext, ClosePollChatContext,
     EditPollTitleChatContext
 )
@@ -94,8 +93,10 @@ class RankedChoiceBot(PollService):
         self.payment_handlers = None
 
         self.webhook_url = None
-        self.bot = None
-        self.app = None
+        self.bot: Bot | None = None
+        self.app: Application | None = None
+        self.start_handlers: StartHandlers | None = None
+        self.context_handlers: ContextHandlers | None = None
 
     @classmethod
     async def _call_polling_tasks_routine(cls):
@@ -131,11 +132,8 @@ class RankedChoiceBot(PollService):
         builder.concurrent_updates(constants.MAX_CONCURRENT_UPDATES)
         builder.post_init(self.post_init)
 
-        self.app = builder.build()
-        self.payment_handlers = PaymentHandlers(logger)
-
         commands_mapping = {
-            Command.START: start_handlers.start_handler,
+            # Command.START: start_handlers.start_handler,
             Command.USER_DETAILS: self.user_details_handler,
             Command.CHAT_DETAILS: self.chat_details_handler,
             Command.CREATE_PRIVATE_POLL: self.create_poll,
@@ -162,7 +160,6 @@ class RankedChoiceBot(PollService):
             Command.DELETE_POLL: self.delete_poll,
             Command.DELETE_ACCOUNT: self.delete_account,
             Command.HELP: self.show_help,
-            Command.DONE: context_handlers.complete_chat_context,
             Command.SET_MAX_VOTERS: self.payment_handlers.set_max_voters,
             Command.WHITELIST_USERNAME: self.whitelist_username,
             Command.PAY_SUPPORT: self.payment_support_handler,
@@ -179,7 +176,26 @@ class RankedChoiceBot(PollService):
             Command.SEND_MSG_ADMIN: self.send_msg_admin
         }
 
-        # on different commands - answer in Telegram
+        self.app = builder.build()
+        assert self.app is not None
+        self.payment_handlers = PaymentHandlers(logger)
+        self.context_handlers = ContextHandlers(commands_mapping)
+        assert self.context_handlers is not None
+        self.start_handlers = StartHandlers(
+            config=self.config,
+            context_handlers=self.context_handlers
+        )
+
+        assert self.start_handlers is not None
+        TelegramHelpers.register_command(
+            self.app, command=Command.START,
+            handler=self.start_handlers.start_handler
+        )
+        TelegramHelpers.register_command(
+            self.app, command=Command.DONE,
+            handler=self.context_handlers.complete_chat_context
+        )
+        # register all other telegram commands
         TelegramHelpers.register_commands(
             self.app, commands_mapping=commands_mapping
         )
@@ -204,7 +220,7 @@ class RankedChoiceBot(PollService):
         # catch-all to handle all other messages
         TelegramHelpers.register_message_handler(
             self.app, filters.Regex(r'.*') & filters.TEXT,
-            context_handlers.handle_other_messages
+            self.context_handlers.handle_other_messages
         )
         inline_keyboard_handlers = InlineKeyboardHandlers(logger)
         TelegramHelpers.register_callback_handler(
@@ -1171,7 +1187,7 @@ class RankedChoiceBot(PollService):
 
         if strat_id_match is not None:
             # voting algorithm was specified as an ID
-            # the prompt uses 1-indexed ids but the struct ids are 0-indexed,
+            # the prompt uses 1-indexed ids, but the struct ids are 0-indexed,
             # so we need to subtract 1 from the raw_poll_id
             strat_id = int(strat_id_match.group(0)) - 1
             try:

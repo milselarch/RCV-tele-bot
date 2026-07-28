@@ -1,6 +1,8 @@
-from database import Users
+from typing import Dict, Callable, Coroutine
 
+from database import Users
 from telegram import Update as BaseTeleUpdate
+from helpers.commands import Command
 
 
 class ModifiedTeleUpdate(object):
@@ -28,3 +30,8 @@ class ModifiedTeleUpdate(object):
 
     def is_group_chat(self) -> bool:
         return self.update.message.chat.type != 'private'
+
+
+CommandsMapping = Dict[
+    Command, Callable[[ModifiedTeleUpdate, ...], Coroutine]
+]
