@@ -1,4 +1,5 @@
 import asyncio
+import re
 import textwrap
 
 from typing import Type, Coroutine
@@ -26,7 +27,7 @@ from helpers.chat_contexts import (
     extract_chat_context, EditPollTitleChatContext
 )
 from helpers.strings import (
-    READ_SUBSCRIPTION_TIER_FAILED, generate_poll_created_message
+    READ_SUBSCRIPTION_TIER_FAILED, generate_poll_created_message, NO_MESSAGE_IN_UPDATE
 )
 from database import (
     Users, CallbackContextState, ChatContextStateTypes, Polls,
@@ -593,6 +594,29 @@ class ContextHandlers(object):
         is_from_start: bool = False
     ):
         message: Message = update.message
+        message_text = message.text
+        if message_text is None:
+            return await message.reply_text(NO_MESSAGE_IN_UPDATE)
+
+        multiline_command_match = re.match('^/([a-z_]+)\\s.*', message_text)
+        if multiline_command_match is not None:
+            """
+            If the bot receives a formatted piece of text that 
+            starts with /<command> for an existing command, we will
+            treat it as though the user issued the command directly
+            (main use case is when user copies markdown code template
+            for poll creation command)
+            """
+            raw_command: str = multiline_command_match.groups()[0]
+            command_res = Command.try_from(raw_command)
+
+            if command_res.is_err():
+                pass
+            elif (command := command_res.unwrap()) in self.commands_mapping:
+                # TODO: remove current chat context?
+                handler = self.commands_mapping[command]
+                return await handler(update, context)
+
         # TODO: match against commands mapping first
         chat_context_res = extract_chat_context(update)
         if chat_context_res.is_err():

@@ -1,5 +1,6 @@
 import re
 import textwrap
+from typing import Final
 
 from helpers.commands import Command
 
@@ -153,8 +154,9 @@ INVALID_MAX_VOTERS = (
     "New poll max voter limit must be greater "
     "than the existing limit"
 )
-BOT_STARTED = 'Bot started'
-DIRECT_VOTE_TEXT = 'Vote via Direct Chat'
+BOT_STARTED: Final[str] = 'Bot started'
+DIRECT_VOTE_TEXT: Final[str] = 'Vote via Direct Chat'
+NO_MESSAGE_IN_UPDATE: Final[str] = "NO MESSAGE FOUND IN UPDATE"
 
 
 def escape_markdown(string: str) -> str:

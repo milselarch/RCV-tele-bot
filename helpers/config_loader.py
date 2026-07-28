@@ -1,6 +1,4 @@
-import configparser
 import os.path
-import shutil
 
 from typing import TypeVar, Type, Self
 from pydantic import BaseModel, Field
@@ -29,6 +27,7 @@ class LoadableBaseModel(BaseModel):
 
 class SettingsConfig(BaseModel):
     production: bool = True
+
 
 class DatabaseConfig(BaseModel):
     name: str = "ranked_choice_voting"

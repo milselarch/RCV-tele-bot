@@ -34,7 +34,7 @@ from database.database import UserID, PollOptions, Polls, ChatWhitelist
 from helpers.rcv_tally import RCVTally, GetPollWinnerInfo
 from helpers.redis_cache_manager import GetPollWinnerStatus
 from py_rcv import PyEliminationStrategies
-from helpers.strings import generate_poll_created_message
+from helpers.strings import generate_poll_created_message, NO_MESSAGE_IN_UPDATE
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -501,7 +501,7 @@ class TelegramHelpers(object):
         :return:
         """
         if (message := update.message) is None:
-            logger.error('NO MESSAGE FOUND IN UPDATE')
+            logger.error(NO_MESSAGE_IN_UPDATE)
             return False
         if (creator_user := message.from_user) is None:
             await message.reply_text("Creator user not specified")

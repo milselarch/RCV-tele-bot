@@ -160,7 +160,6 @@ class RankedChoiceBot(PollService):
             Command.DELETE_POLL: self.delete_poll,
             Command.DELETE_ACCOUNT: self.delete_account,
             Command.HELP: self.show_help,
-            Command.SET_MAX_VOTERS: self.payment_handlers.set_max_voters,
             Command.WHITELIST_USERNAME: self.whitelist_username,
             Command.PAY_SUPPORT: self.payment_support_handler,
 
@@ -194,6 +193,10 @@ class RankedChoiceBot(PollService):
         TelegramHelpers.register_command(
             self.app, command=Command.DONE,
             handler=self.context_handlers.complete_chat_context
+        )
+        TelegramHelpers.register_command(
+            self.app, command=Command.SET_MAX_VOTERS,
+            handler=self.payment_handlers.set_max_voters
         )
         # register all other telegram commands
         TelegramHelpers.register_commands(
