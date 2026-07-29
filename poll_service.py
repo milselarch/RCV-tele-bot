@@ -1,4 +1,3 @@
-import functools
 import hmac
 import json
 import logging
@@ -210,7 +209,7 @@ class PollService(object):
             user_id=user_id
         )
         if whitelist_user_result.is_err():
-            return whitelist_user_result
+            return Err(whitelist_user_result.unwrap_err())
 
         whitelisted_user = whitelist_user_result.unwrap()
         assert (
@@ -226,7 +225,7 @@ class PollService(object):
             poll_voter: PollVoters = register_result.unwrap()
             return Ok((poll_voter, False))
 
-        return register_result
+        return Err(register_result.unwrap_err())
 
     @classmethod
     def _register_voter_from_chat_whitelist(
@@ -283,7 +282,7 @@ class PollService(object):
             )
             if whitelist_user_result.is_err():
                 transaction.rollback()
-                return whitelist_user_result
+                return Err(whitelist_user_result.unwrap_err())
 
             whitelist_entry = whitelist_user_result.unwrap()
             whitelist_entry_id = whitelist_entry.id
@@ -314,7 +313,7 @@ class PollService(object):
 
             if register_result.is_err():
                 transaction.rollback()
-                return register_result
+                return Err(register_result.unwrap_err())
 
             poll_voter_row, _ = register_result.unwrap()
             return Ok(poll_voter_row)
@@ -463,11 +462,14 @@ class PollService(object):
             poll_info=poll_info
         )
 
+    @classmethod
     def generate_poll_url(
-        self, poll_id: int, tele_user: TeleUser,
-        ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID
+        cls, poll_id: int, tele_user: TeleUser,
+        ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID,
+        config: BotConfig | None = None
     ) -> str:
         """
+        :param config:
         :param poll_id:
         poll to vote for
         :param tele_user:
@@ -477,21 +479,24 @@ class PollService(object):
         :param ref_chat_id:
         telegram chat id of the originating poll message
         """
+        if config is None:
+            config = ConfigLoader.load_config()
+
+        assert config is not None
         req = PreparedRequest()
         auth_date = str(int(time.time()))
-        query_id = self.generate_secret()
+        query_id = cls.generate_secret()
         user_info = json.dumps({
             'id': tele_user.id,
             'username': tele_user.username
         })
 
-        data_check_string = self.make_data_check_string(
+        data_check_string = cls.make_data_check_string(
             auth_date=auth_date, query_id=query_id, user=user_info
         )
-        validation_hash = self.sign_data_check_string(data_check_string)
+        validation_hash = cls.sign_data_check_string(data_check_string)
         ref_info = f'{auth_date}:{poll_id}:{ref_message_id}:{ref_chat_id}'
-        ref_hash = self.sign_data_check_string(ref_info)
-
+        ref_hash = cls.sign_data_check_string(ref_info)
         params = {
             'poll_id': str(poll_id),
             'auth_date': auth_date,
@@ -502,7 +507,7 @@ class PollService(object):
             'ref_info': ref_info,
             'ref_hash': ref_hash
         }
-        webhook_url = self.config.telegram.webhook_url
+        webhook_url = config.telegram.webhook_url
         req.prepare_url(webhook_url, params)
         if req.url is None:
             raise ValueError('Invalid URL')
@@ -943,7 +948,7 @@ class PollService(object):
 
         validate_result = cls.validate_ranked_options(ranked_options)
         if validate_result.is_err():
-            return validate_result
+            return Err(validate_result.unwrap_err())
 
         try:
             poll_id = int(raw_poll_id)
@@ -1036,7 +1041,7 @@ class PollService(object):
 
         validate_result = cls.validate_ranked_options(rankings)
         if validate_result.is_err():
-            return validate_result
+            return Err(validate_result.unwrap_err())
 
         try:
             poll = Polls.select().where(Polls.id == poll_id).get()

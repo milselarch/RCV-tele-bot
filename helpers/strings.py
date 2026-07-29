@@ -17,7 +17,7 @@ HELP_TEXT = textwrap.dedent(f"""
     /{Command.USER_DETAILS} - shows your username and user id
     ——————————————————
     /{Command.CREATE_GROUP_POLL}
-    /{Command.CREATE_GROUP_POLL} @username_1 @username_2 ... @username_n:
+    /{Command.CREATE_GROUP_POLL} @username_1 @username_2 @username_last:
     Your poll's title / question to vote on
     poll option (no.1)
     poll option (no.2)
@@ -27,7 +27,7 @@ HELP_TEXT = textwrap.dedent(f"""
     Creates a new poll that chat members can self-register for   
     ——————————————————
     /{Command.CREATE_PRIVATE_POLL}
-    /{Command.CREATE_PRIVATE_POLL} @username_1 @username_2 ... @username_n:
+    /{Command.CREATE_PRIVATE_POLL} @username_1 @username_2 @username_last:
     Your poll's title / question to vote on
     poll option (no.1)
     poll option (no.2)
@@ -154,6 +154,12 @@ INVALID_MAX_VOTERS = (
     "New poll max voter limit must be greater "
     "than the existing limit"
 )
+COMMANDS_PROMPT = (
+    f"Use /{Command.HELP} to view all available commands, "
+    f"/{Command.CREATE_GROUP_POLL} to create a new poll, "
+    f"or /{Command.VOTE} to vote for an existing poll "
+)
+
 BOT_STARTED: Final[str] = 'Bot started'
 DIRECT_VOTE_TEXT: Final[str] = 'Vote via Direct Chat'
 NO_MESSAGE_IN_UPDATE: Final[str] = "NO MESSAGE FOUND IN UPDATE"

@@ -1,9 +1,10 @@
 import logging
 import textwrap
 import telegram
+import re
 
 from typing import (
-    Callable, Coroutine, Any, Dict, Optional, List, Sequence
+    Callable, Coroutine, Any, Optional, List, Sequence
 )
 
 from database import Users
@@ -85,6 +86,7 @@ class TelegramHelpers(object):
             return register_result
 
         is_newly_registered = register_result.unwrap()
+        # TODO: use a dataclass or smth to store all the flags
         return Ok((is_newly_registered, poll_id))
 
     @classmethod
@@ -153,6 +155,7 @@ class TelegramHelpers(object):
 
                 await respond_callback("User not found")
 
+            assert tele_user is not None
             tele_id = tele_user.id
             chat_username: str = tele_user.username
             assert isinstance(tele_user, TeleUser)
@@ -242,9 +245,9 @@ class TelegramHelpers(object):
     ) -> str:
         """
         extract the part of the message text that contains
-        everything after the command, but returns an empty string
+        everything after the command but returns an empty string
         if no args are found, or the message is empty
-        e.g. /command {args} -> {args}
+        i.e., /command {args} -> {args}
         """
         message: telegram.Message | None = update.message
         if message is None:
@@ -258,8 +261,23 @@ class TelegramHelpers(object):
         if ' ' not in raw_text:
             return ''
 
+        # split once on the first contiguous chunk of whitespace
+        match = re.search(r'\s+', raw_text)
+        if match is None:
+            return ''
+
+        raw_args = raw_text[match.end():]
+        seperator = raw_text[match.start():match.end()]
+        if '\n' in seperator:
+            """
+            If the character after the command is not a space,
+            we will include in the raw_args so that the command handler
+            is aware that args were start from a newline
+            e.g., /command\n{args} -> \n{args}
+            """
+            raw_args = '\n' + raw_args
+
         # slice out everything after the space after the command
-        raw_args = raw_text[raw_text.index(' ')+1:]
         raw_args = raw_args.strip() if strip else raw_args
         return raw_args
 
@@ -523,7 +541,7 @@ class TelegramHelpers(object):
             return False
 
         all_lines = raw_poll_creation_args.split('\n')
-        if ':' in all_lines[0]:
+        if ':' in raw_poll_creation_args:
             # separate poll voters (before :) from poll title and options
             split_index = raw_poll_creation_args.index(':')
             # first part of command is all the users that are in the poll
@@ -531,8 +549,10 @@ class TelegramHelpers(object):
             # second part of command is the poll question + poll options
             command_p2: str = raw_poll_creation_args[split_index+1:].strip()
         else:
-            # no : on first line to separate poll voters and
-            # poll title + questions
+            """
+            There is no ":" on first line to separate poll voters and
+            poll title + questions
+            """
             command_p1 = all_lines[0]
             command_p2 = raw_poll_creation_args[len(command_p1)+1:]
 

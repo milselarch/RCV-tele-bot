@@ -4,7 +4,8 @@ import peewee
 
 from peewee import Model
 from typing import (
-    Dict, Any, Tuple, Type, TypeVar, Generic, Iterable, TypeAlias
+    Dict, Any, Tuple, Type, TypeVar, Generic, Iterable,
+    TypeAlias
 )
 
 from result import Result, Ok, Err

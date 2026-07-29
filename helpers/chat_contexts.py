@@ -6,7 +6,7 @@ from typing import Sequence, TYPE_CHECKING
 from result import Result, Ok, Err
 from telegram import Message
 
-from helpers import helpers
+from helpers import helpers, strings
 from helpers.commands import Command
 from helpers.constants import (
     POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH, BLANK_ID, MAX_POLL_QUESTION_LENGTH
@@ -39,11 +39,7 @@ class ExtractChatContextErrors(StrEnum):
 
     def to_message(self):
         if self == ExtractChatContextErrors.NO_CHAT_CONTEXT:
-            return (
-                f"Use /{Command.HELP} to view all available commands, "
-                f"/{Command.CREATE_GROUP_POLL} to create a new poll, "
-                f"or /{Command.VOTE} to vote for an existing poll "
-            )
+            return strings.COMMANDS_PROMPT
         elif self == ExtractChatContextErrors.LOAD_FAILED:
             return "Unexpected error loading chat context type"
         else:

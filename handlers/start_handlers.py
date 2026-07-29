@@ -122,7 +122,9 @@ class StartPaymentsHandler(BaseMessageHandler):
         invoice_type = invoice_type_res.unwrap()
         if invoice_type == InvoiceTypes.INCREASE_VOTER_LIMIT:
             safe_load_from_json = IncreaseVoterLimitParams.safe_load_from_json
-            load_invoice_res = safe_load_from_json(ref_payment.invoice_payload)
+            load_invoice_res = safe_load_from_json(
+                ref_payment.invoice_payload
+            )
             if load_invoice_res.is_err():
                 return await message.reply_text("Failed to load invoice (2)")
 
@@ -174,10 +176,13 @@ class StartHandlers(object):
         args = context.args or []
 
         if len(args) == 0:
-            await update.message.reply_text(strings.BOT_STARTED)
             # check for existing chat context and process it if it exists
+            await update.message.reply_text(strings.BOT_STARTED)
             chat_context_res = extract_chat_context(update)
             if chat_context_res.is_err():
+                # (probably) no chat context found, suggest commands to use
+                chat_context_err = chat_context_res.unwrap_err()
+                await message.reply_text(chat_context_err.to_message())
                 return None
 
             extracted_context = chat_context_res.unwrap()

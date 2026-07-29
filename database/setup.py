@@ -1,7 +1,9 @@
+import peewee
+
 from peewee import MySQLDatabase, Proxy
+from typing import TYPE_CHECKING
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
-
 from database.db_helpers import TypedModel
 
 

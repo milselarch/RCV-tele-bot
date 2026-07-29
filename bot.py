@@ -133,7 +133,6 @@ class RankedChoiceBot(PollService):
         builder.post_init(self.post_init)
 
         commands_mapping = {
-            # Command.START: start_handlers.start_handler,
             Command.USER_DETAILS: self.user_details_handler,
             Command.CHAT_DETAILS: self.chat_details_handler,
             Command.CREATE_PRIVATE_POLL: self.create_poll,

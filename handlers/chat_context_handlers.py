@@ -598,7 +598,14 @@ class ContextHandlers(object):
         if message_text is None:
             return await message.reply_text(NO_MESSAGE_IN_UPDATE)
 
-        multiline_command_match = re.match('^/([a-z_]+)\\s.*', message_text)
+        """
+        Checks if the text of the message matches 
+        the pattern of a multiline command 
+        (i.e., a command followed by extra arguments which contain a new line)
+        """
+        multiline_command_match = re.match('^/([a-z_]+)\\s.*\n', message_text)
+        chat_context_res = extract_chat_context(update)
+
         if multiline_command_match is not None:
             """
             If the bot receives a formatted piece of text that 
@@ -613,12 +620,14 @@ class ContextHandlers(object):
             if command_res.is_err():
                 pass
             elif (command := command_res.unwrap()) in self.commands_mapping:
-                # TODO: remove current chat context?
+                if chat_context_res.is_ok():
+                    extracted_context = chat_context_res.unwrap()
+                    chat_context = extracted_context.chat_context
+                    chat_context.delete_instance()
+
                 handler = self.commands_mapping[command]
                 return await handler(update, context)
 
-        # TODO: match against commands mapping first
-        chat_context_res = extract_chat_context(update)
         if chat_context_res.is_err():
             error = chat_context_res.unwrap_err()
             return await message.reply_text(error.to_message())
