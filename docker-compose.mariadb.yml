@@ -1,0 +1,37 @@
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_DATABASE: ranked_choice_voting
+      MARIADB_USER: rcv_user
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/mariadb_root_pw
+      MARIADB_PASSWORD_FILE: /run/secrets/mariadb_root_pw
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    secrets:
+      - mariadb_root_pw
+    ports:
+      - "3306:3306"
+
+  redis:
+    image: redis:6
+    environment:
+      - REDIS_MAXMEMORY=${REDIS_MAXMEMORY:-512mb}
+    command: [
+      "redis-server", "--maxmemory", "${REDIS_MAXMEMORY:-512mb}",
+      "--maxmemory-policy", "allkeys-lru"
+    ]
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli ping | grep PONG" ]
+      interval: 1s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "6379:6379"
+
+volumes:
+  mariadb_data:
+
+secrets:
+  mariadb_root_pw:
+    file: ./db_user_pw.txt

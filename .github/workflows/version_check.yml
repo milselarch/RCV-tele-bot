@@ -1,0 +1,68 @@
+name: Version Increment Check
+
+on:
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  check_version_incremented:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get __VERSION__ from PR branch
+        id: pr_version
+        run: |
+          VERSION=$(python3 -c "  
+          import ast, sys  
+          with open('helpers/constants.py') as f:  
+              tree = ast.parse(f.read())  
+          for node in ast.walk(tree):  
+              if isinstance(node, ast.AnnAssign):  
+                  if isinstance(node.target, ast.Name) and node.target.id == '__VERSION__':  
+                      print(ast.literal_eval(node.value))  
+                      sys.exit(0)  
+          print('')  
+          ")  
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"  
+
+      - name: Get __VERSION__ from master branch
+        id: master_version
+        run: |
+          git fetch origin master  
+          VERSION=$(git show origin/master:helpers/constants.py | python3 -c "  
+          import ast, sys  
+          src = sys.stdin.read()  
+          tree = ast.parse(src)  
+          for node in ast.walk(tree):  
+              if isinstance(node, ast.AnnAssign):  
+                  if isinstance(node.target, ast.Name) and node.target.id == '__VERSION__':  
+                      print(ast.literal_eval(node.value))  
+                      sys.exit(0)  
+          print('')  
+          ")  
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"  
+
+      - name: Check that version has been incremented
+        run: |
+          PR_VERSION="${{ steps.pr_version.outputs.version }}"  
+          MASTER_VERSION="${{ steps.master_version.outputs.version }}"  
+          echo "PR version:   $PR_VERSION"  
+          echo "Master version: $MASTER_VERSION"  
+          if [ "$PR_VERSION" = "$MASTER_VERSION" ]; then  
+            echo "ERROR: __VERSION__ ('$PR_VERSION') must be incremented from the current master branch value ('$MASTER_VERSION')."  
+            exit 1  
+          fi  
+          python3 -c "  
+          from packaging.version import Version  
+          pr = Version('$PR_VERSION')  
+          master = Version('$MASTER_VERSION')  
+          if pr <= master:  
+              print(f'ERROR: PR version {pr} is not greater than master version {master}.')  
+              exit(1)  
+          print(f'OK: version incremented from {master} to {pr}.')  
+          "

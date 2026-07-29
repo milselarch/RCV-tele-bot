@@ -1,7 +1,9 @@
 from abc import ABCMeta, abstractmethod
 from typing import Type
 
-from base_api import BaseAPI
+from handlers.chat_context_handlers import ContextHandlers
+from helpers.config_loader import BotConfig
+from poll_service import PollService
 from database import Users, Payments, Polls
 from helpers import strings
 from helpers.chat_contexts import extract_chat_context
@@ -9,7 +11,6 @@ from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from telegram import User as TeleUser, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from helpers.start_get_params import StartGetParams
-from handlers.chat_context_handlers import context_handlers
 from handlers.payment_handlers import (
     BasePaymentParams, InvoiceTypes, IncreaseVoterLimitParams,
     PaymentHandlers
@@ -49,7 +50,7 @@ class StartVoteHandler(BaseMessageHandler):
         user: Users = update.user
 
         user_id = user.get_user_id()
-        view_poll_result = BaseAPI.get_poll_message(
+        view_poll_result = PollService.get_poll_message(
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
             username=tele_user.username,
@@ -63,7 +64,7 @@ class StartVoteHandler(BaseMessageHandler):
 
         poll_message = view_poll_result.unwrap()
         reply_markup = ReplyKeyboardMarkup(
-            BaseAPI.build_private_vote_markup(
+            PollService.build_private_vote_markup(
                 poll_id=poll_id, tele_user=tele_user
             )
         )
@@ -121,7 +122,9 @@ class StartPaymentsHandler(BaseMessageHandler):
         invoice_type = invoice_type_res.unwrap()
         if invoice_type == InvoiceTypes.INCREASE_VOTER_LIMIT:
             safe_load_from_json = IncreaseVoterLimitParams.safe_load_from_json
-            load_invoice_res = safe_load_from_json(ref_payment.invoice_payload)
+            load_invoice_res = safe_load_from_json(
+                ref_payment.invoice_payload
+            )
             if load_invoice_res.is_err():
                 return await message.reply_text("Failed to load invoice (2)")
 
@@ -151,7 +154,12 @@ class StartHandlers(object):
     chat context callbacks that get triggered when /start command
     is run in telegram DMs
     """
-    def __init__(self):
+    def __init__(
+        self, config: BotConfig,
+        context_handlers: ContextHandlers
+    ):
+        self.config = config
+        self.context_handlers = context_handlers
         self.handlers_mapping: dict[
             StartGetParams, Type[BaseMessageHandler]
         ] = {
@@ -168,15 +176,18 @@ class StartHandlers(object):
         args = context.args or []
 
         if len(args) == 0:
-            await update.message.reply_text(strings.BOT_STARTED)
             # check for existing chat context and process it if it exists
+            await update.message.reply_text(strings.BOT_STARTED)
             chat_context_res = extract_chat_context(update)
             if chat_context_res.is_err():
+                # (probably) no chat context found, suggest commands to use
+                chat_context_err = chat_context_res.unwrap_err()
+                await message.reply_text(chat_context_err.to_message())
                 return None
 
             extracted_context = chat_context_res.unwrap()
             context_type = extracted_context.context_type
-            chat_handlers = context_handlers.context_handlers
+            chat_handlers = self.context_handlers.context_handlers
 
             if context_type not in chat_handlers:
                 return await message.reply_text(
@@ -187,7 +198,7 @@ class StartHandlers(object):
             context_handler = context_handler_cls()
             return await context_handler.handle_messages(
                 extracted_context, update, context,
-                is_from_start=True
+                is_from_start=True, config=self.config
             )
 
         command_params: str = args[0]
@@ -215,6 +226,3 @@ class StartHandlers(object):
         return await context_handler.handle_messages(
             update=update, context=context, raw_payload=param_value
         )
-
-
-start_handlers = StartHandlers()

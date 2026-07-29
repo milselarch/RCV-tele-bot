@@ -1,5 +1,6 @@
 import re
 import textwrap
+from typing import Final
 
 from helpers.commands import Command
 
@@ -16,22 +17,22 @@ HELP_TEXT = textwrap.dedent(f"""
     /{Command.USER_DETAILS} - shows your username and user id
     ——————————————————
     /{Command.CREATE_GROUP_POLL}
-    /{Command.CREATE_GROUP_POLL} @username_1 @username_2 ... @username_n:
-    poll title
-    poll option 1
-    poll option 2
+    /{Command.CREATE_GROUP_POLL} @username_1 @username_2 @username_last:
+    Your poll's title / question to vote on
+    poll option (no.1)
+    poll option (no.2)
     ...
-    poll option m
+    poll option (last)
     
     Creates a new poll that chat members can self-register for   
     ——————————————————
     /{Command.CREATE_PRIVATE_POLL}
-    /{Command.CREATE_PRIVATE_POLL} @username_1 @username_2 ... @username_n:
-    poll title
-    poll option 1
-    poll option 2
+    /{Command.CREATE_PRIVATE_POLL} @username_1 @username_2 @username_last:
+    Your poll's title / question to vote on
+    poll option (no.1)
+    poll option (no.2)
     ...
-    poll option m
+    poll option (last)
     
     Creates a new poll that chat members cannot self-register for   
     ——————————————————
@@ -126,6 +127,21 @@ def generate_delete_text(deletion_token: str) -> str:
     """)
 
 
+def generate_poll_prompt(command: Command):
+    return (
+        "Enter the title / question for your new poll\n\n"
+        "Alternatively, run the following to create your poll in one shot:" 
+        "```\n"
+        f"/{command}\n"
+        "Your poll's title / question to vote on\n"
+        "poll option (no.1)\n"
+        "poll option (no.2)\n"
+        "...\n"
+        "poll option (last)\n"
+        "```"
+    )
+
+
 MAX_VOTERS_NOT_EDITABLE = (
     "Invalid poll ID - note that only the poll's creator is allowed to "
     "change the max number of voters"
@@ -138,8 +154,15 @@ INVALID_MAX_VOTERS = (
     "New poll max voter limit must be greater "
     "than the existing limit"
 )
-BOT_STARTED = 'Bot started'
-DIRECT_VOTE_TEXT = 'Vote via Direct Chat'
+COMMANDS_PROMPT = (
+    f"Use /{Command.HELP} to view all available commands, "
+    f"/{Command.CREATE_GROUP_POLL} to create a new poll, "
+    f"or /{Command.VOTE} to vote for an existing poll "
+)
+
+BOT_STARTED: Final[str] = 'Bot started'
+DIRECT_VOTE_TEXT: Final[str] = 'Vote via Direct Chat'
+NO_MESSAGE_IN_UPDATE: Final[str] = "NO MESSAGE FOUND IN UPDATE"
 
 
 def escape_markdown(string: str) -> str:

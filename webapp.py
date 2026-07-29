@@ -3,8 +3,8 @@ import argparse
 import uvicorn
 import dataclasses
 
-from load_config import *
-from base_api import BaseAPI
+from helpers.config_loader import ConfigLoader, BotConfig
+from poll_service import PollService
 from database.database import Users
 
 from fastapi import FastAPI, APIRouter
@@ -82,7 +82,7 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         if signature is None:
             return None
 
-        data_check_string = BaseAPI.make_data_check_string(
+        data_check_string = PollService.make_data_check_string(
             auth_date=params.get('auth_date', [''])[0],
             query_id=params.get('query_id', [''])[0],
             user=params.get('user', [''])[0]
@@ -94,8 +94,8 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         parse_result = cls.parse_auth_string(init_data)
         # print('PARSE_RESULT', parse_result)
         data_check_string, signature, params = parse_result
-        validation_hash = BaseAPI.sign_data_check_string(
-            data_check_string=data_check_string
+        validation_hash = PollService.sign_data_check_string(
+            data_check_string=data_check_string,
         )
 
         # print('VALIDATION_HASH', validation_hash, signature)
@@ -105,9 +105,9 @@ class VerifyMiddleware(BaseHTTPMiddleware):
         return None
 
 
-class VotingWebApp(BaseAPI):
-    def __init__(self):
-        super().__init__()
+class VotingWebApp(PollService):
+    def __init__(self, config: BotConfig):
+        super().__init__(config=config)
         self.router = APIRouter()
         self.router.add_api_route(
             '/fetch_poll', self.fetch_poll_endpoint,
@@ -151,12 +151,14 @@ class VotingWebApp(BaseAPI):
         return dataclasses.asdict(poll_info)
 
 
+bot_config = ConfigLoader.load_config()
+vote_app = VotingWebApp(bot_config)
+
 app = FastAPI()
-vote_app = VotingWebApp()
 app.include_router(vote_app.router)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=bot_config.webapp.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

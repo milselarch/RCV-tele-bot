@@ -1,4 +1,3 @@
-import functools
 import hmac
 import json
 import logging
@@ -10,15 +9,13 @@ import time
 import hashlib
 import textwrap
 import dataclasses
-
-from py_rcv import PyEliminationStrategies
-
+import typing
 import database
 
-from enum import IntEnum
-from typing_extensions import Any
+from typing import Any
 from strenum import StrEnum
 from requests import PreparedRequest
+from helpers.config_loader import BotConfig, ConfigLoader
 
 from helpers.constants import BLANK_ID
 from helpers.rcv_tally import RCVTally
@@ -26,14 +23,13 @@ from helpers.redis_cache_manager import RedisCacheManager
 from helpers.start_get_params import StartGetParams
 from helpers import constants, strings
 from helpers.strings import generate_poll_closed_message
-from load_config import TELEGRAM_BOT_TOKEN
 from telegram.ext import ApplicationBuilder
 
 from typing import List, Dict, Optional, Tuple
 from result import Ok, Err, Result
+from py_rcv import PyEliminationStrategies
 from helpers.message_buillder import MessageBuilder
 from helpers.special_votes import SpecialVotes
-from load_config import WEBHOOK_URL
 
 from database import (
     Polls, PollVoters, UsernameWhitelist, PollOptions, VoteRankings,
@@ -109,19 +105,21 @@ class PollMessage(object):
     poll_info: PollInfo
 
 
-class BaseAPI(object):
+class PollService(object):
     DELETION_TOKEN_EXPIRY = 60 * 5
     SHORT_HASH_LENGTH = 6
 
-    def __init__(self):
+    def __init__(self, config: BotConfig):
+        self.config = config
         self.cache = RedisCacheManager()
         self.rcv_tally = RCVTally()
-        database.initialize_db()
+        database.initialize_db(db_config=config.database)
 
     @staticmethod
     def __get_telegram_token():
+        config = ConfigLoader.load_config()
         # TODO: move methods using tele token to a separate class
-        return TELEGRAM_BOT_TOKEN
+        return config.telegram.bot_token
 
     def generate_delete_token(self, user: Users):
         stamp = int(time.time())
@@ -150,20 +148,18 @@ class BaseAPI(object):
 
         return Ok(True)
 
-    @classmethod
-    def create_tele_bot(cls):
-        return TelegramBot(token=cls.__get_telegram_token())
+    def create_tele_bot(self) -> TelegramBot:
+        return TelegramBot(token=self.__get_telegram_token())
 
-    @classmethod
-    def create_application_builder(cls):
+    def create_application_builder(self) -> ApplicationBuilder:
         builder = ApplicationBuilder()
-        builder.token(cls.__get_telegram_token())
+        builder.token(self.__get_telegram_token())
         return builder
 
     @classmethod
     def spawn_inline_keyboard_button(
         cls, text: str, command: CallbackCommands,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ) -> InlineKeyboardButton:
         return InlineKeyboardButton(
             text=text, callback_data=json.dumps(dict(
@@ -213,7 +209,7 @@ class BaseAPI(object):
             user_id=user_id
         )
         if whitelist_user_result.is_err():
-            return whitelist_user_result
+            return Err(whitelist_user_result.unwrap_err())
 
         whitelisted_user = whitelist_user_result.unwrap()
         assert (
@@ -229,7 +225,7 @@ class BaseAPI(object):
             poll_voter: PollVoters = register_result.unwrap()
             return Ok((poll_voter, False))
 
-        return register_result
+        return Err(register_result.unwrap_err())
 
     @classmethod
     def _register_voter_from_chat_whitelist(
@@ -286,7 +282,7 @@ class BaseAPI(object):
             )
             if whitelist_user_result.is_err():
                 transaction.rollback()
-                return whitelist_user_result
+                return Err(whitelist_user_result.unwrap_err())
 
             whitelist_entry = whitelist_user_result.unwrap()
             whitelist_entry_id = whitelist_entry.id
@@ -317,7 +313,7 @@ class BaseAPI(object):
 
             if register_result.is_err():
                 transaction.rollback()
-                return register_result
+                return Err(register_result.unwrap_err())
 
             poll_voter_row, _ = register_result.unwrap()
             return Ok(poll_voter_row)
@@ -469,9 +465,11 @@ class BaseAPI(object):
     @classmethod
     def generate_poll_url(
         cls, poll_id: int, tele_user: TeleUser,
-        ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID
+        ref_message_id: int = BLANK_ID, ref_chat_id: int = BLANK_ID,
+        config: BotConfig | None = None
     ) -> str:
         """
+        :param config:
         :param poll_id:
         poll to vote for
         :param tele_user:
@@ -481,6 +479,10 @@ class BaseAPI(object):
         :param ref_chat_id:
         telegram chat id of the originating poll message
         """
+        if config is None:
+            config = ConfigLoader.load_config()
+
+        assert config is not None
         req = PreparedRequest()
         auth_date = str(int(time.time()))
         query_id = cls.generate_secret()
@@ -495,7 +497,6 @@ class BaseAPI(object):
         validation_hash = cls.sign_data_check_string(data_check_string)
         ref_info = f'{auth_date}:{poll_id}:{ref_message_id}:{ref_chat_id}'
         ref_hash = cls.sign_data_check_string(ref_info)
-
         params = {
             'poll_id': str(poll_id),
             'auth_date': auth_date,
@@ -506,7 +507,11 @@ class BaseAPI(object):
             'ref_info': ref_info,
             'ref_hash': ref_hash
         }
-        req.prepare_url(WEBHOOK_URL, params)
+        webhook_url = config.telegram.webhook_url
+        req.prepare_url(webhook_url, params)
+        if req.url is None:
+            raise ValueError('Invalid URL')
+
         return req.url
 
     @classmethod
@@ -943,7 +948,7 @@ class BaseAPI(object):
 
         validate_result = cls.validate_ranked_options(ranked_options)
         if validate_result.is_err():
-            return validate_result
+            return Err(validate_result.unwrap_err())
 
         try:
             poll_id = int(raw_poll_id)
@@ -1036,7 +1041,7 @@ class BaseAPI(object):
 
         validate_result = cls.validate_ranked_options(rankings)
         if validate_result.is_err():
-            return validate_result
+            return Err(validate_result.unwrap_err())
 
         try:
             poll = Polls.select().where(Polls.id == poll_id).get()

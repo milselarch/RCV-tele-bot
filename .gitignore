@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# database password file
+db_user_pw.txt
+
 **/.uuid
 logs/*
 logs/
@@ -130,6 +133,7 @@ celerybeat.pid
 # config files
 *.yml
 !*.example.yml
+!docker-compose.mariadb.yml
 !.github/**/*.yml
 
 # Environments

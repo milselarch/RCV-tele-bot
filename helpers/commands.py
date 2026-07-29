@@ -1,6 +1,11 @@
 from enum import StrEnum
+from typing import Self
+
+from helpers.helpers import check_enum_distinct_values
+from result import Result, Ok, Err
 
 
+@check_enum_distinct_values
 class Command(StrEnum):
     START = "start"
     USER_DETAILS = "user_details"
@@ -42,3 +47,10 @@ class Command(StrEnum):
     ENTER_MAINTENANCE_ADMIN = "enter_maintenance_admin"
     EXIT_MAINTENANCE_ADMIN = "exit_maintenance_admin"
     SEND_MSG_ADMIN = "send_msg_admin"
+
+    @classmethod
+    def try_from(cls, value: str) -> Result[Self, ValueError]:
+        try:
+            return Ok(cls(value))
+        except ValueError as e:
+            return Err(e)

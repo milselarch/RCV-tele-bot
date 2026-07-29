@@ -133,13 +133,26 @@ Project was built using `Python3.12`
    8.2. production (requires ASGI configuration as well)  
    `uvicorn webapp:app --host 0.0.0.0 --port <YOUR_PORT_NUMBER>`
 
+## Docker Deployment
+To run supporting redis and mysql containers, create 
+a `db_user_pw.txt` file with your DB password and 
+run the following command from the project root:
+```shell
+docker-compose -f ./docker-compose.mariadb.yml up -d
+```
+
+Tear down everything including volumes with:
+```shell
+docker compose -f .\docker-compose.mariadb.yml down -v
+```
+
 ### Migrations
 
 Migrations are handled using `peewee-migrations`
-1. Create a new migration
-   `pw_migrate create --database ranked_choice_voting --auto migrations/<MIGRATION_NAME>`
-2. Apply the migration
-   `pw_migrate migrate`
+1. Create a new migration  
+   `pw_migrate create --database mysql://rcv_user:YOUR_PASSWORD@localhost/ranked_choice_voting" --auto migrations/<MIGRATION_NAME>`
+2. Apply the migration  
+   `pw_migrate migrate --database mysql://rcv_user:YOUR_PASSWORD@localhost/ranked_choice_voting"`
 
 ### Database Schema
 Database ORM definition can be found in `database.py`
@@ -164,16 +177,40 @@ Production build instructions:
 3. `firebase deploy`
 
 ### TODO:
-1. load config from yml using dataclass 
-2. allow multiple poll option entries to be entered at once in interactive mode
-3. dockerization
-4. GitHub action for CI/CD
-5. GitHub action for version increments
+1. webapp for poll creation and management
+2. use a shortcode to reference polls rather than by ID
+3. remove chat contexts after a new command has been issued
+4. move chat contexts to redis cache instead of database
+5. organization from which all members are whitelisted for a poll
+   - delegate appointment
+   - vote to admit and remove members
+6. visible exit polling
+7. simple yes / no poll support
+8. allow multiple poll option entries to be entered at once in interactive mode
+9. dockerization
+10. GitHub action for CI/CD
+11. add a todo bot (I ran out of bots)
+    - auto-uncheck conditions
+      - when any subconditions are unchecked
+    - auto-check conditions
+      - when all subconditions are checked
+    - reminders for uncompleted tasks
+      - days of the week
+      - X amount of time since last reminder
+      - when unchecked for >X amount of time
+      - when going from checked to unchecked
+12. migrate DB from MySQL to postgres
+13. add explanation of RCV elimination strategies in /edit_poll_strategy
+14. implement homomorphically encrypted computation of poll results
+15. rewrite everything in rust
+    - could probably start with db-related code
 
 ### todos done:
-1. add webapp interface for voting
-2. handle emoji support in poll options
-3. use own maturin lib for RCV poll result computation
-4. support choice of RCV algorithm for poll result computation
-5. desegregate id and tele_id in users table
-6. allow voter registration by telegram ID
+1. load config from yml using dataclass 
+2. GitHub action for version increments
+3. add webapp interface for voting
+4. handle emoji support in poll options
+5. use own maturin lib for RCV poll result computation
+6. support the choice of RCV algorithm for poll result computation
+7. desegregate id and tele_id in the users table
+8. allow voter registration by telegram ID

@@ -3,12 +3,13 @@ from __future__ import annotations
 import datetime
 import logging
 
+import peewee
 # noinspection PyUnresolvedReferences
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok, Err
 
 from database import database
-from database.setup import database_proxy
+from database.setup import database_proxy, BaseModel
 from helpers import constants
 from .subscription_tiers import SubscriptionTiers
 from typing import Self, List, Iterable
@@ -19,8 +20,6 @@ from peewee import (
     BigIntegerField, CharField,
     IntegerField,  DateTimeField, BigAutoField
 )
-
-from database.setup import BaseModel
 
 
 # maps telegram user ids to their usernames
@@ -35,11 +34,13 @@ class Users(BaseModel):
 
     class Meta:
         database = database_proxy
+        """
+        Non-unique index for usernames
+        telegram usernames have to be unique. However, because
+        every username change can't be tracked instantly, 
+        it is possible there will be collisions here regardless
+        """
         indexes = (
-            # Non-unique index for usernames
-            # telegram usernames have to be unique, however because
-            # every username changes can't be tracked instantly
-            # it possible there will be collisions here regardless
             (('username',), False),
         )
 
@@ -70,7 +71,7 @@ class Users(BaseModel):
         tele_id: int | EmptyField = Empty,
         username: str | None | EmptyField = Empty
     ) -> BoundRowFields[Self]:
-        return BoundRowFields(cls, {
+        return BoundRowFields[Self](cls, {
             cls.id: user_id, cls.tele_id: tele_id, cls.username: username
         })
 
@@ -115,12 +116,14 @@ class Users(BaseModel):
             # actually remove self from database
             self.delete_instance()
 
-        logger.warning(f"Deleted user #{user_id} with tele_id #{tele_user_id}")
+        logger.warning(
+            f"Deleted user #{user_id} with tele_id #{tele_user_id}"
+        )
 
     @classmethod
     def get_from_tele_id(
         cls, tele_id: int
-    ) -> Result[Users, Users.DoesNotExist]:
+    ) -> Result[Users, peewee.DoesNotExist]:
         return cls.build_from_fields(tele_id=tele_id).safe_get()
 
     def get_owned_polls(self) -> List[database.Polls]:

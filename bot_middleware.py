@@ -1,8 +1,8 @@
 import traceback
 
 from telegram import Update
-from load_config import SUDO_TELE_ID
 from typing import Callable, Awaitable
+from helpers.config_loader import ConfigLoader
 
 
 def track_errors(func):
@@ -17,12 +17,21 @@ def track_errors(func):
 
 
 def admin_only(func: Callable[..., Awaitable]) -> Callable[..., Awaitable]:
+    config = ConfigLoader.load_config()
+    sudo_tele_id = config.telegram.sudo_id
+
     async def caller(self, update: Update, *args, **kwargs):
         message = update.message
+        if not message:
+            return False
+
         user = message.from_user
+        if user is None:
+            return False
+
         user_id = user.id
 
-        if user_id != SUDO_TELE_ID:
+        if user_id != sudo_tele_id:
             await message.reply_text('ACCESS DENIED')
             return False
 

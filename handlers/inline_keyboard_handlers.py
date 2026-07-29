@@ -2,12 +2,13 @@ import asyncio
 import json
 import logging
 import time
-
+import typing
 import telegram
-import base_api
 
 from abc import ABCMeta, abstractmethod
-from base_api import BaseAPI, UserRegistrationStatus, CallbackCommands
+from poll_service import (
+    PollService, UserRegistrationStatus, CallbackCommands
+)
 from telegram._utils.types import ReplyMarkup
 from typing import Optional, Type
 from telegram.ext import CallbackContext
@@ -16,7 +17,9 @@ from database.db_helpers import UserID
 from helpers import constants, strings
 from helpers.chat_contexts import VoteChatContext
 from helpers.locks_manager import PollsLockManager
-from helpers.strings import generate_poll_closed_message, generate_poll_deleted_message
+from helpers.strings import (
+    generate_poll_closed_message, generate_poll_deleted_message
+)
 from tele_helpers import ModifiedTeleUpdate, TelegramHelpers
 from telegram import User as TeleUser, Message
 from json import JSONDecodeError
@@ -32,7 +35,7 @@ from helpers.message_contexts import (
 
 async def register_for_poll(
     update: ModifiedTeleUpdate, context: CallbackContext,
-    callback_data: dict[str, any]
+    callback_data: dict[str, typing.Any]
 ):
     poll_id = int(callback_data['poll_id'])
     query = update.callback_query
@@ -49,13 +52,13 @@ async def register_for_poll(
         poll_id=poll_id, user_id=user.get_user_id(),
         username=tele_user.username
     )
-    reply_text = BaseAPI.reg_status_to_msg(registration_status, poll_id)
-    if registration_status != base_api.UserRegistrationStatus.REGISTERED:
+    reply_text = PollService.reg_status_to_msg(registration_status, poll_id)
+    if registration_status != UserRegistrationStatus.REGISTERED:
         await query.answer(reply_text)
         return False
 
     assert registration_status == UserRegistrationStatus.REGISTERED
-    poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+    poll_info = PollService.unverified_read_poll_info(poll_id=poll_id)
     notification = query.answer(reply_text)
     poll_message_update = TelegramHelpers.update_poll_message(
         poll_info=poll_info, chat_id=chat_id,
@@ -67,7 +70,7 @@ async def register_for_poll(
 
 def _register_voter(
     poll_id: int, user_id: UserID, username: Optional[str]
-) -> base_api.UserRegistrationStatus:
+) -> UserRegistrationStatus:
     """
     Registers a user by using the username whitelist if applicable,
     or by directly creating a PollVoters entry otherwise
@@ -75,34 +78,34 @@ def _register_voter(
     """
     poll = Polls.get_or_none(Polls.id == poll_id)
     if poll is None:
-        return base_api.UserRegistrationStatus.POLL_NOT_FOUND
+        return UserRegistrationStatus.POLL_NOT_FOUND
     elif poll.closed:
-        return base_api.UserRegistrationStatus.POLL_CLOSED
+        return UserRegistrationStatus.POLL_CLOSED
 
     try:
         PollVoters.build_from_fields(
             user_id=user_id, poll_id=poll_id
         ).get()
-        return base_api.UserRegistrationStatus.ALREADY_REGISTERED
+        return UserRegistrationStatus.ALREADY_REGISTERED
     except PollVoters.DoesNotExist:
         pass
 
     try:
         user = Users.build_from_fields(user_id=user_id).get()
     except Users.DoesNotExist:
-        return base_api.UserRegistrationStatus.USER_NOT_FOUND
+        return UserRegistrationStatus.USER_NOT_FOUND
 
     try:
         subscription_tier = SubscriptionTiers(user.subscription_tier)
     except ValueError:
-        return base_api.UserRegistrationStatus.INVALID_SUBSCRIPTION_TIER
+        return UserRegistrationStatus.INVALID_SUBSCRIPTION_TIER
 
     has_empty_whitelist_entry = False
     ignore_voter_limit = subscription_tier != SubscriptionTiers.FREE
 
     if username is not None:
         assert isinstance(username, str)
-        whitelist_entry_result = base_api.BaseAPI.get_whitelist_entry(
+        whitelist_entry_result = PollService.get_whitelist_entry(
             poll_id=poll_id, user_id=user_id, username=username
         )
 
@@ -111,11 +114,11 @@ def _register_voter(
             whitelist_entry = whitelist_entry_result.unwrap()
 
             if whitelist_entry.username == username:
-                return base_api.UserRegistrationStatus.ALREADY_REGISTERED
+                return UserRegistrationStatus.ALREADY_REGISTERED
             elif whitelist_entry.username is None:
                 has_empty_whitelist_entry = True
 
-    register_from_whitelist = BaseAPI.register_from_username_whitelist
+    register_from_whitelist = PollService.register_from_username_whitelist
 
     with db.atomic():
         if has_empty_whitelist_entry:
@@ -129,7 +132,7 @@ def _register_voter(
             assert isinstance(username, str)
             username_str = username
 
-            whitelist_user_result = BaseAPI.get_whitelist_entry(
+            whitelist_user_result = PollService.get_whitelist_entry(
                 username=username_str, poll_id=poll_id,
                 user_id=user_id
             )
@@ -165,7 +168,7 @@ def _register_voter(
         Register by adding user to PollVoters directly if and only if
         registration via username whitelist didn't happen
         """
-        register_result = base_api.BaseAPI.register_user_id(
+        register_result = PollService.register_user_id(
             poll_id=poll_id, user_id=user_id,
             ignore_voter_limit=ignore_voter_limit
         )
@@ -173,9 +176,9 @@ def _register_voter(
         if register_result.is_ok():
             _, newly_registered = register_result.unwrap()
             if newly_registered:
-                return base_api.UserRegistrationStatus.REGISTERED
+                return UserRegistrationStatus.REGISTERED
             else:
-                return base_api.UserRegistrationStatus.ALREADY_REGISTERED
+                return UserRegistrationStatus.ALREADY_REGISTERED
         else:
             assert register_result.is_err()
             return register_result.err_value
@@ -188,7 +191,7 @@ class BaseMessageHandler(object, metaclass=ABCMeta):
     @abstractmethod
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         ...
 
@@ -196,7 +199,7 @@ class BaseMessageHandler(object, metaclass=ABCMeta):
 class RegisterPollMessageHandler(BaseMessageHandler):
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         poll_id = int(callback_data['poll_id'])
         query = update.callback_query
@@ -214,13 +217,13 @@ class RegisterPollMessageHandler(BaseMessageHandler):
             username=tele_user.username
         )
 
-        reply_text = BaseAPI.reg_status_to_msg(registration_status, poll_id)
-        if registration_status != base_api.UserRegistrationStatus.REGISTERED:
+        reply_text = PollService.reg_status_to_msg(registration_status, poll_id)
+        if registration_status != UserRegistrationStatus.REGISTERED:
             await query.answer(reply_text)
             return False
 
         assert registration_status == UserRegistrationStatus.REGISTERED
-        poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+        poll_info = PollService.unverified_read_poll_info(poll_id=poll_id)
         notification = query.answer(reply_text)
         poll_message_update = TelegramHelpers.update_poll_message(
             poll_info=poll_info, chat_id=chat_id,
@@ -233,7 +236,7 @@ class RegisterPollMessageHandler(BaseMessageHandler):
 class DeletePollMessageHandler(BaseMessageHandler):
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         query = update.callback_query
         poll_id = int(callback_data['poll_id'])
@@ -280,7 +283,7 @@ class DeletePollMessageHandler(BaseMessageHandler):
 class AddVoteMessageHandler(BaseMessageHandler):
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         query = update.callback_query
         message_id = query.message.message_id
@@ -301,7 +304,7 @@ class AddVoteMessageHandler(BaseMessageHandler):
             if error == ExtractMessageContextErrors.LOAD_FAILED:
                 return await query.answer("Failed to load context")
 
-            poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+            poll_info = PollService.unverified_read_poll_info(poll_id=poll_id)
             vote_context = VoteMessageContext(
                 message_id=message_id, poll_id=poll_id,
                 max_options=poll_info.max_options,
@@ -333,7 +336,7 @@ class AddVoteMessageHandler(BaseMessageHandler):
 class UndoVoteRankingMessageHandler(BaseMessageHandler):
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         query = update.callback_query
         extracted_message_context_res = extract_message_context(update)
@@ -372,7 +375,7 @@ class UndoVoteRankingMessageHandler(BaseMessageHandler):
 class ResetVoteMessageHandler(BaseMessageHandler):
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         query = update.callback_query
         extracted_message_context_res = extract_message_context(update)
@@ -399,14 +402,14 @@ class ResetVoteMessageHandler(BaseMessageHandler):
 class ViewVoteMessageHandler(BaseMessageHandler):
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         query = update.callback_query
         extracted_message_context_res = extract_message_context(update)
         poll_id = int(callback_data['poll_id'])
 
         if extracted_message_context_res.is_err():
-            has_voted = BaseAPI.check_has_voted(
+            has_voted = PollService.check_has_voted(
                 poll_id=poll_id, user_id=update.user.id
             )
             if has_voted:
@@ -439,7 +442,7 @@ class ViewVoteMessageHandler(BaseMessageHandler):
 class SubmitVoteMessageHandler(BaseMessageHandler):
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         query = update.callback_query
         message: Message = query.message
@@ -459,7 +462,7 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
         if extracted_message_context_res.is_err():
             # message chat context is empty
             # (i.e. number buttons weren't pressed)
-            has_voted = BaseAPI.check_has_voted(
+            has_voted = PollService.check_has_voted(
                 poll_id=poll_id, user_id=update.user.id
             )
             if has_voted:
@@ -476,7 +479,7 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
 
         vote_context = vote_context_res.unwrap()
         # print('TELE_USER_ID:', tele_user.id)
-        register_vote_result = BaseAPI.register_vote(
+        register_vote_result = PollService.register_vote(
             chat_id=chat_id, rankings=vote_context.rankings,
             poll_id=vote_context.poll_id,
             username=tele_user.username, user_tele_id=tele_user.id
@@ -492,7 +495,7 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
         await query.answer("Vote Submitted")
 
         if is_first_vote or newly_registered:
-            poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+            poll_info = PollService.unverified_read_poll_info(poll_id=poll_id)
             await TelegramHelpers.update_poll_message(
                 poll_info=poll_info, chat_id=chat_id,
                 message_id=message_id, context=context,
@@ -505,7 +508,7 @@ class SubmitVoteMessageHandler(BaseMessageHandler):
 class RegisterSubmitMessageHandler(BaseMessageHandler):
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         user = update.user
         user_id = user.get_user_id()
@@ -542,7 +545,7 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
 
             vote_context = vote_context_res.unwrap()
             # print('TELE_USER_ID:', tele_user.id)
-            register_vote_result = BaseAPI.register_vote(
+            register_vote_result = PollService.register_vote(
                 chat_id=chat_id, rankings=vote_context.rankings,
                 poll_id=vote_context.poll_id,
                 username=tele_user.username, user_tele_id=tele_user.id
@@ -557,7 +560,7 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
             extracted_message_context.message_context.delete_instance()
 
             if newly_registered:
-                poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+                poll_info = PollService.unverified_read_poll_info(poll_id=poll_id)
                 await TelegramHelpers.update_poll_message(
                     poll_info=poll_info, chat_id=chat_id,
                     message_id=message_id, context=context,
@@ -582,19 +585,19 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
             )
             if register_status == UserRegistrationStatus.REGISTERED:
                 newly_registered = True
-                poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+                poll_info = PollService.unverified_read_poll_info(poll_id=poll_id)
                 coroutines.append(TelegramHelpers.update_poll_message(
                     poll_info=poll_info, chat_id=chat_id,
                     message_id=message_id, context=context,
                     poll_locks_manager=PollsLockManager()
                 ))
             else:
-                return await query.answer(BaseAPI.reg_status_to_msg(
+                return await query.answer(PollService.reg_status_to_msg(
                     register_status, poll_id
                 ))
 
         # create vote chat DM context and try to send a message to the user
-        poll_info_res = BaseAPI.read_poll_info(
+        poll_info_res = PollService.read_poll_info(
             poll_id=poll_id, user_id=user_id,
             username=tele_user.username, chat_id=message.chat_id
         )
@@ -633,12 +636,12 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
         coroutine = query.answer(resp)
         coroutines.append(coroutine)
 
-        poll_message = BaseAPI.generate_poll_message(
+        poll_message = PollService.generate_poll_message(
             poll_info=poll_info, bot_username=bot_username,
             add_instructions=False
         )
         poll = poll_message.poll_info.metadata
-        reply_markup = BaseAPI.generate_vote_markup(
+        reply_markup = PollService.generate_vote_markup(
             tele_user=tele_user, poll_id=poll_id, chat_type='private',
             open_registration=poll.open_registration,
             num_options=poll_message.poll_info.max_options
@@ -657,7 +660,7 @@ class RegisterSubmitMessageHandler(BaseMessageHandler):
 class VoteDirectChatMessageHandler(BaseMessageHandler):
     async def handle_queries(
         self, update: ModifiedTeleUpdate, context: CallbackContext,
-        callback_data: dict[str, any]
+        callback_data: dict[str, typing.Any]
     ):
         user = update.user
         user_id = user.get_user_id()
@@ -692,7 +695,7 @@ class VoteDirectChatMessageHandler(BaseMessageHandler):
             )
             if register_status == UserRegistrationStatus.REGISTERED:
                 newly_registered = True
-                poll_info = BaseAPI.unverified_read_poll_info(poll_id=poll_id)
+                poll_info = PollService.unverified_read_poll_info(poll_id=poll_id)
                 coroutines.append(TelegramHelpers.update_poll_message(
                     poll_info=poll_info, chat_id=chat_id,
                     message_id=message_id, context=context,
@@ -700,12 +703,12 @@ class VoteDirectChatMessageHandler(BaseMessageHandler):
                 ))
             else:
                 # TODO: this shouldn't happen
-                return await query.answer(BaseAPI.reg_status_to_msg(
+                return await query.answer(PollService.reg_status_to_msg(
                     register_status, poll_id
                 ))
 
         # create vote chat DM context and try to send a message to the user
-        poll_info_res = BaseAPI.read_poll_info(
+        poll_info_res = PollService.read_poll_info(
             poll_id=poll_id, user_id=user_id,
             username=tele_user.username, chat_id=message.chat_id
         )
@@ -746,12 +749,12 @@ class VoteDirectChatMessageHandler(BaseMessageHandler):
         coroutine = query.answer(resp)
         coroutines.append(coroutine)
 
-        poll_message = BaseAPI.generate_poll_message(
+        poll_message = PollService.generate_poll_message(
             poll_info=poll_info, bot_username=bot_username,
             add_instructions=False
         )
         poll = poll_message.poll_info.metadata
-        reply_markup = BaseAPI.generate_vote_markup(
+        reply_markup = PollService.generate_vote_markup(
             tele_user=tele_user, poll_id=poll_id, chat_type='private',
             open_registration=poll.open_registration,
             num_options=poll_message.poll_info.max_options,
@@ -813,7 +816,7 @@ class InlineKeyboardHandlers(object):
 
         try:
             raw_command = callback_data['command']
-            command = base_api.CallbackCommands(raw_command)
+            command = CallbackCommands(raw_command)
         except ValueError:
             return await query.answer("Invalid callback command")
         except KeyError:

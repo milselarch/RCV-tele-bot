@@ -16,3 +16,7 @@ dynamic = ["version"]
 features = ["pyo3/extension-module"]
 [tool.maturin.package]
 include = ["*.pyi"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["helpers", "database", "handlers"]

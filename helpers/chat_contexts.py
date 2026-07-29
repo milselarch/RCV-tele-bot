@@ -2,17 +2,18 @@ import dataclasses
 import textwrap
 
 from enum import StrEnum
-from typing import Sequence
+from typing import Sequence, TYPE_CHECKING
 from result import Result, Ok, Err
 from telegram import Message
 
-from helpers import helpers
+from helpers import helpers, strings
 from helpers.commands import Command
 from helpers.constants import (
     POLL_MAX_OPTIONS, POLL_OPTION_MAX_LENGTH, BLANK_ID, MAX_POLL_QUESTION_LENGTH
 )
 from helpers.contexts import BaseVoteContext
 from helpers.message_buillder import MessageBuilder
+from helpers.modified_tele_update import ModifiedTeleUpdate
 from helpers.strings import POLL_OPTIONS_LIMIT_REACHED_TEXT
 
 from database.subscription_tiers import SubscriptionTiers
@@ -22,7 +23,6 @@ from database import (
     ChatContextStateTypes, SerializableChatContext, Users, Polls,
     ChatWhitelist, UsernameWhitelist, PollOptions, PollVoters
 )
-from tele_helpers import ModifiedTeleUpdate
 
 
 @dataclasses.dataclass
@@ -39,11 +39,7 @@ class ExtractChatContextErrors(StrEnum):
 
     def to_message(self):
         if self == ExtractChatContextErrors.NO_CHAT_CONTEXT:
-            return (
-                f"Use /{Command.HELP} to view all available commands, "
-                f"/{Command.CREATE_GROUP_POLL} to create a new poll, "
-                f"or /{Command.VOTE} to vote for an existing poll "
-            )
+            return strings.COMMANDS_PROMPT
         elif self == ExtractChatContextErrors.LOAD_FAILED:
             return "Unexpected error loading chat context type"
         else:
@@ -80,7 +76,7 @@ def extract_chat_context(
 
 
 @dataclasses.dataclass
-class PollCreatorTemplate(object):
+class PollBuilderTemplate(object):
     creator_id: UserID
     user_rows: Sequence[BoundRowFields[Users]] = ()
     poll_user_tele_ids: Sequence[int] = ()
@@ -277,8 +273,8 @@ class PollCreationChatContext(SerializableChatContext):
 
     def to_template(
         self, creator_id: UserID, subscription_tier: SubscriptionTiers
-    ) -> PollCreatorTemplate:
-        return PollCreatorTemplate(
+    ) -> PollBuilderTemplate:
+        return PollBuilderTemplate(
             creator_id=creator_id,
             subscription_tier=subscription_tier,
             poll_options=self.poll_options,

@@ -10,13 +10,13 @@ import peewee
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok, Err
 
+from helpers.config_loader import DatabaseConfig, ConfigLoader
 from database.setup import DB, BaseModel, database_proxy
 from database.users import Users
 from database.payments import Payments
 from database.callback_context_state import CallbackContextState
 from database.message_context_state import MessageContextState
 
-from load_config import YAML_CONFIG
 from typing import Self, Optional, Type, List
 from database.db_helpers import (
     BoundRowFields, Empty, EmptyField, UserID
@@ -24,7 +24,7 @@ from database.db_helpers import (
 from peewee import (
     BigIntegerField, CharField, SmallIntegerField,
     IntegerField, AutoField, TextField, DateTimeField,
-    BooleanField, ForeignKeyField, SQL, Database, BigAutoField,
+    BooleanField, ForeignKeyField, SQL, BigAutoField,
 )
 
 initialised_db: DB | None = None
@@ -40,12 +40,14 @@ def get_tables() -> list[Type[BaseModel]]:
 
 
 # TODO: use a dataclass to type YAML_CONFIG and its subfields
-def initialize_db(db: Database | None = None):
+def initialize_db(
+    db_config: DatabaseConfig, db: DB | None = None
+):
     if db is None:
         db = DB(
-            database='ranked_choice_voting',
-            user=YAML_CONFIG['database']['user'],
-            password=YAML_CONFIG['database']['password'],
+            database=db_config.name,
+            user=db_config.user,
+            password=db_config.password,
             charset='utf8mb4'
         )
 
@@ -341,7 +343,7 @@ class PollWinners(BaseModel):
     ]:
         get_result = cls.build_from_fields(poll_id=poll_id).safe_get()
         if get_result.is_err():
-            return get_result
+            return Err(get_result.unwrap_err())
 
         poll_winner = get_result.unwrap()
         winning_option = poll_winner.option
@@ -375,6 +377,6 @@ class SupportTickets(BaseModel):
 # database should be connected if called from pem db migrations
 called_from_pem = os.path.basename(sys.argv[0]) == 'pem'
 if (__name__ == '__main__') or called_from_pem:
-    print('TESTING')
+    config = ConfigLoader.load_config()
     # Create tables (if they don't exist)
-    initialize_db()
+    initialize_db(db_config=config.database)

@@ -1,19 +1,25 @@
 import logging
 import textwrap
 import telegram
+import re
 
-from typing import Callable, Coroutine, Any, Dict, Optional, List
+from typing import (
+    Callable, Coroutine, Any, Optional, List, Sequence
+)
 
-from py_rcv.py_rcv import PyEliminationStrategies
+from database import Users
+from helpers import constants
+from helpers.chat_contexts import PollBuilderTemplate
 from result import Result, Err, Ok
-from sqlalchemy.util import await_only
 
-from base_api import BaseAPI, PollInfo
+from helpers.commands import Command
+from helpers.modified_tele_update import ModifiedTeleUpdate, CommandsMapping
+from poll_service import PollService, PollInfo
 from bot_middleware import track_errors
 from helpers.locks_manager import PollsLockManager
 from helpers.message_buillder import MessageBuilder
 
-from telegram import Message
+from telegram import Message, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, MessageHandler, CallbackContext, CallbackQueryHandler,
     CommandHandler, ContextTypes, PreCheckoutQueryHandler
@@ -25,11 +31,11 @@ from telegram import (
     Update as BaseTeleUpdate, User as TeleUser
 )
 
-from database import Users, Polls, ChatWhitelist
-from database.database import UserID, PollOptions
-
+from database.database import UserID, PollOptions, Polls, ChatWhitelist
 from helpers.rcv_tally import RCVTally, GetPollWinnerInfo
 from helpers.redis_cache_manager import GetPollWinnerStatus
+from py_rcv import PyEliminationStrategies
+from helpers.strings import generate_poll_created_message, NO_MESSAGE_IN_UPDATE
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -37,33 +43,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-class ModifiedTeleUpdate(object):
-    def __init__(
-        self, update: BaseTeleUpdate, user: Users
-    ):
-        self.update: BaseTeleUpdate = update
-        self.user: Users = user
-
-    @property
-    def callback_query(self):
-        return self.update.callback_query
-
-    @property
-    def message(self):
-        return self.update.message
-
-    @property
-    def effective_message(self):
-        return self.update.effective_message
-
-    @property
-    def pre_checkout_query(self):
-        return self.update.pre_checkout_query
-
-    def is_group_chat(self) -> bool:
-        return self.update.message.chat.type != 'private'
 
 
 class TelegramHelpers(object):
@@ -87,7 +66,7 @@ class TelegramHelpers(object):
             error_message.add('no poll id specified')
             return Err(error_message)
 
-        unpack_result = BaseAPI.unpack_rankings_and_poll_id(raw_text)
+        unpack_result = PollService.unpack_rankings_and_poll_id(raw_text)
 
         if unpack_result.is_err():
             assert isinstance(unpack_result, Err)
@@ -98,7 +77,7 @@ class TelegramHelpers(object):
         rankings: List[int] = unpacked_result[1]
 
         # print('PRE_REGISTER')
-        register_result = BaseAPI.register_vote(
+        register_result = PollService.register_vote(
             poll_id=poll_id, rankings=rankings,
             user_tele_id=user_tele_id, username=username,
             chat_id=chat_id
@@ -107,6 +86,7 @@ class TelegramHelpers(object):
             return register_result
 
         is_newly_registered = register_result.unwrap()
+        # TODO: use a dataclass or smth to store all the flags
         return Ok((is_newly_registered, poll_id))
 
     @classmethod
@@ -175,6 +155,7 @@ class TelegramHelpers(object):
 
                 await respond_callback("User not found")
 
+            assert tele_user is not None
             tele_id = tele_user.id
             chat_username: str = tele_user.username
             assert isinstance(tele_user, TeleUser)
@@ -233,16 +214,24 @@ class TelegramHelpers(object):
     @classmethod
     def register_commands(
         cls, dispatcher: Application,
-        commands_mapping: Dict[
-            str, Callable[[ModifiedTeleUpdate, ...], Coroutine]
-        ],
+        commands_mapping: CommandsMapping
     ):
         for command_name in commands_mapping:
-            handler = commands_mapping[command_name]
-            wrapped_handler = cls.wrap_command_handler(handler)
-            dispatcher.add_handler(CommandHandler(
-                command_name, wrapped_handler
-            ))
+            cls.register_command(
+                dispatcher=dispatcher,
+                command=command_name,
+                handler=commands_mapping[command_name]
+            )
+
+    @classmethod
+    def register_command(
+        cls, dispatcher: Application, command: Command,
+        handler: Callable[[ModifiedTeleUpdate, ...], Coroutine]
+    ):
+        wrapped_handler = cls.wrap_command_handler(handler)
+        dispatcher.add_handler(CommandHandler(
+            command, wrapped_handler
+        ))
 
     @classmethod
     def wrap_command_handler(cls, handler):
@@ -256,11 +245,11 @@ class TelegramHelpers(object):
     ) -> str:
         """
         extract the part of the message text that contains
-        everything after the command, but returns an empty string
+        everything after the command but returns an empty string
         if no args are found, or the message is empty
-        e.g. /command {args} -> {args}
+        i.e., /command {args} -> {args}
         """
-        message: telegram.Message = update.message
+        message: telegram.Message | None = update.message
         if message is None:
             return ''
 
@@ -272,7 +261,23 @@ class TelegramHelpers(object):
         if ' ' not in raw_text:
             return ''
 
-        raw_args = raw_text[raw_text.index(' ')+1:]
+        # split once on the first contiguous chunk of whitespace
+        match = re.search(r'\s+', raw_text)
+        if match is None:
+            return ''
+
+        raw_args = raw_text[match.end():]
+        seperator = raw_text[match.start():match.end()]
+        if '\n' in seperator:
+            """
+            If the character after the command is not a space,
+            we will include in the raw_args so that the command handler
+            is aware that args were start from a newline
+            e.g., /command\n{args} -> \n{args}
+            """
+            raw_args = '\n' + raw_args
+
+        # slice out everything after the space after the command
         raw_args = raw_args.strip() if strip else raw_args
         return raw_args
 
@@ -372,7 +377,7 @@ class TelegramHelpers(object):
         tele_user: TeleUser | None = update.message.from_user
 
         user_id = user.get_user_id()
-        view_poll_result = BaseAPI.get_poll_message(
+        view_poll_result = PollService.get_poll_message(
             poll_id=poll_id, user_id=user_id,
             bot_username=context.bot.username,
             username=user.username,
@@ -389,7 +394,7 @@ class TelegramHelpers(object):
         poll_message = view_poll_result.unwrap()
         poll = poll_message.poll_info.metadata
 
-        reply_markup = BaseAPI.generate_vote_markup(
+        reply_markup = PollService.generate_vote_markup(
             tele_user=tele_user, poll_id=poll_id, chat_type=chat_type,
             open_registration=poll.open_registration,
             num_options=poll_message.poll_info.max_options
@@ -424,7 +429,7 @@ class TelegramHelpers(object):
         async with chat_lock:
             if await poll_locks.has_correct_voter_count(voter_count):
                 try:
-                    poll_display_message = BaseAPI.generate_poll_message(
+                    poll_display_message = PollService.generate_poll_message(
                         poll_info=poll_info, bot_username=bot_username,
                         add_instructions=add_instructions
                     )
@@ -494,3 +499,169 @@ class TelegramHelpers(object):
                 (Voting strategy used: {vote_strategy_name})
             """))
             return get_winner_result
+
+    @staticmethod
+    async def create_poll(
+        update: ModifiedTeleUpdate, user_entry: Users,
+        context: ContextTypes.DEFAULT_TYPE,
+        raw_poll_creation_args: str, open_registration: bool,
+        whitelisted_chat_ids: Sequence[int] = ()
+    ) -> bool:
+        """
+        :param update:
+        :param user_entry:
+        :param context:
+        :param raw_poll_creation_args:
+        Everything after the command + space
+        e.g., /create_poll {args} -> {args}
+        :param open_registration:
+        :param whitelisted_chat_ids:
+        :return:
+        """
+        if (message := update.message) is None:
+            logger.error(NO_MESSAGE_IN_UPDATE)
+            return False
+        if (creator_user := message.from_user) is None:
+            await message.reply_text("Creator user not specified")
+            return False
+
+        creator_tele_id = creator_user.id
+        assert isinstance(creator_tele_id, int)
+        assert raw_poll_creation_args != ''
+
+        subscription_tier_res = user_entry.get_subscription_tier()
+        if subscription_tier_res.is_err():
+            err_msg = "Unexpected error reading subscription tier"
+            await message.reply_text(err_msg)
+            return False
+
+        subscription_tier = subscription_tier_res.unwrap()
+        if '\n' not in raw_poll_creation_args:
+            await message.reply_text("poll creation format wrong")
+            return False
+
+        all_lines = raw_poll_creation_args.split('\n')
+        if ':' in raw_poll_creation_args:
+            # separate poll voters (before :) from poll title and options
+            split_index = raw_poll_creation_args.index(':')
+            # first part of command is all the users that are in the poll
+            command_p1: str = raw_poll_creation_args[:split_index].strip()
+            # second part of command is the poll question + poll options
+            command_p2: str = raw_poll_creation_args[split_index+1:].strip()
+        else:
+            """
+            There is no ":" on first line to separate poll voters and
+            poll title + questions
+            """
+            command_p1 = all_lines[0]
+            command_p2 = raw_poll_creation_args[len(command_p1)+1:]
+
+        poll_info_lines = command_p2.split('\n')
+        if len(poll_info_lines) < 3:
+            await message.reply_text('Poll requires at least 2 options')
+            return False
+
+        poll_question = poll_info_lines[0].strip().replace('\n', '')
+        poll_options = poll_info_lines[1:]
+        poll_options = [
+            poll_option.strip().replace('\n', '')
+            for poll_option in poll_options
+        ]
+        # print('COMMAND_P2', lines)
+        if (command_p1 == '') and not open_registration:
+            await message.reply_text('poll voters not specified!')
+            return False
+
+        raw_poll_usernames: List[str] = command_p1.split()
+        whitelisted_usernames: List[str] = []
+        poll_user_tele_ids: List[int] = []
+
+        for raw_poll_user in raw_poll_usernames:
+            if raw_poll_user.startswith('#'):
+                raw_poll_user_tele_id = raw_poll_user[1:]
+                if constants.ID_PATTERN.match(raw_poll_user_tele_id) is None:
+                    await message.reply_text(
+                        f'Invalid poll user id: {raw_poll_user}'
+                    )
+                    return False
+
+                poll_user_tele_id = int(raw_poll_user_tele_id)
+                poll_user_tele_ids.append(poll_user_tele_id)
+                continue
+
+            if raw_poll_user.startswith('@'):
+                whitelisted_username = raw_poll_user[1:]
+            else:
+                whitelisted_username = raw_poll_user
+
+            if len(whitelisted_username) < 4:
+                await message.reply_text(
+                    f'username too short: {whitelisted_username}'
+                )
+                return False
+
+            whitelisted_usernames.append(whitelisted_username)
+
+        try:
+            db_user = Users.build_from_fields(tele_id=creator_tele_id).get()
+        except Users.DoesNotExist:
+            await message.reply_text(f'UNEXPECTED ERROR: USER DOES NOT EXIST')
+            return False
+
+        creator_id = db_user.get_user_id()
+        # create users if they don't exist
+        user_rows = [
+            Users.build_from_fields(tele_id=tele_id)
+            for tele_id in poll_user_tele_ids
+        ]
+
+        poll_builder = PollBuilderTemplate(
+            creator_id=creator_id, user_rows=user_rows,
+            poll_user_tele_ids=poll_user_tele_ids,
+            poll_question=poll_question,
+            subscription_tier=subscription_tier,
+            open_registration=open_registration,
+            poll_options=poll_options,
+            whitelisted_usernames=whitelisted_usernames,
+            whitelisted_chat_ids=whitelisted_chat_ids
+        )
+
+        create_poll_res = poll_builder.save_poll_to_db()
+        if create_poll_res.is_err():
+            error_message = create_poll_res.unwrap_err()
+            await error_message.call(message.reply_text)
+            return False
+
+        new_poll: Polls = create_poll_res.unwrap()
+        new_poll_id = int(new_poll.id)
+        bot_username = context.bot.username
+
+        poll_message = PollService.generate_poll_info(
+            new_poll_id, poll_question, poll_options,
+            bot_username=bot_username, closed=False,
+            num_voters=poll_builder.initial_num_voters,
+            max_voters=new_poll.max_voters,
+            add_instructions=update.is_group_chat()
+        )
+
+        chat_type = message.chat.type
+        reply_markup = None
+
+        if chat_type == 'private':
+            # create vote button for reply message
+            vote_markup_data = PollService.build_private_vote_markup(
+                poll_id=new_poll_id, tele_user=creator_user
+            )
+            reply_markup = ReplyKeyboardMarkup(vote_markup_data)
+        elif open_registration:
+            vote_markup_data = PollService.build_group_vote_markup(
+                poll_id=new_poll_id,
+                num_options=len(poll_options)
+            )
+            reply_markup = InlineKeyboardMarkup(vote_markup_data)
+
+        await message.reply_text(poll_message, reply_markup=reply_markup)
+        await message.reply_text(
+            generate_poll_created_message(new_poll_id)
+        )
+        return True
