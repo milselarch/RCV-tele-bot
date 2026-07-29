@@ -6,7 +6,7 @@ from typing import Final
 from datetime import timedelta
 from pathlib import Path
 
-__VERSION__: Final[str] = '1.3.12'
+__VERSION__: Final[str] = '1.3.11'
 
 # project root directory
 BASE_DIR = Path(__file__).resolve().parents[1]

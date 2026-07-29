@@ -50,7 +50,7 @@ jobs:
       - name: Check that version has been incremented
         run: |
           PR_VERSION="${{ steps.pr_version.outputs.version }}"  
-          MAIN_VERSION="${{ steps.master_version.outputs.version }}"  
+          $MASTER_VERSION="${{ steps.master_version.outputs.version }}"  
           echo "PR version:   $PR_VERSION"  
           echo "Master version: $MASTER_VERSION"  
           if [ "$PR_VERSION" = "$MASTER_VERSION" ]; then  
