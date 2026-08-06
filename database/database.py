@@ -10,6 +10,7 @@ import peewee
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok, Err
 
+from database.checklist_models import Checklist, ChecklistItem, ChecklistItemActions, ActiveReminders
 from helpers.config_loader import DatabaseConfig, ConfigLoader
 from database.setup import DB, BaseModel, database_proxy
 from database.users import Users
@@ -35,7 +36,9 @@ def get_tables() -> list[Type[BaseModel]]:
     return [
         Users, Polls, ChatWhitelist, PollVoters, UsernameWhitelist,
         PollOptions, VoteRankings, PollWinners, CallbackContextState,
-        MessageContextState, Payments, SupportTickets
+        MessageContextState, Payments, SupportTickets,
+        Checklist, ChecklistItem, ChecklistItemActions,
+        ActiveReminders
     ]
 
 
