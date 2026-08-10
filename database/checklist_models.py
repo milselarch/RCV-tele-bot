@@ -2,7 +2,9 @@ from peewee import (
     AutoField, ForeignKeyField, CharField,
     IntegerField, DateTimeField, TextField
 )
-from database import Users
+
+from database.db_helpers import UserID
+from database.users import Users
 from database.setup import BaseModel
 
 
@@ -10,6 +12,10 @@ class Checklist(BaseModel):
     id = AutoField(primary_key=True)
     owner = ForeignKeyField(Users, to_field='id', on_delete='CASCADE')
     name = CharField(max_length=255)
+
+    @classmethod
+    def count_checklists_created(cls, user_id: UserID) -> int:
+        return cls.select().where(cls.owner == user_id).count()
 
 
 class ChecklistItem(BaseModel):
@@ -40,8 +46,8 @@ class ChecklistItemActions(BaseModel):
         ChecklistItem, to_field='id', on_delete='CASCADE'
     )
     ordering = IntegerField()
-    action_type = CharField(max_length=255)
-    state = TextField(null=False)
+    # This will be JSON data that gets loaded onto a dataclass
+    action = TextField(null=False)
 
     class Meta:
         # make sure every action has a unique ordering

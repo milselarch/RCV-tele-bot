@@ -10,7 +10,9 @@ import peewee
 from playhouse.shortcuts import ReconnectMixin
 from result import Result, Ok, Err
 
-from database.checklist_models import Checklist, ChecklistItem, ChecklistItemActions, ActiveReminders
+from database.checklist_models import (
+    Checklist, ChecklistItem, ChecklistItemActions, ActiveReminders
+)
 from helpers.config_loader import DatabaseConfig, ConfigLoader
 from database.setup import DB, BaseModel, database_proxy
 from database.users import Users

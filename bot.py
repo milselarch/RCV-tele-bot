@@ -132,6 +132,7 @@ class RankedChoiceBot(PollService):
         builder.concurrent_updates(constants.MAX_CONCURRENT_UPDATES)
         builder.post_init(self.post_init)
 
+        # TODO: refactor regular RCV commands to their own handler class
         commands_mapping = {
             Command.USER_DETAILS: self.user_details_handler,
             Command.CHAT_DETAILS: self.chat_details_handler,

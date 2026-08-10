@@ -29,3 +29,9 @@ class SubscriptionTiers(IntEnum):
                 return 40
             case _:
                 raise ValueError(f"Invalid SubscriptionTiers value: {self}")
+
+    def get_max_checklist_size(self):
+        return self.get_max_voters()
+
+    def get_max_checklists(self):
+        return self.get_max_polls()

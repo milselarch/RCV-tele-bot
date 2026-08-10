@@ -1,6 +1,6 @@
-from abc import ABCMeta, abstractmethod
 from typing import Type
 
+from handlers.base_handler import BaseMessageHandler
 from handlers.chat_context_handlers import ContextHandlers
 from helpers.config_loader import BotConfig
 from poll_service import PollService
@@ -15,15 +15,6 @@ from handlers.payment_handlers import (
     BasePaymentParams, InvoiceTypes, IncreaseVoterLimitParams,
     PaymentHandlers
 )
-
-
-class BaseMessageHandler(object, metaclass=ABCMeta):
-    @abstractmethod
-    async def handle_messages(
-        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
-        raw_payload: str
-    ):
-        ...
 
 
 class StartVoteHandler(BaseMessageHandler):
@@ -58,7 +49,7 @@ class StartVoteHandler(BaseMessageHandler):
         )
 
         if view_poll_result.is_err():
-            error_message = view_poll_result.err()
+            error_message = view_poll_result.unwrap_err()
             await error_message.call(message.reply_text)
             return False
 

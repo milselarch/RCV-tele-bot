@@ -58,6 +58,7 @@ class BaseContextHandler(object, metaclass=ABCMeta):
         handler for when user sends additional arguments for the
         construction of the current chat context
 
+        :param config:
         :param extracted_context:
         :param update:
         :param context:
