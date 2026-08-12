@@ -32,6 +32,7 @@ from peewee import (
 
 initialised_db: DB | None = None
 # TODO: refactor each individual table into its own file
+# TODO: REWRITE ALL DB LOGIC USING RUST (Diesel)
 
 
 def get_tables() -> list[Type[BaseModel]]:

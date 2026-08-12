@@ -145,7 +145,7 @@ class PollBuilderTemplate(object):
     def save_poll_to_db(self) -> Result[Polls, MessageBuilder]:
         validate_res = self.validate_params()
         if validate_res.is_err():
-            return validate_res
+            return Err(validate_res.unwrap_err())
 
         error_message = MessageBuilder()
         poll_creation_limit = self.subscription_tier.get_max_polls()
