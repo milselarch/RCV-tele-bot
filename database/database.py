@@ -19,6 +19,7 @@ from database.users import Users
 from database.payments import Payments
 from database.callback_context_state import CallbackContextState
 from database.message_context_state import MessageContextState
+from database.tele_group_models import TelegramGroup, TelegramGroupMembership
 
 from typing import Self, Optional, Type, List
 from database.db_helpers import (
@@ -41,7 +42,7 @@ def get_tables() -> list[Type[BaseModel]]:
         PollOptions, VoteRankings, PollWinners, CallbackContextState,
         MessageContextState, Payments, SupportTickets,
         Checklist, ChecklistItem, ChecklistItemActions,
-        ActiveReminders
+        ActiveReminders, TelegramGroup, TelegramGroupMembership
     ]
 
 

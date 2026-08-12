@@ -14,7 +14,6 @@ from helpers import constants
 from .subscription_tiers import SubscriptionTiers
 from typing import Self, List, Iterable
 
-from database import db, CallbackContextState
 from database.db_helpers import (
     BoundRowFields, Empty, EmptyField, UserID
 )
