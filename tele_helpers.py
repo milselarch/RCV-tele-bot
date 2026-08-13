@@ -50,7 +50,7 @@ class TelegramHelpers(object):
     def _vote_for_poll(
         cls, raw_text: str, user_tele_id: int, username: Optional[str],
         chat_id: Optional[int]
-    ) -> Result[tuple[bool, int], MessageBuilder]:
+    ) -> Result[tuple[tuple[bool, bool], int], MessageBuilder]:
         """
         telegram command format
         /vote {poll_id}: {option_1} > {option_2} > ... > {option_n}
@@ -83,7 +83,7 @@ class TelegramHelpers(object):
             chat_id=chat_id
         )
         if register_result.is_err():
-            return register_result
+            return Err(register_result.unwrap_err())
 
         is_newly_registered = register_result.unwrap()
         # TODO: use a dataclass or smth to store all the flags
@@ -124,10 +124,7 @@ class TelegramHelpers(object):
     def users_middleware(
         func: Callable[..., Coroutine], include_self=True
     ) -> Callable[[BaseTeleUpdate, ...], Coroutine]:
-        async def caller(
-            self, update: BaseTeleUpdate | CallbackContext,
-            *args, **kwargs
-        ):
+        async def caller(self, update: BaseTeleUpdate, *args, **kwargs):
             # print("SELF", self)
             # print('UPDATE', update, args, kwargs)
             is_tele_update = isinstance(update, BaseTeleUpdate)
@@ -153,11 +150,11 @@ class TelegramHelpers(object):
                     logger.error(f'NO USER FOUND FOR ENDPOINT {func}')
                     return False
 
-                await respond_callback("User not found")
+                return await respond_callback("User not found")
 
             assert tele_user is not None
             tele_id = tele_user.id
-            chat_username: str = tele_user.username
+            chat_username: str = tele_user.username or ''
             assert isinstance(tele_user, TeleUser)
             user, _ = Users.build_from_fields(tele_id=tele_id).get_or_create()
             # don't allow deleted users to interact with the bot
@@ -171,7 +168,7 @@ class TelegramHelpers(object):
                 user.save()
 
             modified_tele_update = ModifiedTeleUpdate(
-                update=update, user=user
+                update=update, user=user, tele_user=tele_user
             )
 
             if include_self:

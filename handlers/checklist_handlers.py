@@ -129,16 +129,9 @@ class ChecklistCommandHandlers(BaseMessageHandler):
         raise NotImplementedError
 
     async def create_checklist(
-        self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
+        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
     ):
         message: Message = update.message
-        creator_user: TeleUser | None = message.from_user
-        if creator_user is None:
-            await message.reply_text("Creator user not specified")
-            return False
-
-        creator_tele_id = creator_user.id
-        assert isinstance(creator_tele_id, int)
         user_entry: Users = update.user
         # user_id = user_entry.get_user_id()
         raw_checklist_creation_args = TelegramHelpers.read_raw_command_args(
@@ -160,9 +153,53 @@ class ChecklistCommandHandlers(BaseMessageHandler):
             return await message.reply_text(err_message.get_content())
 
         checklist = save_checklist_res.unwrap()
-        await message.reply_text(
-            f"Checklist {checklist.name} created:"
+        await message.reply_text(f"Checklist {checklist.name} created")
+        return None
 
+    async def view_checklists(
+        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+    ):
+        message = update.message
+        user_entry: Users = update.user
+        user_id = user_entry.get_user_id()
+        checklists = Checklist.get_owned_checklists(user_id=user_id)
+
+        if not checklists:
+            return await message.reply_text("You have no checklists")
+
+        checklist_names = "\n".join([
+            checklist.name for checklist in checklists
+        ])
+        await message.reply_text(
+            f"Your checklists:\n{checklist_names}"
+        )
+        raise NotImplementedError
+
+    async def view_checklist(
+        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+    ):
+        message = update.message
+        user_entry: Users = update.user
+
+        checklist_res = Checklist.get_as_owner(
+            checklist_id=update.message.text,
+            owner_id=user_entry.get_user_id()
         )
 
+        raise NotImplementedError
+
+    async def edit_checklist(
+        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+    ):
+        raise NotImplementedError
+
+    async def delete_checklist(
+        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+    ):
+        # TODO: edit checklist item interactively
+        #  - change item name
+        #  - mark item as completed
+        #  - delete item
+        #  - insert above
+        #  - insert below
         raise NotImplementedError
