@@ -1,5 +1,9 @@
-from typing import Self
+from __future__ import annotations
 
+from typing import Self, List
+
+import peewee
+from result import Result, Ok, Err
 from peewee import (
     AutoField, ForeignKeyField, CharField,
     IntegerField, DateTimeField, TextField, BooleanField
@@ -40,6 +44,28 @@ class Checklist(BaseModel):
             cls.name: name
         })
 
+    @classmethod
+    def get_owned_checklists(cls, user_id: UserID) -> List[Checklist]:
+        return [
+            checklist for checklist in
+            cls.select().where(cls.owner == user_id)
+        ]
+
+    @classmethod
+    def get_as_owner(
+        cls, checklist_id: int, owner_id: UserID
+    ) -> Result[Checklist, peewee.DoesNotExist]:
+        try:
+            checklist = cls.get(
+                (cls.id == checklist_id) & (cls.owner == owner_id)
+            )
+            return Ok(checklist)
+        except cls.DoesNotExist as e:
+            return Err(e)
+
+    def get_items(self) -> List[ChecklistItem]:
+        return ChecklistItem.get_all_items_for(int(self.id))
+
 
 class ChecklistItem(BaseModel):
     id = AutoField(primary_key=True)
@@ -50,7 +76,7 @@ class ChecklistItem(BaseModel):
     name = CharField(max_length=255)
     checked = BooleanField(default=False)
 
-    ordering = IntegerField()
+    ordering = IntegerField(null=False)
     last_checked = DateTimeField(default=None)
     last_unchecked = DateTimeField(default=None)
     last_reminder = DateTimeField(default=None)
@@ -83,6 +109,15 @@ class ChecklistItem(BaseModel):
             cls.last_unchecked: last_unchecked,
             cls.last_reminder: last_reminder
         })
+
+    @classmethod
+    def get_all_items_for(cls, checklist_id: int) -> List[ChecklistItem]:
+        query = cls.select().where(
+            cls.checklist == checklist_id
+        ).order_by(cls.ordering)
+        return [
+            checklist for checklist in query
+        ]
 
 
 class ChecklistItemActions(BaseModel):
