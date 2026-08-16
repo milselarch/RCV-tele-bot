@@ -28,6 +28,7 @@ class TelegramGroup(BaseModel):
 
 
 class TelegramGroupMembership(BaseModel):
+    # TODO: auto track if a user is part of a group
     id = AutoField(primary_key=True)
 
     tele_group = ForeignKeyField(
