@@ -100,7 +100,7 @@ class VerifyMiddleware(BaseHTTPMiddleware):
 
         # print('VALIDATION_HASH', validation_hash, signature)
         if validation_hash == signature:
-            return {k: v[0] for k, v in params.items()}
+            return {k: v[0] for k, v in params.top_level_items()}
 
         return None
 

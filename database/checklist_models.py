@@ -52,19 +52,26 @@ class Checklist(BaseModel):
         ]
 
     @classmethod
-    def get_as_owner(
-        cls, checklist_id: int, owner_id: UserID
+    def get_by_name_as_owner(
+        cls, checklist_name: str, owner_id: UserID
     ) -> Result[Checklist, peewee.DoesNotExist]:
         try:
             checklist = cls.get(
-                (cls.id == checklist_id) & (cls.owner == owner_id)
+                (cls.name == checklist_name) & (cls.owner == owner_id)
             )
             return Ok(checklist)
         except cls.DoesNotExist as e:
             return Err(e)
 
     def get_items(self) -> List[ChecklistItem]:
-        return ChecklistItem.get_all_items_for(int(self.id))
+        """
+        Get all checklist items for this checklist,
+        including nested ones
+        :return:
+        """
+        # noinspection PyTypeChecker
+        checklist_id = int(self.id)
+        return ChecklistItem.get_all_items_for(checklist_id)
 
 
 class ChecklistItem(BaseModel):
