@@ -133,51 +133,10 @@ class RankedChoiceBot(PollService):
         builder.post_init(self.post_init)
 
         # TODO: refactor regular RCV commands to their own handler class
-        commands_mapping = {
-            Command.USER_DETAILS: self.user_details_handler,
-            Command.CHAT_DETAILS: self.chat_details_handler,
-            Command.CREATE_PRIVATE_POLL: self.create_poll,
-            Command.CREATE_GROUP_POLL: self.create_group_poll,
-            Command.REGISTER_USER_ID: self.register_user_by_tele_id,
-            Command.WHITELIST_CHAT_REGISTRATION:
-                self.whitelist_chat_registration,
-            Command.BLACKLIST_CHAT_REGISTRATION:
-                self.blacklist_chat_registration,
-
-            Command.VIEW_POLL: self.view_poll,
-            Command.VIEW_POLLS: self.view_all_polls,
-            Command.VOTE: self.vote_for_poll_handler,
-            Command.POLL_RESULTS: self.fetch_poll_results,
-            Command.HAS_VOTED: self.has_voted,
-            Command.CLOSE_POLL: self.close_poll_handler,
-
-            Command.EDIT_POLL_TITLE: self.edit_poll_title_handler,
-            Command.EDIT_POLL_STRATEGY: self.edit_poll_algorithm_handler,
-
-            Command.VIEW_VOTES: self.view_votes,
-            Command.VIEW_VOTERS: self.view_poll_voters,
-            Command.ABOUT: self.show_about,
-            Command.DELETE_POLL: self.delete_poll,
-            Command.DELETE_ACCOUNT: self.delete_account,
-            Command.HELP: self.show_help,
-            Command.WHITELIST_USERNAME: self.whitelist_username,
-            Command.PAY_SUPPORT: self.payment_support_handler,
-
-            Command.VOTE_ADMIN: self.vote_for_poll_admin,
-            Command.CLOSE_POLL_ADMIN: self.close_poll_admin,
-            Command.UNCLOSE_POLL_ADMIN: self.unclose_poll_admin,
-            Command.LOOKUP_FROM_USERNAME_ADMIN:
-                self.lookup_from_username_admin,
-            Command.INSERT_USER_ADMIN: self.insert_user_admin,
-            Command.REFUND_ADMIN: self.refund_payment_support_handler,
-            Command.ENTER_MAINTENANCE_ADMIN: self.enter_maintenance_admin,
-            Command.EXIT_MAINTENANCE_ADMIN: self.exit_maintenance_admin,
-            Command.SEND_MSG_ADMIN: self.send_msg_admin
-        }
-
         self.app = builder.build()
         assert self.app is not None
         self.payment_handlers = PaymentHandlers(logger)
+        commands_mapping = self.get_commands_mapping()
         self.context_handlers = ContextHandlers(commands_mapping)
         assert self.context_handlers is not None
         self.start_handlers = StartHandlers(
@@ -303,6 +262,49 @@ class RankedChoiceBot(PollService):
         ), (
             Command.DONE, 'finish creating a poll or ranked vote'
         )])
+
+    def get_commands_mapping(self):
+        return {
+            Command.USER_DETAILS: self.user_details_handler,
+            Command.CHAT_DETAILS: self.chat_details_handler,
+            Command.CREATE_PRIVATE_POLL: self.create_poll,
+            Command.CREATE_GROUP_POLL: self.create_group_poll,
+            Command.REGISTER_USER_ID: self.register_user_by_tele_id,
+            Command.WHITELIST_CHAT_REGISTRATION:
+                self.whitelist_chat_registration,
+            Command.BLACKLIST_CHAT_REGISTRATION:
+                self.blacklist_chat_registration,
+
+            Command.VIEW_POLL: self.view_poll,
+            Command.VIEW_POLLS: self.view_all_polls,
+            Command.VOTE: self.vote_for_poll_handler,
+            Command.POLL_RESULTS: self.fetch_poll_results,
+            Command.HAS_VOTED: self.has_voted,
+            Command.CLOSE_POLL: self.close_poll_handler,
+
+            Command.EDIT_POLL_TITLE: self.edit_poll_title_handler,
+            Command.EDIT_POLL_STRATEGY: self.edit_poll_algorithm_handler,
+
+            Command.VIEW_VOTES: self.view_votes,
+            Command.VIEW_VOTERS: self.view_poll_voters,
+            Command.ABOUT: self.show_about,
+            Command.DELETE_POLL: self.delete_poll,
+            Command.DELETE_ACCOUNT: self.delete_account,
+            Command.HELP: self.show_help,
+            Command.WHITELIST_USERNAME: self.whitelist_username,
+            Command.PAY_SUPPORT: self.payment_support_handler,
+
+            Command.VOTE_ADMIN: self.vote_for_poll_admin,
+            Command.CLOSE_POLL_ADMIN: self.close_poll_admin,
+            Command.UNCLOSE_POLL_ADMIN: self.unclose_poll_admin,
+            Command.LOOKUP_FROM_USERNAME_ADMIN:
+                self.lookup_from_username_admin,
+            Command.INSERT_USER_ADMIN: self.insert_user_admin,
+            Command.REFUND_ADMIN: self.refund_payment_support_handler,
+            Command.ENTER_MAINTENANCE_ADMIN: self.enter_maintenance_admin,
+            Command.EXIT_MAINTENANCE_ADMIN: self.exit_maintenance_admin,
+            Command.SEND_MSG_ADMIN: self.send_msg_admin
+        }
 
     @track_errors
     async def web_app_handler(

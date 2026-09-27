@@ -133,14 +133,17 @@ class ChecklistBuilderTemplate(object):
 
 
 class ChecklistCommandHandlers(BaseMessageHandler):
+
+
     async def handle_messages(
         self, update: ModifiedTeleUpdate, context: ContextTypes.DEFAULT_TYPE,
         raw_payload: str
     ):
         raise NotImplementedError
 
+    @classmethod
     async def create_checklist(
-        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+        cls, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
     ):
         message: Message = update.message
         user_entry: Users = update.user
@@ -186,8 +189,9 @@ class ChecklistCommandHandlers(BaseMessageHandler):
         )
         raise NotImplementedError
 
+    @classmethod
     async def view_checklist(
-        self, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
+        cls, update: ModifiedTeleUpdate, _: ContextTypes.DEFAULT_TYPE
     ):
         message = update.message
         user_entry: Users = update.user

@@ -1,0 +1,8 @@
+images/*
+**/*.svg
+**/*.png
+**/*.xcf
+**/*.jpg
+**/*.ttf
+**/*.package-lock.json
+telegram-webapp/public/*
